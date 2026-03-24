@@ -1,52 +1,70 @@
-import Image from "next/image";
+import { getBackendHealth } from "@/lib/backend";
 
-export default function Home() {
+export default async function Home() {
+	const backend = await getBackendHealth();
+
 	return (
-		<div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-			<main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-				<Image className="dark:invert" src="/next.svg" alt="Next.js logo" width={180} height={38} priority />
-				<ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-					<li className="mb-2 tracking-[-.01em]">
-						Get started by editing{" "}
-						<code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-							src/app/page.tsx
-						</code>
-						.
-					</li>
-					<li className="tracking-[-.01em]">Save and see your changes instantly.</li>
-				</ol>
-
-				<div className="flex gap-4 items-center flex-col sm:flex-row">
-					<a
-						className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-						href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						Read our docs
-					</a>
+		<div className="min-h-screen bg-slate-950 px-6 py-16 text-slate-100 sm:px-10">
+			<main className="mx-auto flex max-w-3xl flex-col gap-8">
+				<div className="space-y-3">
+					<p className="text-sm uppercase tracking-[0.3em] text-sky-300">Take Exam Service</p>
+					<h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">Backend holbolt shalgah sambar</h1>
+					<p className="max-w-2xl text-base text-slate-300 sm:text-lg">
+						Microservice bur tusdaa schema-tai baij bolno. Harin hoorondoo yarih API contract neg, togtmol,
+						todorhoi baih yostoi.
+					</p>
 				</div>
+
+				<section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-sky-950/30">
+					<div className="flex flex-col gap-3">
+						<p className="text-sm text-slate-400">Configured backend URL</p>
+						<p className="font-mono text-sm text-slate-100">{backend.baseUrl ?? "BACKEND_BASE_URL not set"}</p>
+					</div>
+
+					<div className="mt-6 rounded-2xl border border-white/10 bg-slate-900/80 p-5">
+						{backend.ok ? (
+							<div className="space-y-3">
+								<p className="text-sm font-medium text-emerald-300">Holbolt amjilttai</p>
+								<p className="text-sm text-slate-300">
+									{backend.data.service} service {backend.data.status} tuluvtei baina.
+								</p>
+								<ul className="space-y-2 text-sm text-slate-300">
+									<li>Health endpoint: {backend.data.api.healthPath}</li>
+									<li>Create exam endpoint: {backend.data.api.createExamPath}</li>
+									<li>Checked at: {backend.data.timestamp}</li>
+								</ul>
+							</div>
+						) : (
+							<div className="space-y-3">
+								<p className="text-sm font-medium text-rose-300">Holbolt aldaatai</p>
+								<p className="text-sm text-slate-300">{backend.reason}</p>
+								<p className="text-sm text-slate-400">
+									<code>take-exam-service/.env.local</code> file dotor{" "}
+									<code>BACKEND_BASE_URL=http://localhost:3001</code> gej taviad backend service-ee
+									asaana uu.
+								</p>
+							</div>
+						)}
+					</div>
+				</section>
+
+				<section className="grid gap-4 sm:grid-cols-2">
+					<div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+						<h2 className="text-lg font-semibold">Yug negtgeh heregtei ve?</h2>
+						<p className="mt-2 text-sm leading-6 text-slate-300">
+							DB schema-g bish, request/response contract-g negtge. Jishee ni exam object, question list,
+							submission payload helber ni neg baival bolno.
+						</p>
+					</div>
+					<div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+						<h2 className="text-lg font-semibold">Yamar baidlaar holboh ve?</h2>
+						<p className="mt-2 text-sm leading-6 text-slate-300">
+							Local deer URL-aar, deploy hiisnii daraa service binding esvel internal API gateway-aar
+							holboj bolno. Gol ni endpoint, auth, payload 3 ni tod baih heregtei.
+						</p>
+					</div>
+				</section>
 			</main>
-			<footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-				<a
-					className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-					href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					<Image aria-hidden src="/file.svg" alt="File icon" width={16} height={16} />
-					Learn
-				</a>
-				<a
-					className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-					href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					<Image aria-hidden src="/globe.svg" alt="Globe icon" width={16} height={16} />
-					Go to nextjs.org →
-				</a>
-			</footer>
 		</div>
 	);
 }
