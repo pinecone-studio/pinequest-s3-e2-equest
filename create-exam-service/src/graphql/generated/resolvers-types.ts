@@ -29,12 +29,6 @@ export type DifficultyDistributionInput = {
   medium: Scalars['Int']['input'];
 };
 
-export type DifficultyFormatsInput = {
-  easy: QuestionFormat;
-  hard: QuestionFormat;
-  medium: QuestionFormat;
-};
-
 export type DifficultyPointsInput = {
   easyPoints?: InputMaybe<Scalars['Float']['input']>;
   hardPoints?: InputMaybe<Scalars['Float']['input']>;
@@ -53,9 +47,9 @@ export type EditableQuestionInput = {
 
 export type ExamGenerationInput = {
   difficultyDistribution: DifficultyDistributionInput;
-  difficultyFormats: DifficultyFormatsInput;
   difficultyPoints?: InputMaybe<DifficultyPointsInput>;
   durationMinutes: Scalars['Int']['input'];
+  examContent: Scalars['String']['input'];
   examDate: Scalars['String']['input'];
   examTime: Scalars['String']['input'];
   examType: ExamType;
@@ -76,17 +70,23 @@ export type FormatDistributionInput = {
 
 export type ExamGenerationResult = {
   __typename?: 'ExamGenerationResult';
+  createdAt: Scalars['String']['output'];
+  errorLog?: Maybe<Scalars['String']['output']>;
   examId: Scalars['ID']['output'];
   questions: Array<GeneratedQuestion>;
+  status: ExamStatus;
+  updatedAt: Scalars['String']['output'];
 };
 
 export enum ExamStatus {
   Draft = 'DRAFT',
+  Failed = 'FAILED',
+  Generating = 'GENERATING',
   Published = 'PUBLISHED'
 }
 
 export enum ExamType {
-  FinalTerm = 'FINAL_TERM',
+  FinalTerm = 'FINALTERM',
   Midterm = 'MIDTERM',
   Practice = 'PRACTICE',
   Periodic_1 = 'PERIODIC_1',
@@ -134,6 +134,7 @@ export enum QuestionFormat {
 }
 
 export type SaveExamInput = {
+  errorLog?: InputMaybe<Scalars['String']['input']>;
   examId?: InputMaybe<Scalars['ID']['input']>;
   generation: ExamGenerationInput;
   questions: Array<EditableQuestionInput>;
@@ -142,8 +143,11 @@ export type SaveExamInput = {
 
 export type SaveExamPayload = {
   __typename?: 'SaveExamPayload';
+  createdAt: Scalars['String']['output'];
+  errorLog?: Maybe<Scalars['String']['output']>;
   examId: Scalars['ID']['output'];
   status: ExamStatus;
+  updatedAt: Scalars['String']['output'];
 };
 
 export type WithIndex<TObject> = TObject & Record<string, any>;
@@ -223,7 +227,6 @@ export type ResolversTypes = ResolversObject<{
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
   Difficulty: Difficulty;
   DifficultyDistributionInput: DifficultyDistributionInput;
-  DifficultyFormatsInput: DifficultyFormatsInput;
   DifficultyPointsInput: DifficultyPointsInput;
   EditableQuestionInput: EditableQuestionInput;
   ExamGenerationInput: ExamGenerationInput;
@@ -246,7 +249,6 @@ export type ResolversTypes = ResolversObject<{
 export type ResolversParentTypes = ResolversObject<{
   Boolean: Scalars['Boolean']['output'];
   DifficultyDistributionInput: DifficultyDistributionInput;
-  DifficultyFormatsInput: DifficultyFormatsInput;
   DifficultyPointsInput: DifficultyPointsInput;
   EditableQuestionInput: EditableQuestionInput;
   ExamGenerationInput: ExamGenerationInput;
@@ -263,8 +265,12 @@ export type ResolversParentTypes = ResolversObject<{
 }>;
 
 export type ExamGenerationResultResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['ExamGenerationResult'] = ResolversParentTypes['ExamGenerationResult']> = ResolversObject<{
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  errorLog?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   examId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   questions?: Resolver<Array<ResolversTypes['GeneratedQuestion']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['ExamStatus'], ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 }>;
 
 export type GeneratedQuestionResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['GeneratedQuestion'] = ResolversParentTypes['GeneratedQuestion']> = ResolversObject<{
@@ -287,8 +293,11 @@ export type QueryResolvers<ContextType = GraphQLContext, ParentType extends Reso
 }>;
 
 export type SaveExamPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['SaveExamPayload'] = ResolversParentTypes['SaveExamPayload']> = ResolversObject<{
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  errorLog?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   examId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   status?: Resolver<ResolversTypes['ExamStatus'], ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 }>;
 
 export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{

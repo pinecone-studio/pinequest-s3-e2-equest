@@ -27,12 +27,6 @@ export type DifficultyDistributionInput = {
   medium: Scalars['Int']['input'];
 };
 
-export type DifficultyFormatsInput = {
-  easy: QuestionFormat;
-  hard: QuestionFormat;
-  medium: QuestionFormat;
-};
-
 export type DifficultyPointsInput = {
   easyPoints?: InputMaybe<Scalars['Float']['input']>;
   hardPoints?: InputMaybe<Scalars['Float']['input']>;
@@ -51,9 +45,9 @@ export type EditableQuestionInput = {
 
 export type ExamGenerationInput = {
   difficultyDistribution: DifficultyDistributionInput;
-  difficultyFormats: DifficultyFormatsInput;
   difficultyPoints?: InputMaybe<DifficultyPointsInput>;
   durationMinutes: Scalars['Int']['input'];
+  examContent: Scalars['String']['input'];
   examDate: Scalars['String']['input'];
   examTime: Scalars['String']['input'];
   examType: ExamType;
@@ -84,7 +78,7 @@ export enum ExamStatus {
 }
 
 export enum ExamType {
-  FinalTerm = 'FINAL_TERM',
+  FinalTerm = 'FINALTERM',
   Midterm = 'MIDTERM',
   Practice = 'PRACTICE',
   Periodic_1 = 'PERIODIC_1',

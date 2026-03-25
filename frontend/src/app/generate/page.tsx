@@ -86,14 +86,6 @@ const EXAM_TYPES: { value: ExamType; label: string }[] = [
   { value: ExamType.Practice, label: "Давтлага шалгалт" },
 ];
 
-const FORMAT_SELECT_OPTIONS: { id: QuestionFormat; label: string }[] = [
-  { id: QuestionFormat.SingleChoice, label: "Нэг зөв хувилбартай" },
-  { id: QuestionFormat.MultipleChoice, label: "Олон зөв хувилбартай" },
-  { id: QuestionFormat.Matching, label: "Холбох" },
-  { id: QuestionFormat.FillIn, label: "Нөхөж оруулах" },
-  { id: QuestionFormat.Written, label: "Бичиж хариулах" },
-];
-
 /** `<input type="date">` формат (YYYY-MM-DD), хэрэглэгчийн орон нутгийн өнөөдөр. */
 function getTodayDateInputValue(): string {
   const now = new Date();
@@ -101,6 +93,14 @@ function getTodayDateInputValue(): string {
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/** `<input type="time">` формат (HH:mm), хэрэглэгчийн орон нутгийн яг одоо. */
+function getNowTimeInputValue(): string {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 /** Урд талын илүү 0-үүдийг хасна; хоосон бол хоосон үлдэнэ. */
@@ -194,10 +194,8 @@ function allocateTwo(total: number, w1: number, w2: number): [number, number] {
 }
 
 export default function GenerateExamPage() {
-  const [gradeClass, setGradeClass] = React.useState(GRADE_CLASSES[0] ?? "9a");
-  const [subjectValue, setSubjectValue] = React.useState(
-    SUBJECTS[0]?.value ?? "math",
-  );
+  const [gradeClass, setGradeClass] = React.useState("");
+  const [subjectValue, setSubjectValue] = React.useState("");
   const subjectLabel =
     SUBJECTS.find((s) => s.value === subjectValue)?.label ?? subjectValue;
   const [examType, setExamType] = React.useState<ExamType | "">("");
@@ -205,7 +203,7 @@ export default function GenerateExamPage() {
   const [topics, setTopics] = React.useState<string[]>([]);
   const [examContent, setExamContent] = React.useState("");
   const [examDate, setExamDate] = React.useState(getTodayDateInputValue);
-  const [examTime, setExamTime] = React.useState("");
+  const [examTime, setExamTime] = React.useState(getNowTimeInputValue);
   const [durationInput, setDurationInput] = React.useState("");
   const [totalInput, setTotalInput] = React.useState("");
   const durationMinutes = parseUIntFromInput(durationInput);
@@ -269,9 +267,9 @@ export default function GenerateExamPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalCount]);
   const [showPoints, setShowPoints] = React.useState(false);
-  const [easyPts, setEasyPts] = React.useState<number | "">("");
-  const [mediumPts, setMediumPts] = React.useState<number | "">("");
-  const [hardPts, setHardPts] = React.useState<number | "">("");
+  const [easyPts, setEasyPts] = React.useState<number | "">(1);
+  const [mediumPts, setMediumPts] = React.useState<number | "">(2);
+  const [hardPts, setHardPts] = React.useState<number | "">(3);
 
   // Асуултын хэлбэр тус бүрийн тоо (нийлбэр нь totalCount байх ёстой)
   const [singleChoiceCountInput, setSingleChoiceCountInput] =
@@ -402,7 +400,7 @@ export default function GenerateExamPage() {
       setExamContent("");
 
       setExamDate(getTodayDateInputValue());
-      setExamTime("");
+      setExamTime(getNowTimeInputValue());
       setDurationInput("");
       setTotalInput("");
 
@@ -417,9 +415,9 @@ export default function GenerateExamPage() {
       setWrittenCountInput("");
 
       setShowPoints(false);
-      setEasyPts("");
-      setMediumPts("");
-      setHardPts("");
+			setEasyPts(1);
+			setMediumPts(2);
+			setHardPts(3);
 
       if (!opts?.keepGenerated) {
         setQuestions(null);
@@ -491,7 +489,7 @@ export default function GenerateExamPage() {
     setFillInCountInput("1");
     setWrittenCountInput("0");
 
-    setShowPoints(false);
+    setShowPoints(true);
     setEasyPts(1);
     setMediumPts(2);
     setHardPts(3);
@@ -594,18 +592,14 @@ export default function GenerateExamPage() {
       );
       return;
     }
-    const topicScope = [
-      topics.length ? `Хамрах сэдвүүд: ${topics.join(", ")}` : "",
-      examContent.trim() ? `Шалгалтын агуулга:\n${examContent.trim()}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n\n");
+    const topicScope = topics.join(", ");
 
     const input: ExamGenerationInput = {
       gradeClass,
       subject: subjectLabel,
       examType: examType as ExamType,
       topicScope,
+      examContent: examContent.trim(),
       examDate,
       examTime,
       durationMinutes,
@@ -615,12 +609,6 @@ export default function GenerateExamPage() {
         medium: mediumCount,
         hard: hardCount,
       },
-      // backward-compatible: backend schema-д шаардлагатай тул placeholder явуулна
-      difficultyFormats: {
-        easy: QuestionFormat.SingleChoice,
-        medium: QuestionFormat.SingleChoice,
-        hard: QuestionFormat.SingleChoice,
-      },
       formatDistribution: {
         singleChoice: singleChoiceCount,
         multipleChoice: multipleChoiceCount,
@@ -628,19 +616,25 @@ export default function GenerateExamPage() {
         fillIn: fillInCount,
         written: writtenCount,
       },
+      // Checkbox-оос үл хамааран default (1/2/3) оноог явуулна.
       difficultyPoints: showPoints
         ? {
-            easyPoints: easyPts === "" ? null : Number(easyPts),
-            mediumPoints: mediumPts === "" ? null : Number(mediumPts),
-            hardPoints: hardPts === "" ? null : Number(hardPts),
+            easyPoints: easyPts === "" ? 1 : Number(easyPts),
+            mediumPoints: mediumPts === "" ? 2 : Number(mediumPts),
+            hardPoints: hardPts === "" ? 3 : Number(hardPts),
           }
-        : null,
+        : {
+            easyPoints: 1,
+            mediumPoints: 2,
+            hardPoints: 3,
+          },
     };
+    console.info("[generateExamQuestions] input", input);
     if (topics.length < 1) {
       setError("Хамрах сэдвээс дор хаяж 1-ийг нэмнэ үү.");
       return;
     }
-    if (!examContent.trim()) {
+    if (!input.examContent) {
       setError("Шалгалтын агуулгаа оруулна уу.");
       return;
     }
@@ -893,6 +887,7 @@ export default function GenerateExamPage() {
                   type="time"
                   value={examTime}
                   onChange={(e) => setExamTime(e.target.value)}
+                  placeholder="09:00"
                 />
               </div>
               <div className="space-y-2">
@@ -907,6 +902,7 @@ export default function GenerateExamPage() {
                   onChange={(e) =>
                     setDurationInput(sanitizeUnsignedIntInput(e.target.value))
                   }
+                  placeholder="45"
                 />
               </div>
               <div className="space-y-2">
@@ -921,6 +917,7 @@ export default function GenerateExamPage() {
                   onChange={(e) =>
                     setTotalInput(sanitizeUnsignedIntInput(e.target.value))
                   }
+                  placeholder="10"
                 />
               </div>
             </div>
@@ -945,6 +942,7 @@ export default function GenerateExamPage() {
                     onChange={(e) =>
                       setDifficultyCountsKeepingTotal("easy", e.target.value)
                     }
+                    placeholder="4"
                   />
                 </div>
                 <div>
@@ -962,6 +960,7 @@ export default function GenerateExamPage() {
                     onChange={(e) =>
                       setDifficultyCountsKeepingTotal("medium", e.target.value)
                     }
+                    placeholder="4"
                   />
                 </div>
                 <div>
@@ -979,6 +978,7 @@ export default function GenerateExamPage() {
                     onChange={(e) =>
                       setDifficultyCountsKeepingTotal("hard", e.target.value)
                     }
+                    placeholder="2"
                   />
                 </div>
               </div>
@@ -1007,6 +1007,7 @@ export default function GenerateExamPage() {
                         e.target.value,
                       )
                     }
+                    placeholder="6"
                   />
                 </div>
                 <div className="space-y-2">
@@ -1027,6 +1028,7 @@ export default function GenerateExamPage() {
                         e.target.value,
                       )
                     }
+                    placeholder="2"
                   />
                 </div>
                 <div className="space-y-2">
@@ -1034,6 +1036,7 @@ export default function GenerateExamPage() {
                     Холбох
                   </Label>
                   <Input
+                    className="h-8 text-sm"
                     type="number"
                     min={0}
                     step={1}
@@ -1043,11 +1046,13 @@ export default function GenerateExamPage() {
                     onChange={(e) =>
                       setFormatCountsKeepingTotal("matching", e.target.value)
                     }
+                    placeholder="1"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Нөхөх</Label>
                   <Input
+                    className="h-8 text-sm"
                     type="number"
                     min={0}
                     step={1}
@@ -1057,11 +1062,13 @@ export default function GenerateExamPage() {
                     onChange={(e) =>
                       setFormatCountsKeepingTotal("fillIn", e.target.value)
                     }
+                    placeholder="1"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Бичих</Label>
                   <Input
+                    className="h-8 text-sm"
                     type="number"
                     min={0}
                     step={1}
@@ -1071,6 +1078,7 @@ export default function GenerateExamPage() {
                     onChange={(e) =>
                       setFormatCountsKeepingTotal("written", e.target.value)
                     }
+                    placeholder="0"
                   />
                 </div>
               </div>
@@ -1100,6 +1108,7 @@ export default function GenerateExamPage() {
                         e.target.value === "" ? "" : Number(e.target.value),
                       )
                     }
+                    placeholder="1"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1114,6 +1123,7 @@ export default function GenerateExamPage() {
                         e.target.value === "" ? "" : Number(e.target.value),
                       )
                     }
+                    placeholder="2"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1128,6 +1138,7 @@ export default function GenerateExamPage() {
                         e.target.value === "" ? "" : Number(e.target.value),
                       )
                     }
+                    placeholder="3"
                   />
                 </div>
                 <div className="col-span-3 mt-1 flex items-center justify-between border-t pt-3 text-sm">

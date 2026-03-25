@@ -4,6 +4,7 @@ export type ExamGenerationInput = {
 	subject: string;
 	examType: string;
 	topicScope: string;
+	examContent: string;
 	examDate: string;
 	examTime: string;
 	durationMinutes: number;
@@ -18,11 +19,6 @@ export type ExamGenerationInput = {
 		mediumPoints?: number | null;
 		hardPoints?: number | null;
 	} | null;
-	difficultyFormats: {
-		easy: string;
-		medium: string;
-		hard: string;
-	};
 	formatDistribution?: {
 		singleChoice: number;
 		multipleChoice: number;

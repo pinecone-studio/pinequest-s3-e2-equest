@@ -15,6 +15,20 @@
       "when": 1774432987801,
       "tag": "0001_silky_stature",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1774446701000,
+      "tag": "0002_married_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1774447049513,
+      "tag": "0003_condemned_darwin",
+      "breakpoints": true
     }
   ]
 }

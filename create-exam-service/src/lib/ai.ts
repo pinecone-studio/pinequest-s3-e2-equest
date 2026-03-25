@@ -134,7 +134,7 @@ function examTypeLabel(t: string): string {
       return "Явцын шалгалт 2";
     case "MIDTERM":
       return "Дундын шалгалт";
-    case "FINAL_TERM":
+    case "FINALTERM":
       return "Жилийн эцсийн шалгалт";
     case "PRACTICE":
       return "Давтлага шалгалт";
@@ -145,18 +145,20 @@ function examTypeLabel(t: string): string {
   }
 }
 
-function buildPrompt(input: ExamGenerationInput): string {
+export type AiGenerationInput = Pick<
+  ExamGenerationInput,
+  | "gradeClass"
+  | "subject"
+  | "topicScope"
+  | "examContent"
+  | "totalQuestionCount"
+  | "difficultyDistribution"
+  | "formatDistribution"
+>;
+
+function buildPrompt(input: AiGenerationInput): string {
   const { easy, medium, hard } = input.difficultyDistribution;
-  const df = input.difficultyFormats;
-  const pts = input.difficultyPoints;
   const fd = input.formatDistribution ?? null;
-  const pointsText =
-    pts &&
-    (pts.easyPoints != null ||
-      pts.mediumPoints != null ||
-      pts.hardPoints != null)
-      ? `\nОноо (асуулт бүрт): Хялбар=${pts.easyPoints ?? "—"}, Дунд=${pts.mediumPoints ?? "—"}, Хэцүү=${pts.hardPoints ?? "—"}`
-      : "";
 
   const formatText = fd
     ? `\nАсуултын хэлбэр — тоо (нийлбэр нь заавал ${input.totalQuestionCount} байна):\n- SINGLE_CHOICE: ${fd.singleChoice}\n- MULTIPLE_CHOICE: ${fd.multipleChoice}\n- MATCHING: ${fd.matching}\n- FILL_IN: ${fd.fillIn}\n- WRITTEN: ${fd.written}`
@@ -164,7 +166,7 @@ function buildPrompt(input: ExamGenerationInput): string {
 
   const formatRules = fd
     ? `\nАсуултын хэлбэр (хатуу дагах):\n- Дээрх формат бүрийн ТОГТООСОН ТОО-г яг баримтал (нийлбэр нь ${input.totalQuestionCount}).\n- Асуулт бүрийн "format" талбар нь заавал QuestionFormat enum-ын нэг байна: SINGLE_CHOICE | MULTIPLE_CHOICE | MATCHING | FILL_IN | WRITTEN`
-    : `\nАсуултын хэлбэр (хатуу дагах):\n- Бүх EASY асуулт: format заавал "${df.easy}"\n- Бүх MEDIUM асуулт: format заавал "${df.medium}"\n- Бүх HARD асуулт: format заавал "${df.hard}"`;
+    : `\nАсуултын хэлбэр (хатуу дагах):\n- "formatDistribution" оруулаагүй үед форматыг зохиогч өөрөө сонгоно (SINGLE_CHOICE/MULTIPLE_CHOICE/MATCHING/FILL_IN/WRITTEN).`;
 
   return `Та бол Монголын ерөнхий боловсролын сургуулийн шалгалтын асуулт үүсгэгч AI.
 Таны даалгавар: JSON массив л буцаах. Өөр текст, markdown, тайлбар бичихгүй.
@@ -173,19 +175,17 @@ function buildPrompt(input: ExamGenerationInput): string {
 Шалгалтын мэдээлэл:
 - Анги: ${input.gradeClass}
 - Хичээл: ${input.subject}
-- Төрөл: ${examTypeLabel(input.examType)}
 - Хамрах сэдэв: ${input.topicScope}
-- Огноо: ${input.examDate}, цаг: ${input.examTime}, хугацаа: ${input.durationMinutes} минут
+- Шалгалтын агуулга: ${input.examContent}
 - Нийт асуултын тоо: ${input.totalQuestionCount} (заавал энэ тоо)
 - Хүндлэлийн тоо: хялбар=${easy}, дунд=${medium}, хэцүү=${hard} (нийлбэр нь заавал ${input.totalQuestionCount} байна)
-${pointsText}
 ${formatText}
 
 ${formatRules}
 
 JSON элемент бүрт талбарууд:
 - text: асуултын текст
-- format: ${fd ? "дээрх формат-тооны шаардлагыг баримтал" : `дээрх хүндлэлийн дагуу яг тэр формат (EASY→${df.easy}, MEDIUM→${df.medium}, HARD→${df.hard})`}
+- format: ${fd ? "дээрх формат-тооны шаардлагыг баримтал" : "QuestionFormat enum-ын нэгийг сонго (SINGLE_CHOICE/MULTIPLE_CHOICE/MATCHING/FILL_IN/WRITTEN)"}
 - difficulty: EASY | MEDIUM | HARD
 - options:
   - format нь SINGLE_CHOICE эсвэл MULTIPLE_CHOICE бол заавал массив байна, дор хаяж 4 сонголттой байна
@@ -199,7 +199,7 @@ JSON элемент бүрт талбарууд:
 [
   {
     "text": "string",
-    "format": "${df.medium}",
+    "format": "SINGLE_CHOICE",
     "difficulty": "MEDIUM",
     "options": ["A", "B", "C", "D"],
     "correctAnswer": "B",
@@ -249,7 +249,7 @@ function parseQuestionsPayload(text: string): unknown[] {
 
 export async function generateExamQuestionsWithAI(
   apiKey: string,
-  input: ExamGenerationInput,
+  input: AiGenerationInput,
 ): Promise<
   Array<{
     id: string;
@@ -274,14 +274,6 @@ export async function generateExamQuestionsWithAI(
       `Хүндлэлийн нийлбэр (${sum}) нийт асуултын тоо (${input.totalQuestionCount})-тай тэнцүү байх ёстой`,
     );
   }
-  if (
-    !input.difficultyFormats?.easy ||
-    !input.difficultyFormats?.medium ||
-    !input.difficultyFormats?.hard
-  ) {
-    throw new GraphQLError("Хүндлэл бүрт асуултын хэлбэр сонгоно уу");
-  }
-
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: MODEL,
@@ -431,18 +423,10 @@ export async function generateExamQuestionsWithAI(
     }));
   }
 
-  const df = input.difficultyFormats;
-  const formatFor = (d: string): string => {
-    if (d === "EASY") return df.easy;
-    if (d === "MEDIUM") return df.medium;
-    if (d === "HARD") return df.hard;
-    return df.medium;
-  };
-
   return validated.map((q) => ({
     id: randomUUID(),
     text: q.text,
-    format: formatFor(q.difficulty),
+    format: q.format,
     difficulty: q.difficulty,
     options: q.options ?? null,
     correctAnswer: q.correctAnswer ?? null,

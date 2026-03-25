@@ -1,0 +1,1 @@
+ALTER TABLE `exams` ADD `error_log` text;
