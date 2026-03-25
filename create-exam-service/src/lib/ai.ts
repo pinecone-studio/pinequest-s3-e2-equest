@@ -16,12 +16,10 @@ function examTypeLabel(t: string): string {
 			return "Явцын шалгалт 2";
 		case "MIDTERM":
 			return "Дундын шалгалт";
-		case "TOPIC":
-			return "Улирлын шалгалт";
+		case "FINAL_TERM":
+			return "Жилийн эцсийн шалгалт";
 		case "MID_TERM":
 			return "Дундын шалгалт";
-		case "FINAL_TERM":
-			return "Улирлын/жилийн төгсөлт";
 		default:
 			return t;
 	}

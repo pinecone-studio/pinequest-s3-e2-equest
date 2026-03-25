@@ -4,56 +4,88 @@
 
 Энэ төсөл **Apollo Server биш**, **GraphQL Yoga** (`/api/graphql`) ашиглана. Yoga нь GraphQL HTTP endpoint өгдөг; frontend **Apollo Client**-ээр холбогдоно — нэр төстэй боловч backend дээр Apollo Server суулгах шаардлагагүй.
 
+## Өгөгдлийн урсгал (товч)
+
+```
+Frontend (Apollo mutation)
+    → POST /api/graphql
+        → Mutation.generateExamQuestions → lib/ai.ts (Gemini)
+        → Mutation.saveExam → D1 `exams` (Drizzle)
+Query.health → шалгалтын текст буцаана (одоогоор UI дээр ашиглаагүй)
+```
+
 ## Хавтасууд
 
 | Хавтас / файл | Зориулалт |
 |---------------|-----------|
-| `src/app/api/graphql/route.ts` | Yoga handler (`GET`/`POST`/`OPTIONS`) |
-| `src/graphql/schema.graphql` | **Schema-first** эх (codegen эндээс уншина) |
-| `src/graphql/typeDefs.ts` | Yoga-д өгөх `typeDefs` string (`schema.graphql`-тай синхрон байлгах) |
+| `src/app/api/graphql/route.ts` | Yoga handler (`GET`/`POST`/`OPTIONS`), CORS (`GRAPHQL_CORS_ORIGINS` + localhost:3000) |
+| `src/graphql/schema.graphql` | **Schema-first эх** — frontend codegen эндээс уншина |
+| `src/graphql/typeDefs.ts` | Yoga-д өгөх `typeDefs` string (**`schema.graphql`-тай заавал синхрон**) |
 | `src/graphql/schema.ts` | `createSchema({ typeDefs, resolvers })` |
-| `src/graphql/context.ts` | `GraphQLContext` — D1, `GEMINI_API_KEY` |
-| `src/graphql/types.ts` | Resolver-д ашиглах TS төрлүүд (зарим input) |
-| `src/graphql/resolvers/queries/` | Query resolver-ууд (`health` гэх мэт) |
-| `src/graphql/resolvers/mutations/` | Mutation resolver-ууд (файл тус бүр: нэг mutation) |
+| `src/graphql/context.ts` | `GraphQLContext` — D1 (`DB`), `GEMINI_API_KEY` |
+| `src/graphql/types.ts` | Resolver/AI-д ашиглах зарим TS төрөл (`ExamGenerationInput`, …) |
+| `src/graphql/resolvers/queries/` | Query resolver-ууд (`health.ts`) |
+| `src/graphql/resolvers/mutations/` | Mutation тус бүр тусдаа файл: `generateExamQuestions.ts`, `saveExam.ts` |
 | `src/graphql/resolvers/index.ts` | `Query` + `Mutation` нэгтгэх |
-| `src/graphql/generated/` | `graphql-codegen` гаргах (resolver types) — git-д оруулж болно |
-| `src/lib/ai.ts` | Gemini — асуулт үүсгэх |
-| `src/db/schema.ts` | Drizzle: бүх хүснэгтийг `schema/tables/`-аас re-export |
-| `src/db/schema/tables/` | Хүснэгт бүр тусдаа файл (`exams.ts`, …) |
-| `src/db/index.ts` | `getDb(d1)` |
-| `drizzle/` | `drizzle-kit generate`-ийн SQL migration-ууд |
-| `drizzle.config.ts` | `drizzle-kit` тохиргоо (D1 remote) |
-| `codegen.ts` | Backend codegen (`typescript-resolvers`) |
+| `src/graphql/generated/resolvers-types.ts` | Backend `bun run codegen` — `Resolvers` type |
+| `src/lib/ai.ts` | Gemini — `generateExamQuestions` дотор дуудагдана |
+| `src/db/schema.ts` | Drizzle: `schema/index` re-export |
+| `src/db/schema/tables/` | Хүснэгт бүр тусдаа (`exams.ts`, …) |
+| `src/db/index.ts` | D1 → Drizzle instance |
+| `drizzle/` | `drizzle-kit generate`-ийн SQL (`wrangler d1 migrations apply …`) |
+| `drizzle.config.ts` | `drizzle-kit` (remote D1 холболт `.env`-ээс) |
+| `codegen.ts` | Backend codegen (`typescript` + `typescript-resolvers`) |
+| `.env.example` | Drizzle remote, `GRAPHQL_CORS_ORIGINS` |
+| `.dev.vars.example` | Локал Worker: `GEMINI_API_KEY` (хуулж `.dev.vars`) |
+
+**Mutations (бизнес логик):**
+
+| Mutation | Resolver файл | Товч утга |
+|----------|----------------|-----------|
+| `generateExamQuestions` | `mutations/generateExamQuestions.ts` | Gemini-ээр асуулт үүсгэх |
+| `saveExam` | `mutations/saveExam.ts` | `ExamGenerationInput` + асуултууд → `exams` хүснэгт (`DRAFT` / `PUBLISHED`) |
+
+## Script-ууд (`package.json`)
+
+| Script | Тайлбар |
+|--------|---------|
+| `bun run dev` | Next dev, порт **3001** |
+| `bun run codegen` | `src/graphql/generated/resolvers-types.ts` шинэчлэх |
+| `bun run db:generate` | Шинэ migration SQL үүсгэх |
+| `bun run db:migrate:local` | D1 локал: `wrangler d1 migrations apply create-exams --local` |
+| `bun run db:migrate:remote` | D1 production: ижил нэртэй DB-д `--remote` |
 
 ## Drizzle: хаана бичих вэ
 
 1. Шинэ хүснэгт: `src/db/schema/tables/<нэр>.ts` дотор `sqliteTable(...)` тодорхойлно.
 2. `src/db/schema/index.ts` дотор `export * from "./tables/<нэр>"` нэмнэ.
-3. `src/db/schema.ts` нь зөвхөн `export * from "./schema/index"` — ихэвчлэн өөрчлөх шаардлагагүй.
+3. `src/db/schema.ts` ихэвчлэн өөрчлөх шаардлагагүй (`export * from "./schema/index"`).
 
-**Remote D1 дээр migration:**
+**Migration ажиллуулах:**
 
 ```bash
 cd create-exam-service
-# .env: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID, CLOUDFLARE_D1_TOKEN
+# Шаардлагатай: .env (Drizzle remote), эсвэл зөвхөн локал бол wrangler local
 bun run db:generate
-bunx wrangler d1 migrations apply <database_name> --remote
+bun run db:migrate:local   # эсвэл db:migrate:remote
 ```
 
-Локал ашиглавал Wrangler-ийн заавартай `d1 migrations apply --local`.
+## GraphQL codegen (хоёр тал)
 
-## GraphQL codegen
+| Тал | Конфиг | Үр дүн |
+|-----|--------|--------|
+| **Backend** | `create-exam-service/codegen.ts` | `generated/resolvers-types.ts` |
+| **Frontend** | `frontend/codegen.ts` (schema → энэхүү `schema.graphql`) | `frontend/src/gql/graphql.ts` (төрлүүд); баримт нь `create-exam-documents.ts` (Apollo `gql`) |
 
-| Төсөл | Файл | Үр дүн |
-|-------|------|--------|
-| Backend | `codegen.ts` | `src/graphql/generated/resolvers-types.ts` — resolver-ийн `Resolvers` type |
-| Frontend | `frontend/codegen.ts` | `src/gql/` — Apollo/React-д `gql` + typed documents |
-
-Ажиллуулах: тухайн package.json доторх `codegen` script.
+Схем өөрчлөгдсөн бол: **эхлээд** энд `schema.graphql` + `typeDefs.ts`, **`bun run codegen`**, дараа нь `frontend`-д `bun run codegen`.
 
 ## Шинэ mutation/query нэмэх
 
-1. `schema.graphql` + `typeDefs.ts` дээр тодорхойлолт нэмнэ.
-2. `resolvers/mutations/<нэр>.ts` эсвэл `resolvers/queries/<нэр>.ts` үүсгэж, `index.ts`-д spread/import нэмнэ.
-3. `bun run codegen` (backend) ажиллуулж төрөл шинэчилнэ.
+1. `schema.graphql` + `typeDefs.ts` дээр ижил өөрчлөлт хийнэ.
+2. `resolvers/mutations/<нэр>.ts` эсвэл `resolvers/queries/<нэр>.ts` үүсгэж, тухайн `index.ts`-д нэгтгэнэ.
+3. `bun run codegen` (backend).
+4. Frontend: `frontend/src/gql/create-exam-documents.ts` дотор `gql` operation нэмж, `frontend`-д `bun run codegen`.
+
+## Нэмэлт баримт
+
+- Frontend бүтэц: [`frontend/docs/structure.md`](../../frontend/docs/structure.md)

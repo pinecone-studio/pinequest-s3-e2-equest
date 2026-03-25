@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useMutation } from "@apollo/client/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,43 +17,49 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import {
-	requestGenerateExamQuestions,
+	GenerateExamQuestionsDocument,
+	SaveExamDocument,
+} from "@/gql/create-exam-documents";
+import {
+	ExamStatus,
+	ExamType,
+	QuestionFormat,
 	type ExamGenerationInput,
+	type ExamGenerationResult,
 	type GeneratedQuestion,
-	type QuestionFormatId,
-} from "@/lib/create-exam-graphql";
+	type SaveExamInput,
+	type SaveExamPayload,
+} from "@/gql/graphql";
 
 const GRADE_CLASSES = Array.from({ length: 4 }, (_, i) => i + 9).flatMap((g) =>
 	(["a", "b", "c", "d"] as const).map((s) => `${g}${s}`),
 );
 
-const SUBJECTS = [
-	"Математик",
-	"Монгол хэл",
-	"Англи хэл",
-	"Физик",
-	"Хими",
-	"Биологи",
-	"Түүх",
-	"Нийгэм",
-] as const;
-
-const EXAM_TYPES: {
-	value: ExamGenerationInput["examType"];
-	label: string;
-}[] = [
-	{ value: "PERIODIC_1", label: "Явцын шалгалт 1" },
-	{ value: "PERIODIC_2", label: "Явцын шалгалт 2" },
-	{ value: "MIDTERM", label: "Дундын шалгалт" },
-	{ value: "TOPIC", label: "Улирлын шалгалт" },
+/** `value` — сонгогчийн түлхүүр; `label` — харуулах ба GraphQL `subject` (AI-д очих текст) */
+const SUBJECTS: { value: string; label: string }[] = [
+	{ value: "math", label: "Математик" },
+	{ value: "mongolian", label: "Монгол хэл" },
+	{ value: "english", label: "Англи хэл" },
+	{ value: "physics", label: "Физик" },
+	{ value: "chemistry", label: "Хими" },
+	{ value: "biology", label: "Биологи" },
+	{ value: "history", label: "Түүх" },
+	{ value: "social", label: "Нийгэм" },
 ];
 
-const FORMAT_SELECT_OPTIONS: { id: QuestionFormatId; label: string }[] = [
-	{ id: "SINGLE_CHOICE", label: "Нэг зөв хувилбартай" },
-	{ id: "MULTIPLE_CHOICE", label: "Олон зөв хувилбартай" },
-	{ id: "MATCHING", label: "Холбох" },
-	{ id: "FILL_IN", label: "Нөхөж оруулах" },
-	{ id: "WRITTEN", label: "Бичиж хариулах" },
+const EXAM_TYPES: { value: ExamType; label: string }[] = [
+	{ value: ExamType.Periodic_1, label: "Явцын шалгалт 1" },
+	{ value: ExamType.Periodic_2, label: "Явцын шалгалт 2" },
+	{ value: ExamType.Midterm, label: "Дундын шалгалт" },
+	{ value: ExamType.FinalTerm, label: "Жилийн эцсийн шалгалт" },
+];
+
+const FORMAT_SELECT_OPTIONS: { id: QuestionFormat; label: string }[] = [
+	{ id: QuestionFormat.SingleChoice, label: "Нэг зөв хувилбартай" },
+	{ id: QuestionFormat.MultipleChoice, label: "Олон зөв хувилбартай" },
+	{ id: QuestionFormat.Matching, label: "Холбох" },
+	{ id: QuestionFormat.FillIn, label: "Нөхөж оруулах" },
+	{ id: QuestionFormat.Written, label: "Бичиж хариулах" },
 ];
 
 /**
@@ -108,9 +115,12 @@ function parseUIntFromInput(raw: string): number {
 
 export default function GenerateExamPage() {
 	const [gradeClass, setGradeClass] = React.useState(GRADE_CLASSES[0] ?? "9a");
-	const [subject, setSubject] = React.useState<string>(SUBJECTS[0] ?? "Математик");
-	const [examType, setExamType] =
-		React.useState<ExamGenerationInput["examType"]>("PERIODIC_1");
+	const [subjectValue, setSubjectValue] = React.useState(
+		SUBJECTS[0]?.value ?? "math",
+	);
+	const subjectLabel =
+		SUBJECTS.find((s) => s.value === subjectValue)?.label ?? subjectValue;
+	const [examType, setExamType] = React.useState<ExamType>(ExamType.Periodic_1);
 	const [topicScope, setTopicScope] = React.useState("");
 	const [examDate, setExamDate] = React.useState(getTodayDateInputValue);
 	const [examTime, setExamTime] = React.useState("09:00");
@@ -127,18 +137,32 @@ export default function GenerateExamPage() {
 	const [easyPts, setEasyPts] = React.useState<number | "">(1);
 	const [mediumPts, setMediumPts] = React.useState<number | "">(2);
 	const [hardPts, setHardPts] = React.useState<number | "">(3);
-	const [formatEasy, setFormatEasy] =
-		React.useState<QuestionFormatId>("SINGLE_CHOICE");
-	const [formatMedium, setFormatMedium] =
-		React.useState<QuestionFormatId>("SINGLE_CHOICE");
-	const [formatHard, setFormatHard] =
-		React.useState<QuestionFormatId>("SINGLE_CHOICE");
+	const [formatEasy, setFormatEasy] = React.useState<QuestionFormat>(
+		QuestionFormat.SingleChoice,
+	);
+	const [formatMedium, setFormatMedium] = React.useState<QuestionFormat>(
+		QuestionFormat.SingleChoice,
+	);
+	const [formatHard, setFormatHard] = React.useState<QuestionFormat>(
+		QuestionFormat.SingleChoice,
+	);
 
 	const [loading, setLoading] = React.useState(false);
 	const [error, setError] = React.useState<string | null>(null);
 	const [questions, setQuestions] = React.useState<GeneratedQuestion[] | null>(
 		null,
 	);
+	/** Хадгалахад ашиглана — сүүлийн амжилттай generate-ийн оролт */
+	const [lastGenerationInput, setLastGenerationInput] =
+		React.useState<ExamGenerationInput | null>(null);
+	const [savedExamId, setSavedExamId] = React.useState<string | null>(null);
+	const [saving, setSaving] = React.useState(false);
+	const [saveError, setSaveError] = React.useState<string | null>(null);
+
+	const [generateMutation] = useMutation(GenerateExamQuestionsDocument);
+	const [saveMutation] = useMutation(SaveExamDocument);
+	const generateInFlightRef = React.useRef(false);
+	const saveInFlightRef = React.useRef(false);
 
 	const easyPct = partition[0];
 	const mediumPct = Math.max(0, partition[1] - partition[0]);
@@ -169,6 +193,9 @@ export default function GenerateExamPage() {
 
 	const onSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
+		if (generateInFlightRef.current) {
+			return;
+		}
 		setError(null);
 		if (easy + medium + hard !== totalCount) {
 			setError(
@@ -178,7 +205,7 @@ export default function GenerateExamPage() {
 		}
 		const input: ExamGenerationInput = {
 			gradeClass,
-			subject,
+			subject: subjectLabel,
 			examType,
 			topicScope: topicScope.trim(),
 			examDate,
@@ -219,14 +246,72 @@ export default function GenerateExamPage() {
 			return;
 		}
 
+		generateInFlightRef.current = true;
 		setLoading(true);
 		try {
-			const q = await requestGenerateExamQuestions(input);
+			const { data } = await generateMutation({
+				variables: { input },
+			});
+			const q = (
+				data as { generateExamQuestions?: ExamGenerationResult } | undefined
+			)?.generateExamQuestions?.questions;
+			if (!q?.length) {
+				throw new Error("Хариу хоосон байна");
+			}
 			setQuestions(q);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Алдаа гарлаа");
+			setLastGenerationInput(input);
+			setSavedExamId(null);
+			setSaveError(null);
+		} catch (err: unknown) {
+			const message =
+				err instanceof Error ? err.message : "Алдаа гарлаа";
+			setError(message);
 		} finally {
+			generateInFlightRef.current = false;
 			setLoading(false);
+		}
+	};
+
+	const onSaveDraft = async () => {
+		if (saveInFlightRef.current) {
+			return;
+		}
+		setSaveError(null);
+		if (!lastGenerationInput || !questions?.length) {
+			setSaveError("Эхлээд асуулт үүсгэнэ үү.");
+			return;
+		}
+		saveInFlightRef.current = true;
+		setSaving(true);
+		try {
+			const input: SaveExamInput = {
+				status: ExamStatus.Draft,
+				generation: lastGenerationInput,
+				questions: questions.map((q) => ({
+					id: q.id,
+					text: q.text,
+					format: q.format,
+					difficulty: q.difficulty,
+					options: q.options ?? undefined,
+					correctAnswer: q.correctAnswer ?? undefined,
+					explanation: q.explanation ?? undefined,
+				})),
+			};
+			if (savedExamId) {
+				input.examId = savedExamId;
+			}
+			const { data } = await saveMutation({ variables: { input } });
+			const examId = (data as { saveExam?: SaveExamPayload } | undefined)
+				?.saveExam?.examId;
+			if (!examId) {
+				throw new Error("Хадгалах хариу хоосон байна");
+			}
+			setSavedExamId(examId);
+		} catch (err) {
+			setSaveError(err instanceof Error ? err.message : "Хадгалахад алдаа гарлаа");
+		} finally {
+			saveInFlightRef.current = false;
+			setSaving(false);
 		}
 	};
 
@@ -262,14 +347,14 @@ export default function GenerateExamPage() {
 							</div>
 							<div className="space-y-2">
 								<Label>Хичээл</Label>
-								<Select value={subject} onValueChange={setSubject}>
+								<Select value={subjectValue} onValueChange={setSubjectValue}>
 									<SelectTrigger>
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
 										{SUBJECTS.map((s) => (
-											<SelectItem key={s} value={s}>
-												{s}
+											<SelectItem key={s.value} value={s.value}>
+												{s.label}
 											</SelectItem>
 										))}
 									</SelectContent>
@@ -281,9 +366,7 @@ export default function GenerateExamPage() {
 							<Label>Шалгалтын төрөл</Label>
 							<Select
 								value={examType}
-								onValueChange={(v) =>
-									setExamType(v as ExamGenerationInput["examType"])
-								}
+								onValueChange={(v) => setExamType(v as ExamType)}
 							>
 								<SelectTrigger>
 									<SelectValue />
@@ -438,7 +521,7 @@ export default function GenerateExamPage() {
 									<Select
 										value={formatEasy}
 										onValueChange={(v) =>
-											setFormatEasy(v as QuestionFormatId)
+											setFormatEasy(v as QuestionFormat)
 										}
 									>
 										<SelectTrigger>
@@ -460,7 +543,7 @@ export default function GenerateExamPage() {
 									<Select
 										value={formatMedium}
 										onValueChange={(v) =>
-											setFormatMedium(v as QuestionFormatId)
+											setFormatMedium(v as QuestionFormat)
 										}
 									>
 										<SelectTrigger>
@@ -482,7 +565,7 @@ export default function GenerateExamPage() {
 									<Select
 										value={formatHard}
 										onValueChange={(v) =>
-											setFormatHard(v as QuestionFormatId)
+											setFormatHard(v as QuestionFormat)
 										}
 									>
 										<SelectTrigger>
@@ -588,8 +671,35 @@ export default function GenerateExamPage() {
 						<CardTitle className="text-base">
 							Үүссэн асуултууд ({questions.length})
 						</CardTitle>
+						{savedExamId ? (
+							<p className="text-xs text-muted-foreground">
+								Хадгалагдсан ID:{" "}
+								<code className="rounded bg-muted px-1 py-0.5 text-[11px]">
+									{savedExamId}
+								</code>
+							</p>
+						) : null}
 					</CardHeader>
 					<CardContent className="space-y-6">
+						<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+							<Button
+								type="button"
+								variant="secondary"
+								disabled={saving}
+								onClick={onSaveDraft}
+							>
+								{saving
+									? "Хадгалж байна…"
+									: savedExamId
+										? "DRAFT шинэчлэх"
+										: "DRAFT хадгалах"}
+							</Button>
+							{saveError ? (
+								<p className="text-sm text-destructive" role="alert">
+									{saveError}
+								</p>
+							) : null}
+						</div>
 						{questions.map((q, i) => (
 							<div
 								key={q.id}

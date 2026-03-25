@@ -4,7 +4,12 @@ export const typeDefs = /* GraphQL */ `
     PERIODIC_1
     PERIODIC_2
     MIDTERM
-    TOPIC
+    FINAL_TERM
+  }
+
+  enum ExamStatus {
+    DRAFT
+    PUBLISHED
   }
 
   enum Difficulty {
@@ -53,6 +58,23 @@ export const typeDefs = /* GraphQL */ `
     difficultyFormats: DifficultyFormatsInput!
   }
 
+  input EditableQuestionInput {
+    id: ID!
+    text: String!
+    format: QuestionFormat!
+    difficulty: Difficulty!
+    options: [String!]
+    correctAnswer: String
+    explanation: String
+  }
+
+  input SaveExamInput {
+    examId: ID
+    status: ExamStatus!
+    generation: ExamGenerationInput!
+    questions: [EditableQuestionInput!]!
+  }
+
   type GeneratedQuestion {
     id: ID!
     text: String!
@@ -67,11 +89,17 @@ export const typeDefs = /* GraphQL */ `
     questions: [GeneratedQuestion!]!
   }
 
+  type SaveExamPayload {
+    examId: ID!
+    status: ExamStatus!
+  }
+
   type Query {
     health: String!
   }
 
   type Mutation {
     generateExamQuestions(input: ExamGenerationInput!): ExamGenerationResult!
+    saveExam(input: SaveExamInput!): SaveExamPayload!
   }
 `;

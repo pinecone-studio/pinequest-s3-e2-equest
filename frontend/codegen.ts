@@ -7,7 +7,7 @@ import type { CodegenConfig } from "@graphql-codegen/cli";
 const config: CodegenConfig = {
 	overwrite: true,
 	schema: "../create-exam-service/src/graphql/schema.graphql",
-	documents: ["src/**/*.{ts,tsx}"],
+	documents: ["src/gql/create-exam-documents.ts"],
 	ignoreNoDocuments: true,
 	generates: {
 		"src/gql/": {

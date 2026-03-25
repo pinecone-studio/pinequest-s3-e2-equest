@@ -61,5 +61,8 @@
 		* Note: Use secrets to store sensitive data.
 		* https://developers.cloudflare.com/workers/configuration/secrets/
 		*/
-		// "vars": { "GEMINI_API_KEY": "set via wrangler secret put GEMINI_API_KEY or .dev.vars for local" }
+		// "vars": {
+		//   "GRAPHQL_CORS_ORIGINS": "https://your-frontend.pages.dev"
+		// }
+		// GEMINI_API_KEY: wrangler secret put GEMINI_API_KEY эсвэл .dev.vars
 	}

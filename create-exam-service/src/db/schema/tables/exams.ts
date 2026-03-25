@@ -1,8 +1,7 @@
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 /**
- * Ирээдүйд draft / батлагдсан шалгалт хадгалах хүснэгтийн загвар.
- * `drizzle-kit generate` ажиллуулахад migration үүснэ.
+ * Draft / батлагдсан шалгалт — `payload_json` дотор generation + questions (JSON).
  */
 export const exams = sqliteTable("exams", {
 	id: text("id").primaryKey(),

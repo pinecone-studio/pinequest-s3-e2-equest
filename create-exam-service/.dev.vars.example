@@ -1,0 +1,7 @@
+# Хуулаад `.dev.vars` болгон нэрлэнэ (git-д орохгүй).
+# Wrangler dev / OpenNext local дээр Worker-д GEMINI түлхүүр дамжуулна.
+
+GEMINI_API_KEY=AIzaSyBemcb1-AiaIKgXMMuShEB-HkL22X4xVto
+
+# Шаардлагатай бол CORS (wrangler.jsonc vars эсвэл энд)
+# GRAPHQL_CORS_ORIGINS=http://localhost:3000
