@@ -23,6 +23,13 @@ export type ExamGenerationInput = {
 		medium: string;
 		hard: string;
 	};
+	formatDistribution?: {
+		singleChoice: number;
+		multipleChoice: number;
+		matching: number;
+		fillIn: number;
+		written: number;
+	} | null;
 };
 
 export type GeneratedQuestionPayload = {

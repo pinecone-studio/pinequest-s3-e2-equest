@@ -1,6 +1,7 @@
 import type { GraphQLContext } from "../../context";
 import type { ExamGenerationInput } from "../../types";
 import { generateExamQuestionsWithAI } from "../../../lib/ai";
+import { saveExamMutation } from "./saveExam";
 
 /** AI руу явуулахаас өмнө ирсэн GraphQL `input`-ийг харах (терминал / `wrangler tail`) */
 function logGenerationInputIfEnabled(
@@ -33,6 +34,18 @@ export const generateExamQuestionsMutation = {
 		logGenerationInputIfEnabled(args.input, ctx.env.LOG_GRAPHQL_GENERATION);
 		const apiKey = ctx.env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY ?? "";
 		const questions = await generateExamQuestionsWithAI(apiKey, args.input);
-		return { questions };
+		// Best practice: generate дуусмагц DRAFT хадгалаад examId буцаах
+		const saved = await saveExamMutation.saveExam(
+			_,
+			{
+				input: {
+					status: "DRAFT",
+					generation: args.input,
+					questions,
+				},
+			} as any,
+			ctx,
+		);
+		return { examId: saved.examId, questions };
 	},
 };

@@ -5,6 +5,7 @@ export const typeDefs = /* GraphQL */ `
     PERIODIC_2
     MIDTERM
     FINAL_TERM
+    PRACTICE
   }
 
   enum ExamStatus {
@@ -44,6 +45,14 @@ export const typeDefs = /* GraphQL */ `
     hard: QuestionFormat!
   }
 
+  input FormatDistributionInput {
+    singleChoice: Int!
+    multipleChoice: Int!
+    matching: Int!
+    fillIn: Int!
+    written: Int!
+  }
+
   input ExamGenerationInput {
     gradeClass: String!
     subject: String!
@@ -56,6 +65,7 @@ export const typeDefs = /* GraphQL */ `
     difficultyDistribution: DifficultyDistributionInput!
     difficultyPoints: DifficultyPointsInput
     difficultyFormats: DifficultyFormatsInput!
+    formatDistribution: FormatDistributionInput
   }
 
   input EditableQuestionInput {
@@ -86,6 +96,7 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type ExamGenerationResult {
+    examId: ID!
     questions: [GeneratedQuestion!]!
   }
 

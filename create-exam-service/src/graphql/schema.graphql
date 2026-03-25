@@ -3,6 +3,7 @@ enum ExamType {
   PERIODIC_2
   MIDTERM
   FINAL_TERM
+  PRACTICE
 }
 
 enum ExamStatus {
@@ -42,6 +43,14 @@ input DifficultyFormatsInput {
   hard: QuestionFormat!
 }
 
+input FormatDistributionInput {
+  singleChoice: Int!
+  multipleChoice: Int!
+  matching: Int!
+  fillIn: Int!
+  written: Int!
+}
+
 input ExamGenerationInput {
   gradeClass: String!
   subject: String!
@@ -54,6 +63,7 @@ input ExamGenerationInput {
   difficultyDistribution: DifficultyDistributionInput!
   difficultyPoints: DifficultyPointsInput
   difficultyFormats: DifficultyFormatsInput!
+  formatDistribution: FormatDistributionInput
 }
 
 input EditableQuestionInput {
@@ -84,6 +94,7 @@ type GeneratedQuestion {
 }
 
 type ExamGenerationResult {
+  examId: ID!
   questions: [GeneratedQuestion!]!
 }
 
