@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `attempts_test_student_unique_idx` ON `attempts` (`test_id`,`student_id`);

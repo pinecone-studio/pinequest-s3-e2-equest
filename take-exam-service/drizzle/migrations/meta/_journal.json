@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1774423989583,
+      "tag": "0000_dizzy_sheva_callister",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1774431969508,
+      "tag": "0001_fuzzy_blackheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1774434759877,
+      "tag": "0002_rainy_kabuki",
+      "breakpoints": true
+    }
+  ]
+}

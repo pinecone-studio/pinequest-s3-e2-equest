@@ -1,0 +1,1 @@
+ALTER TABLE `attempts` ADD `shuffle_manifest` text;

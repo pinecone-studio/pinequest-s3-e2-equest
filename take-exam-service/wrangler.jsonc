@@ -1,60 +1,55 @@
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "take-exam-service",
-  "main": ".open-next/worker.js",
-  "compatibility_date": "2026-03-17",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  "assets": {
-    "binding": "ASSETS",
-    "directory": ".open-next/assets",
-  },
-  "images": {
-    // Enable image optimization
-    // see https://opennext.js.org/cloudflare/howtos/image
-    "binding": "IMAGES",
-  },
-  "services": [
-    {
-      "binding": "CREATE_EXAM_API",
-      "service": "create-exam-service",
-    },
-  ],
-  "observability": {
-    "enabled": true,
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "take-exams",
-      "database_id": "20cb8740-9127-475d-bcc4-17e425493950",
-      "remote": true,
-      "migrations_dir": "drizzle",
-    },
-  ],
-  /**
-   * Smart Placement
-   * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-   */
-  // "placement": {  "mode": "smart" }
-  /**
-   * Bindings
-   * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-   * databases, object storage, AI inference, real-time communication and more.
-   * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-   */
-  /**
-   * Environment Variables
-   * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-   * Note: Use secrets to store sensitive data.
-   * https://developers.cloudflare.com/workers/configuration/secrets/
-   */
-  // "vars": {  "MY_VARIABLE": "production_value" }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "take-exam-service",
+	"main": "src/entry.ts",
+	"compatibility_date": "2026-03-17",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".open-next/assets"
+	},
+	"images": {
+		"binding": "IMAGES"
+	},
+	"services": [
+		{
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "take-exam-service"
+		}
+	],
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "take-exams",
+			"database_id": "20cb8740-9127-475d-bcc4-17e425493950",
+			"migrations_dir": "drizzle/migrations"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "EXAM_CACHE",
+			"id": "7aa69814b3574a6185786008957a21c3"
+		}
+	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "EXAM_SUBMISSION_QUEUE",
+				"queue": "exam-submission-queue"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "exam-submission-queue",
+				"max_batch_size": 10,
+				"max_batch_timeout": 30
+			}
+		]
+	}
 }
