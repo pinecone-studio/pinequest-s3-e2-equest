@@ -34,7 +34,16 @@
 		],
 		"observability": {
 			"enabled": true
-		}
+		},
+		"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "create-exams",
+			"database_id": "f90dad03-6683-4e49-b58b-167632fdc471",
+			"remote": true,
+			"migrations_dir": "drizzle",
+		},
+	],
 		/**
 		* Smart Placement
 		* https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
@@ -52,5 +61,12 @@
 		* Note: Use secrets to store sensitive data.
 		* https://developers.cloudflare.com/workers/configuration/secrets/
 		*/
-		// "vars": {  "MY_VARIABLE": "production_value" }
+		"vars": {
+			// Deploy дээр фронтоос ирсэн generateExamQuestions input-ийг AI-аас өмнө console-д бичнэ.
+			// Workers Logs эсвэл: npx wrangler tail create-exam-service
+			// Унтраах: "0" | Dashboard → Variables → LOG_GRAPHQL_GENERATION
+			"LOG_GRAPHQL_GENERATION": "1",
+			// "GRAPHQL_CORS_ORIGINS": "https://your-frontend.pages.dev"
+		},
+		// GEMINI_API_KEY: wrangler secret put GEMINI_API_KEY эсвэл .dev.vars
 	}
