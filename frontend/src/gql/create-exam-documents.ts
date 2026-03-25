@@ -3,6 +3,7 @@ import { gql } from "@apollo/client";
 export const GenerateExamQuestionsDocument = gql(`
 	mutation GenerateExamQuestions($input: ExamGenerationInput!) {
 		generateExamQuestions(input: $input) {
+			examId
 			questions {
 				id
 				text

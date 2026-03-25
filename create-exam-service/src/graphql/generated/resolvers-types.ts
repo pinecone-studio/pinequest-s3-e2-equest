@@ -59,14 +59,24 @@ export type ExamGenerationInput = {
   examDate: Scalars['String']['input'];
   examTime: Scalars['String']['input'];
   examType: ExamType;
+  formatDistribution?: InputMaybe<FormatDistributionInput>;
   gradeClass: Scalars['String']['input'];
   subject: Scalars['String']['input'];
   topicScope: Scalars['String']['input'];
   totalQuestionCount: Scalars['Int']['input'];
 };
 
+export type FormatDistributionInput = {
+  fillIn: Scalars['Int']['input'];
+  matching: Scalars['Int']['input'];
+  multipleChoice: Scalars['Int']['input'];
+  singleChoice: Scalars['Int']['input'];
+  written: Scalars['Int']['input'];
+};
+
 export type ExamGenerationResult = {
   __typename?: 'ExamGenerationResult';
+  examId: Scalars['ID']['output'];
   questions: Array<GeneratedQuestion>;
 };
 
@@ -78,6 +88,7 @@ export enum ExamStatus {
 export enum ExamType {
   FinalTerm = 'FINAL_TERM',
   Midterm = 'MIDTERM',
+  Practice = 'PRACTICE',
   Periodic_1 = 'PERIODIC_1',
   Periodic_2 = 'PERIODIC_2'
 }
@@ -252,6 +263,7 @@ export type ResolversParentTypes = ResolversObject<{
 }>;
 
 export type ExamGenerationResultResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['ExamGenerationResult'] = ResolversParentTypes['ExamGenerationResult']> = ResolversObject<{
+  examId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   questions?: Resolver<Array<ResolversTypes['GeneratedQuestion']>, ParentType, ContextType>;
 }>;
 
