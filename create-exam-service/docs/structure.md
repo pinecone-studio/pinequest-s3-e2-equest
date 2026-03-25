@@ -42,8 +42,35 @@ Query.health → шалгалтын текст буцаана (одоогоор 
 
 | Mutation | Resolver файл | Товч утга |
 |----------|----------------|-----------|
-| `generateExamQuestions` | `mutations/generateExamQuestions.ts` | Gemini-ээр асуулт үүсгэх |
+| `generateExamQuestions` | `mutations/generateExamQuestions.ts` | Gemini-ээр асуулт үүсгэх; **AI-аас өмнө** фронтын `input`-ийг логлох: `wrangler.jsonc` → `vars.LOG_GRAPHQL_GENERATION` (`1` идэвхтэй, `0` унтраа), эсвэл локалд `NODE_ENV=development`. Deploy дээр харах: **Workers Logs** эсвэл `npx wrangler tail <worker-нэр>` |
 | `saveExam` | `mutations/saveExam.ts` | `ExamGenerationInput` + асуултууд → `exams` хүснэгт (`DRAFT` / `PUBLISHED`) |
+
+## Deploy дээр лог харах (`generateExamQuestions` input)
+
+Урьдчилсан нөхцөл: `wrangler.jsonc` дотор `vars.LOG_GRAPHQL_GENERATION` нь `"1"` байх (эсвэл Dashboard-аас ижил variable тохируулсан). Дараа нь фронтоос «асуулт үүсгэх» дарахад `[generateExamQuestions] GraphQL input` мөр гарна.
+
+### A) Терминалаас (`wrangler tail`)
+
+1. Нэг удаа Cloudflare-д холбогдсон эсэхээ шалгана: `npx wrangler login` (шаардлагатай бол).
+2. Төслийн хавтаснаас: `cd create-exam-service`
+3. Worker нэрийг `wrangler.jsonc` дахь `"name"`-аас авна (одоогоор `create-exam-service`).
+4. Ажиллуулна:
+
+```bash
+npx wrangler tail create-exam-service
+```
+
+5. Энэ цонх нээлттэй байх хооронд хөтөчөөс шалгалт үүсгэх хүсэлт илгээнэ — терминалд `console.info` логууд урсна.
+
+### B) Cloudflare Dashboard (хөтөч)
+
+1. [dash.cloudflare.com](https://dash.cloudflare.com) руу нэвтэрнэ.
+2. Зүүн цэс эсвэл **Workers & Pages** (эсвэл **Compute (Workers)**) руу орно.
+3. Жагсаалтаас **таны deploy хийсэн Worker**-ийг сонгоно (нэр нь ихэвчлэн `create-exam-service` эсвэл таны өөрчлөсөн нэр).
+4. Дотор нь **Logs**, **Real-time Logs**, эсвэл **Observability** гэсэн хэсгийг нээнэ (Cloudflare-ийн UI өөрчлөгдөж болно; гол нь тухайн Worker-ийн **илүү цаг үеийн / real-time log** харагдах хуудас).
+5. Лог цонхыг нээлттэй үлдээж, фронтоос generate дуудлага илгээнэ — `[generateExamQuestions]` мөрүүд харагдана.
+
+**Анхаар:** Dashboard-д зарим төлөвлөгөөнд лог хадгалалт/хугацаа хязгаартай байж болно; шууд ажиглахад `wrangler tail` илүү найдвартай.
 
 ## Script-ууд (`package.json`)
 

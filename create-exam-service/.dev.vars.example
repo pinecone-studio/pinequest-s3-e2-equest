@@ -1,7 +1,11 @@
 # Хуулаад `.dev.vars` болгон нэрлэнэ (git-д орохгүй).
 # Wrangler dev / OpenNext local дээр Worker-д GEMINI түлхүүр дамжуулна.
 
-GEMINI_API_KEY=AIzaSyBemcb1-AiaIKgXMMuShEB-HkL22X4xVto
+GEMINI_API_KEY=
+
+# Deploy-тай ижил: `wrangler.jsonc` → vars.LOG_GRAPHQL_GENERATION (эсвэл Dashboard Variables).
+# 1 = фронтоос ирсэн generate input-ийг AI-аас өмнө лог (терминал / wrangler tail / Workers Logs)
+# LOG_GRAPHQL_GENERATION=1
 
 # Шаардлагатай бол CORS (wrangler.jsonc vars эсвэл энд)
 # GRAPHQL_CORS_ORIGINS=http://localhost:3000

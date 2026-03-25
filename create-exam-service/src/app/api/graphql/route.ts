@@ -1,3 +1,4 @@
+import type { NextRequest } from "next/server";
 import { createYoga } from "graphql-yoga";
 import { createGraphQLContext, type GraphQLContext } from "@/graphql/context";
 import { schema } from "@/graphql/schema";
@@ -22,6 +23,11 @@ const yoga = createYoga<GraphQLContext>({
 	context: createGraphQLContext,
 });
 
-export const GET = yoga;
-export const POST = yoga;
-export const OPTIONS = yoga;
+/** Next.js 16 `RouteHandlerConfig` нь `YogaServerInstance`-ийг шууд хүлээн авахгүй — Request → Response wrapper */
+function graphqlRoute(request: NextRequest) {
+	return yoga(request);
+}
+
+export const GET = graphqlRoute;
+export const POST = graphqlRoute;
+export const OPTIONS = graphqlRoute;
