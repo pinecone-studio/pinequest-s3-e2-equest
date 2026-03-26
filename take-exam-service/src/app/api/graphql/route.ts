@@ -2,6 +2,7 @@ import { createYoga } from "graphql-yoga";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { schema } from "@/lib/graphql/schema";
+import { validateSebRequest } from "@/lib/seb/verify";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +19,22 @@ const yoga = createYoga({
 });
 
 async function handleYogaRequest(request: Request) {
+  const sebValidation = validateSebRequest(request);
+  if (!sebValidation.ok) {
+    return new Response(
+      JSON.stringify({
+        errors: [{ message: sebValidation.message }],
+      }),
+      {
+        status: 403,
+        headers: {
+          "Content-Type": "application/json",
+          ...corsHeaders,
+        },
+      },
+    );
+  }
+
   try {
     const response = await yoga.handleRequest(request, {});
 
