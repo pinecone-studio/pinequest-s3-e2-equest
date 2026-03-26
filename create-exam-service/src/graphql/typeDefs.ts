@@ -109,6 +109,46 @@ export const typeDefs = /* GraphQL */ `
     updatedAt: String!
   }
 
+  enum MathExamQuestionType {
+    MCQ
+    MATH
+  }
+
+  input NewMathExamGeneratorMetaInput {
+    difficulty: String
+    topics: String
+    sourceContext: String
+  }
+
+  input NewMathExamQuestionInput {
+    id: ID
+    type: MathExamQuestionType!
+    prompt: String!
+    points: Int!
+    imageAlt: String
+    imageDataUrl: String
+    options: [String!]
+    correctOption: Int
+    responseGuide: String
+    answerLatex: String
+  }
+
+  input SaveNewMathExamInput {
+    examId: ID
+    title: String!
+    mcqCount: Int!
+    mathCount: Int!
+    totalPoints: Int!
+    generator: NewMathExamGeneratorMetaInput
+    questions: [NewMathExamQuestionInput!]!
+  }
+
+  type SaveNewMathExamPayload {
+    examId: ID!
+    createdAt: String!
+    updatedAt: String!
+  }
+
   type Query {
     health: String!
   }
@@ -116,5 +156,6 @@ export const typeDefs = /* GraphQL */ `
   type Mutation {
     generateExamQuestions(input: ExamGenerationInput!): ExamGenerationResult!
     saveExam(input: SaveExamInput!): SaveExamPayload!
+    saveNewMathExam(input: SaveNewMathExamInput!): SaveNewMathExamPayload!
   }
 `;

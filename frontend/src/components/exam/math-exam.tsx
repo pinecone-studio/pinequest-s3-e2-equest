@@ -1,9 +1,11 @@
 "use client";
 
+import { useMutation } from "@apollo/client/react";
 import { useState } from "react";
 
 import { MathExamControls } from "@/components/exam/math-exam-controls";
 import { EditorSection } from "@/components/exam/math-exam-editor-section";
+import { Button } from "@/components/ui/button";
 
 import {
   createDefaultGeneratorSettings,
@@ -18,6 +20,12 @@ import {
   requestExtractedExam,
   requestGeneratedExam,
 } from "@/lib/math-exam-api";
+import { SaveNewMathExamDocument } from "@/gql/create-exam-documents";
+import {
+  MathExamQuestionType,
+  type SaveNewMathExamInput,
+  type SaveNewMathExamPayload,
+} from "@/gql/graphql";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { PreviewSection } from "./math-exam-student";
@@ -39,6 +47,11 @@ export default function MathExam() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
+  const [savedExamId, setSavedExamId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const [saveNewMathExamMutation] = useMutation(SaveNewMathExamDocument);
 
   const {
     totalPoints,
@@ -164,6 +177,70 @@ export default function MathExam() {
     }
   }
 
+  async function handleSaveToDatabase() {
+    setSaveError(null);
+    setSaving(true);
+    try {
+      const input: SaveNewMathExamInput = {
+        examId: savedExamId ?? undefined,
+        title: examTitle.trim() || "Нэргүй шалгалт",
+        mcqCount,
+        mathCount,
+        totalPoints,
+        generator: {
+          difficulty: generatorSettings.difficulty,
+          topics: generatorSettings.topics,
+          sourceContext: generatorSettings.sourceContext,
+        },
+        questions: questions.map((q) =>
+          q.type === "mcq"
+            ? {
+                type: MathExamQuestionType.Mcq,
+                prompt: q.prompt,
+                points: q.points,
+                imageAlt: q.imageAlt || undefined,
+                imageDataUrl: q.imageDataUrl,
+                options: q.options,
+                correctOption:
+                  q.correctOption === null ? undefined : q.correctOption,
+              }
+            : {
+                type: MathExamQuestionType.Math,
+                prompt: q.prompt,
+                points: q.points,
+                imageAlt: q.imageAlt || undefined,
+                imageDataUrl: q.imageDataUrl,
+                responseGuide: q.responseGuide,
+                answerLatex: q.answerLatex,
+              },
+        ),
+      };
+
+      const result = await saveNewMathExamMutation({
+        variables: { input },
+      });
+
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      const data = result.data as
+        | { saveNewMathExam?: SaveNewMathExamPayload }
+        | undefined;
+      const examId = data?.saveNewMathExam?.examId;
+      if (!examId) {
+        throw new Error("Хариу дээр examId ирээгүй байна.");
+      }
+      setSavedExamId(examId);
+    } catch (e) {
+      setSaveError(
+        e instanceof Error ? e.message : "Өгөгдлийн санд хадгалахад алдаа гарлаа.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <section className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.12),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(59,130,246,0.14),_transparent_32%),linear-gradient(180deg,_rgba(248,250,252,0.96),_rgba(241,245,249,0.98))] px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -221,6 +298,29 @@ export default function MathExam() {
               onAddOption={addOption}
               emptyText="Задгай даалгаврын хэсэгт хараахан асуулт алга."
             />
+
+            <div className="rounded-3xl border border-border/70 bg-background/70 p-4">
+              {savedExamId ? (
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Хадгалсан шалгалтын ID:{" "}
+                  <span className="font-mono text-foreground">{savedExamId}</span>
+                </p>
+              ) : null}
+              {saveError ? (
+                <p className="mb-3 text-sm text-destructive" role="alert">
+                  {saveError}
+                </p>
+              ) : null}
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void handleSaveToDatabase()}
+                >
+                  {saving ? "Хадгалж байна…" : "Өгөгдлийн санд хадгалах"}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
 

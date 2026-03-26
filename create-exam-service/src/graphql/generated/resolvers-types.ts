@@ -104,10 +104,16 @@ export type GeneratedQuestion = {
   text: Scalars['String']['output'];
 };
 
+export enum MathExamQuestionType {
+  Math = 'MATH',
+  Mcq = 'MCQ'
+}
+
 export type Mutation = {
   __typename?: 'Mutation';
   generateExamQuestions: ExamGenerationResult;
   saveExam: SaveExamPayload;
+  saveNewMathExam: SaveNewMathExamPayload;
 };
 
 
@@ -118,6 +124,30 @@ export type MutationGenerateExamQuestionsArgs = {
 
 export type MutationSaveExamArgs = {
   input: SaveExamInput;
+};
+
+
+export type MutationSaveNewMathExamArgs = {
+  input: SaveNewMathExamInput;
+};
+
+export type NewMathExamGeneratorMetaInput = {
+  difficulty?: InputMaybe<Scalars['String']['input']>;
+  sourceContext?: InputMaybe<Scalars['String']['input']>;
+  topics?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type NewMathExamQuestionInput = {
+  answerLatex?: InputMaybe<Scalars['String']['input']>;
+  correctOption?: InputMaybe<Scalars['Int']['input']>;
+  id?: InputMaybe<Scalars['ID']['input']>;
+  imageAlt?: InputMaybe<Scalars['String']['input']>;
+  imageDataUrl?: InputMaybe<Scalars['String']['input']>;
+  options?: InputMaybe<Array<Scalars['String']['input']>>;
+  points: Scalars['Int']['input'];
+  prompt: Scalars['String']['input'];
+  responseGuide?: InputMaybe<Scalars['String']['input']>;
+  type: MathExamQuestionType;
 };
 
 export type Query = {
@@ -147,6 +177,23 @@ export type SaveExamPayload = {
   errorLog?: Maybe<Scalars['String']['output']>;
   examId: Scalars['ID']['output'];
   status: ExamStatus;
+  updatedAt: Scalars['String']['output'];
+};
+
+export type SaveNewMathExamInput = {
+  examId?: InputMaybe<Scalars['ID']['input']>;
+  generator?: InputMaybe<NewMathExamGeneratorMetaInput>;
+  mathCount: Scalars['Int']['input'];
+  mcqCount: Scalars['Int']['input'];
+  questions: Array<NewMathExamQuestionInput>;
+  title: Scalars['String']['input'];
+  totalPoints: Scalars['Int']['input'];
+};
+
+export type SaveNewMathExamPayload = {
+  __typename?: 'SaveNewMathExamPayload';
+  createdAt: Scalars['String']['output'];
+  examId: Scalars['ID']['output'];
   updatedAt: Scalars['String']['output'];
 };
 
@@ -237,11 +284,16 @@ export type ResolversTypes = ResolversObject<{
   GeneratedQuestion: ResolverTypeWrapper<GeneratedQuestion>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
+  MathExamQuestionType: MathExamQuestionType;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  NewMathExamGeneratorMetaInput: NewMathExamGeneratorMetaInput;
+  NewMathExamQuestionInput: NewMathExamQuestionInput;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
   QuestionFormat: QuestionFormat;
   SaveExamInput: SaveExamInput;
   SaveExamPayload: ResolverTypeWrapper<SaveExamPayload>;
+  SaveNewMathExamInput: SaveNewMathExamInput;
+  SaveNewMathExamPayload: ResolverTypeWrapper<SaveNewMathExamPayload>;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
 }>;
 
@@ -258,9 +310,13 @@ export type ResolversParentTypes = ResolversObject<{
   ID: Scalars['ID']['output'];
   Int: Scalars['Int']['output'];
   Mutation: Record<PropertyKey, never>;
+  NewMathExamGeneratorMetaInput: NewMathExamGeneratorMetaInput;
+  NewMathExamQuestionInput: NewMathExamQuestionInput;
   Query: Record<PropertyKey, never>;
   SaveExamInput: SaveExamInput;
   SaveExamPayload: SaveExamPayload;
+  SaveNewMathExamInput: SaveNewMathExamInput;
+  SaveNewMathExamPayload: SaveNewMathExamPayload;
   String: Scalars['String']['output'];
 }>;
 
@@ -286,6 +342,7 @@ export type GeneratedQuestionResolvers<ContextType = GraphQLContext, ParentType 
 export type MutationResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = ResolversObject<{
   generateExamQuestions?: Resolver<ResolversTypes['ExamGenerationResult'], ParentType, ContextType, RequireFields<MutationGenerateExamQuestionsArgs, 'input'>>;
   saveExam?: Resolver<ResolversTypes['SaveExamPayload'], ParentType, ContextType, RequireFields<MutationSaveExamArgs, 'input'>>;
+  saveNewMathExam?: Resolver<ResolversTypes['SaveNewMathExamPayload'], ParentType, ContextType, RequireFields<MutationSaveNewMathExamArgs, 'input'>>;
 }>;
 
 export type QueryResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = ResolversObject<{
@@ -300,11 +357,18 @@ export type SaveExamPayloadResolvers<ContextType = GraphQLContext, ParentType ex
   updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 }>;
 
+export type SaveNewMathExamPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['SaveNewMathExamPayload'] = ResolversParentTypes['SaveNewMathExamPayload']> = ResolversObject<{
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  examId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+}>;
+
 export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   ExamGenerationResult?: ExamGenerationResultResolvers<ContextType>;
   GeneratedQuestion?: GeneratedQuestionResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
   SaveExamPayload?: SaveExamPayloadResolvers<ContextType>;
+  SaveNewMathExamPayload?: SaveNewMathExamPayloadResolvers<ContextType>;
 }>;
 
