@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import {
   createDefaultGeneratorSettings,
   createDefaultSectionState,
+  createMcqQuestion,
+  createMathQuestion,
   createQuestion,
   getQuestionCollections,
   normalizeGeneratedQuestions,
@@ -107,6 +109,86 @@ export default function MathExam() {
         options: [...question.options, `Сонголт ${nextLabel}`],
       };
     });
+  }
+
+  function handleDemo() {
+    setGeneratorError("");
+    setSaveError(null);
+    setSavedExamId(null);
+    setIsGeneratorOpen(false);
+    setSourceFiles([]);
+
+    setExamTitle("9-р анги — Математик (5 тест + 1 задгай)");
+    setGeneratorSettings((current) => ({
+      ...current,
+      difficulty: "medium",
+      mcqCount: 5,
+      mathCount: 1,
+      totalPoints: 6,
+      topics: "Квадрат тэгшитгэл, Пифагорын теорем, квадрат язгуур",
+      sourceContext: "",
+    }));
+
+    setQuestions(
+      [
+        ...Array.from({ length: 5 }, (_, idx): ExamQuestion => {
+          const n = idx + 1;
+          // 9-р ангийн математикийн энгийн demo тестүүд (LaTeX ашиглаж болно)
+          return createMcqQuestion({
+            prompt:
+              n === 1
+                ? "Дараах тэгшитгэлийг бод. $x^2 - 5x + 6 = 0$"
+                : n === 2
+                  ? "Пифагорын теоремоор $a=3$, $b=4$ бол гипотенуз $c$ хэд вэ?"
+                  : n === 3
+                    ? "Илэрхийллийг хялбарчил. $\\sqrt{50}$"
+                    : n === 4
+                      ? "Функц $y=2x+1$ үед $x=3$ бол $y$ хэд вэ?"
+                      : "Квадрат тэгшитгэлийн дискриминант $D=b^2-4ac$. $x^2-4x+1=0$ үед $D$ хэд вэ?",
+            points: 1,
+            options:
+              n === 1
+                ? ["$x=2,3$", "$x=1,6$", "$x=-2,-3$", "$x=0,6$"]
+                : n === 2
+                  ? ["$c=5$", "$c=6$", "$c=7$", "$c=8$"]
+                  : n === 3
+                    ? [
+                        "$5\\sqrt{2}$",
+                        "$10\\sqrt{5}$",
+                        "$25\\sqrt{2}$",
+                        "$5\\sqrt{5}$",
+                      ]
+                    : n === 4
+                      ? ["5", "6", "7", "8"]
+                      : ["$12$", "$16$", "$-12$", "$-16$"],
+            correctOption:
+              n === 1 ? 0 : n === 2 ? 0 : n === 3 ? 0 : n === 4 ? 2 : 0,
+          });
+        }),
+        createMathQuestion({
+          prompt:
+            "Задгай: Дараах тэгшитгэлийг бодож, хариуг хялбарчил. $x^2-2x-3=0$",
+          points: 1,
+          responseGuide: "Бодолтын алхмуудаа бичээд, эцсийн хариуг $...$ хэлбэрээр өг.",
+          answerLatex: "x = 3,\\,-1",
+        }),
+      ],
+    );
+    resetSectionState();
+  }
+
+  function handleResetAll() {
+    setGeneratorError("");
+    setSaveError(null);
+    setSavedExamId(null);
+    setSaving(false);
+
+    setExamTitle("Жишиг шалгалт");
+    setQuestions([]);
+    setSourceFiles([]);
+    setGeneratorSettings(createDefaultGeneratorSettings());
+    setIsGeneratorOpen(false);
+    resetSectionState();
   }
 
   async function handleGenerateExam() {
@@ -234,7 +316,9 @@ export default function MathExam() {
       setSavedExamId(examId);
     } catch (e) {
       setSaveError(
-        e instanceof Error ? e.message : "Өгөгдлийн санд хадгалахад алдаа гарлаа.",
+        e instanceof Error
+          ? e.message
+          : "Өгөгдлийн санд хадгалахад алдаа гарлаа.",
       );
     } finally {
       setSaving(false);
@@ -253,9 +337,11 @@ export default function MathExam() {
             isGenerating={isGenerating}
             isGeneratorOpen={isGeneratorOpen}
             onAddQuestion={addQuestion}
+            onDemo={handleDemo}
             onExamTitleChange={setExamTitle}
             onGenerateExam={handleGenerateExam}
             onGeneratorOpenChange={setIsGeneratorOpen}
+            onReset={handleResetAll}
             onSourceFilesSelected={handleSourceFilesSelected}
             requestedQuestionCount={requestedQuestionCount}
             setGeneratorSettings={setGeneratorSettings}
@@ -303,7 +389,9 @@ export default function MathExam() {
               {savedExamId ? (
                 <p className="mb-3 text-xs text-muted-foreground">
                   Хадгалсан шалгалтын ID:{" "}
-                  <span className="font-mono text-foreground">{savedExamId}</span>
+                  <span className="font-mono text-foreground">
+                    {savedExamId}
+                  </span>
                 </p>
               ) : null}
               {saveError ? (

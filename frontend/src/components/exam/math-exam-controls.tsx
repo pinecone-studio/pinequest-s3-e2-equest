@@ -41,9 +41,11 @@ type MathExamControlsProps = {
   isGenerating: boolean;
   isGeneratorOpen: boolean;
   onAddQuestion: (type: QuestionType) => void;
+  onDemo: () => void;
   onExamTitleChange: (value: string) => void;
   onGenerateExam: () => void;
   onGeneratorOpenChange: (open: boolean) => void;
+  onReset: () => void;
   onSourceFilesSelected: (files: File[]) => void;
   requestedQuestionCount: number;
   setGeneratorSettings: Dispatch<SetStateAction<GeneratorSettings>>;
@@ -63,9 +65,11 @@ export function MathExamControls({
   isGenerating,
   isGeneratorOpen,
   onAddQuestion,
+  onDemo,
   onExamTitleChange,
   onGenerateExam,
   onGeneratorOpenChange,
+  onReset,
   onSourceFilesSelected,
   requestedQuestionCount,
   setGeneratorSettings,
@@ -322,13 +326,23 @@ export function MathExamControls({
           </CollapsibleContent>
         </Collapsible>
       </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-3">
-        <ExamStat label="Тестийн тоо" value={String(stats.mcqCount)} />
-        <ExamStat
-          label="Сонгох / Бодлого"
-          value={`${stats.mcqCount} / ${stats.mathCount}`}
-        />
-        <ExamStat label="Нийт оноо" value={String(stats.totalPoints)} />
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ExamStat label="Тестийн тоо" value={String(stats.mcqCount)} />
+          <ExamStat
+            label="Сонгох / Бодлого"
+            value={`${stats.mcqCount} / ${stats.mathCount}`}
+          />
+          <ExamStat label="Нийт оноо" value={String(stats.totalPoints)} />
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border/70 pt-4">
+          <Button type="button" variant="outline" onClick={onDemo}>
+            Demo
+          </Button>
+          <Button type="button" variant="outline" onClick={onReset}>
+            Reset
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
