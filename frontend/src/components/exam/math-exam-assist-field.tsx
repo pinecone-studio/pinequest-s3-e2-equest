@@ -6,10 +6,7 @@ import { useRef, useState, type ReactNode } from "react";
 import MathInput from "@/components/math-input";
 import MathPreviewText from "@/components/math-preview-text";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 type TextLikeElement = HTMLInputElement | HTMLTextAreaElement;

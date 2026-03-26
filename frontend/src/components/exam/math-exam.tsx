@@ -2,6 +2,8 @@
 
 import { useApolloClient, useLazyQuery, useMutation } from "@apollo/client/react";
 import { useState } from "react";
+import { useEffect } from "react";
+import Ably from "ably";
 
 import { MathExamControls } from "@/components/exam/math-exam-controls";
 import { EditorSection } from "@/components/exam/math-exam-editor-section";
@@ -84,6 +86,33 @@ export default function MathExam() {
   } = getQuestionCollections(questions);
   const requestedQuestionCount =
     generatorSettings.mcqCount + generatorSettings.mathCount;
+
+  useEffect(() => {
+    const authUrl =
+      process.env.NEXT_PUBLIC_ABLY_AUTH_URL ||
+      "http://localhost:3001/api/ably/auth";
+
+    const realtime = new Ably.Realtime({
+      authUrl,
+      authMethod: "POST",
+    });
+
+    const channel = realtime.channels.get("new-math-exams");
+    channel.subscribe("exam.saved", () => {
+      // Refresh list cache; dropdown UI state will pick it up on next open (or via cache-first query).
+      void apolloClient.refetchQueries({ include: [ListNewMathExamsDocument] });
+      setBankExams([]);
+    });
+
+    return () => {
+      try {
+        channel.unsubscribe();
+        realtime.close();
+      } catch {
+        // ignore
+      }
+    };
+  }, [apolloClient]);
 
   const normalizeImportedText = (value: string) => normalizeBackendMathText(value);
 

@@ -1,23 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import "katex/dist/katex.min.css";
+import katex from "katex";
 
 import { cn } from "@/lib/utils";
 import {
   normalizeBackendLatexOnly,
   normalizeBackendMathText,
 } from "@/lib/normalize-math-text";
-
-type KatexRenderer = {
-  renderToString: (
-    latex: string,
-    options?: {
-      displayMode?: boolean;
-      throwOnError?: boolean;
-    },
-  ) => string;
-};
 
 type MathPreviewTextProps = {
   className?: string;
@@ -239,7 +230,6 @@ export default function MathPreviewText({
   displayMode = false,
   forceMath = false,
 }: MathPreviewTextProps) {
-  const [katexRenderer, setKatexRenderer] = useState<KatexRenderer | null>(null);
   const sanitizedContent = useMemo(
     // If the caller forces math, treat content as pure LaTeX (ex: answerLatex).
     // In that case we must NOT auto-wrap pieces with $...$, otherwise strings like
@@ -247,26 +237,6 @@ export default function MathPreviewText({
     () => (forceMath ? normalizeBackendLatexOnly(content) : normalizeBackendMathText(content)),
     [content, forceMath],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void import("katex")
-      .then((mod) => {
-        if (cancelled) return;
-        const renderer = (mod.default ?? mod) as unknown as KatexRenderer;
-        setKatexRenderer(renderer);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setKatexRenderer(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const lines = useMemo(
     () =>
@@ -314,42 +284,31 @@ export default function MathPreviewText({
                 );
               }
 
-              if (katexRenderer) {
-                try {
-                  const html = katexRenderer.renderToString(segment.content, {
-                    displayMode: segment.displayMode,
-                    throwOnError: false,
-                  });
+              try {
+                const html = katex.renderToString(segment.content, {
+                  displayMode: segment.displayMode,
+                  throwOnError: false,
+                });
 
-                  const Wrapper = segment.displayMode ? "div" : "span";
+                const Wrapper = segment.displayMode ? "div" : "span";
 
-                  return (
-                    <Wrapper
-                      key={`segment-${lineIndex}-${segmentIndex}`}
-                      className={segment.displayMode ? "w-full overflow-x-auto" : undefined}
-                      dangerouslySetInnerHTML={{ __html: html }}
-                    />
-                  );
-                } catch {
-                  return (
-                    <span
-                      key={`segment-${lineIndex}-${segmentIndex}`}
-                      className={segment.displayMode ? "w-full" : undefined}
-                    >
-                      {segment.raw}
-                    </span>
-                  );
-                }
+                return (
+                  <Wrapper
+                    key={`segment-${lineIndex}-${segmentIndex}`}
+                    className={segment.displayMode ? "w-full overflow-x-auto" : undefined}
+                    dangerouslySetInnerHTML={{ __html: html }}
+                  />
+                );
+              } catch {
+                return (
+                  <span
+                    key={`segment-${lineIndex}-${segmentIndex}`}
+                    className={segment.displayMode ? "w-full" : undefined}
+                  >
+                    {segment.raw}
+                  </span>
+                );
               }
-
-              return (
-                <span
-                  key={`segment-${lineIndex}-${segmentIndex}`}
-                  className={segment.displayMode ? "w-full" : undefined}
-                >
-                  {segment.raw}
-                </span>
-              );
             })}
           </div>
         );
