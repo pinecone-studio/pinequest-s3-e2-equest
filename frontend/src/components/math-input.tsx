@@ -86,7 +86,12 @@ type TabConfig = {
 type MathInputProps = {
   className?: string
   defaultValue?: string
+  mode?: "full" | "palette"
   onChange?: (latex: string) => void
+  onClear?: () => void
+  onInsertLatex?: (latex: string, moveLeftAfterWrite?: number) => void
+  onMoveLeft?: () => void
+  onMoveRight?: () => void
   onValueChange?: (latex: string) => void
   placeholder?: string
   value?: string
@@ -335,11 +340,17 @@ function emitChanges(
 export function MathInput({
   className,
   defaultValue = "",
+  mode = "full",
   onChange,
+  onClear,
+  onInsertLatex,
+  onMoveLeft,
+  onMoveRight,
   onValueChange,
   placeholder = "Type math here",
   value,
 }: MathInputProps) {
+  const isPaletteMode = mode === "palette"
   const initialLatex = value ?? defaultValue
   const isControlled = value !== undefined
   const editorRef = useRef<HTMLDivElement | null>(null)
@@ -362,6 +373,10 @@ export function MathInput({
   changeHandlersRef.current = { onChange, onValueChange }
 
   useEffect(() => {
+    if (isPaletteMode) {
+      return
+    }
+
     let cancelled = false
 
     async function loadLibraries() {
@@ -402,7 +417,7 @@ export function MathInput({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isPaletteMode])
 
   useEffect(() => {
     if (!librariesReady.mathquill || !editorRef.current || fieldRef.current) {
@@ -637,7 +652,45 @@ export function MathInput({
   }
 
   const activeConfig = TAB_CONFIG[activeTab]
-  const keyboardDisabled = !librariesReady.mathquill || Boolean(libraryError)
+  const keyboardDisabled = isPaletteMode
+    ? false
+    : !librariesReady.mathquill || Boolean(libraryError)
+
+  function handleInsertAction(nextLatex: string, moveLeftAfterWrite = 0) {
+    if (isPaletteMode) {
+      onInsertLatex?.(nextLatex, moveLeftAfterWrite)
+      return
+    }
+
+    insertLatex(nextLatex, moveLeftAfterWrite)
+  }
+
+  function handleMoveLeft() {
+    if (isPaletteMode) {
+      onMoveLeft?.()
+      return
+    }
+
+    moveLeft()
+  }
+
+  function handleMoveRight() {
+    if (isPaletteMode) {
+      onMoveRight?.()
+      return
+    }
+
+    moveRight()
+  }
+
+  function handleClear() {
+    if (isPaletteMode) {
+      onClear?.()
+      return
+    }
+
+    clear()
+  }
 
   return (
     <div
@@ -652,111 +705,150 @@ export function MathInput({
           activeConfig.accent
         )}
       >
-        <div className="grid grid-cols-6 gap-2">
-          <button
-            type="button"
-            className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-border/70 bg-background/80 text-sm font-semibold text-foreground transition hover:bg-background"
-            onMouseDown={(event) => event.preventDefault()}
-          >
-            <Type className="size-4" />
-            abc
-          </button>
-          <button
-            type="button"
-            aria-label="Undo"
-            className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
-            disabled={undoStackRef.current.length === 0 || keyboardDisabled}
-            onClick={undo}
-            onMouseDown={(event) => event.preventDefault()}
-          >
-            <Undo2 className="size-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="Redo"
-            className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
-            disabled={redoStackRef.current.length === 0 || keyboardDisabled}
-            onClick={redo}
-            onMouseDown={(event) => event.preventDefault()}
-          >
-            <Redo2 className="size-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="Move cursor left"
-            className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
-            disabled={keyboardDisabled}
-            onClick={moveLeft}
-            onMouseDown={(event) => event.preventDefault()}
-          >
-            <ArrowLeft className="size-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="Move cursor right"
-            className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
-            disabled={keyboardDisabled}
-            onClick={moveRight}
-            onMouseDown={(event) => event.preventDefault()}
-          >
-            <ArrowRight className="size-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="Clear input"
-            className="flex h-11 items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/8 text-destructive transition hover:bg-destructive/12 disabled:opacity-50"
-            disabled={!latex || keyboardDisabled}
-            onClick={clear}
-            onMouseDown={(event) => event.preventDefault()}
-          >
-            <Eraser className="size-4" />
-          </button>
-        </div>
-
-        <div className="mt-4 rounded-[24px] border border-border/70 bg-background/85 p-4 backdrop-blur">
-          <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold tracking-[0.22em] text-muted-foreground">
-            <span>MathQuill Input</span>
-            <span className="uppercase">{activeConfig.label}</span>
+        {isPaletteMode ? (
+          <div className="flex items-center justify-between gap-3 rounded-[24px] border border-border/70 bg-background/85 px-4 py-3 backdrop-blur">
+            <div className="text-[11px] font-semibold tracking-[0.22em] text-muted-foreground">
+              CURRENT INPUT KEYBOARD
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Move cursor left"
+                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background"
+                onClick={handleMoveLeft}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <ArrowLeft className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Move cursor right"
+                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background"
+                onClick={handleMoveRight}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <ArrowRight className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Clear input"
+                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/8 text-destructive transition hover:bg-destructive/12"
+                onClick={handleClear}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <Eraser className="size-4" />
+              </button>
+            </div>
           </div>
-
-          <div className="rounded-[20px] border border-border/60 bg-white/90 px-4 py-3 shadow-sm">
-            <div
-              ref={editorRef}
-              aria-label="Math input"
-              className="math-input-editor min-h-12 w-full text-[1.45rem] text-foreground"
-            />
-            {!latex && (
-              <p className="pointer-events-none mt-1 text-sm text-muted-foreground">
-                {placeholder}
-              </p>
-            )}
-          </div>
-
-          <div className="mt-4 rounded-[20px] border border-dashed border-border/80 bg-muted/30 px-4 py-3">
-            <div className="mb-2 text-[11px] font-semibold tracking-[0.22em] text-muted-foreground">
-              KaTeX Preview
+        ) : (
+          <>
+            <div className="grid grid-cols-6 gap-2">
+              <button
+                type="button"
+                className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-border/70 bg-background/80 text-sm font-semibold text-foreground transition hover:bg-background"
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <Type className="size-4" />
+                abc
+              </button>
+              <button
+                type="button"
+                aria-label="Undo"
+                className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
+                disabled={undoStackRef.current.length === 0 || keyboardDisabled}
+                onClick={undo}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <Undo2 className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Redo"
+                className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
+                disabled={redoStackRef.current.length === 0 || keyboardDisabled}
+                onClick={redo}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <Redo2 className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Move cursor left"
+                className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
+                disabled={keyboardDisabled}
+                onClick={handleMoveLeft}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <ArrowLeft className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Move cursor right"
+                className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
+                disabled={keyboardDisabled}
+                onClick={handleMoveRight}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <ArrowRight className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Clear input"
+                className="flex h-11 items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/8 text-destructive transition hover:bg-destructive/12 disabled:opacity-50"
+                disabled={!latex || keyboardDisabled}
+                onClick={handleClear}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <Eraser className="size-4" />
+              </button>
             </div>
 
-            {previewHtml ? (
-              <div
-                className="math-preview min-h-16 overflow-x-auto text-foreground"
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
-            ) : (
-              <div className="flex min-h-16 items-center text-sm text-muted-foreground">
-                {librariesReady.katex
-                  ? "Rendered preview will appear here."
-                  : "Loading KaTeX preview..."}
+            <div className="mt-4 rounded-[24px] border border-border/70 bg-background/85 p-4 backdrop-blur">
+              <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold tracking-[0.22em] text-muted-foreground">
+                <span>MathQuill Input</span>
+                <span className="uppercase">{activeConfig.label}</span>
               </div>
-            )}
-          </div>
 
-          {libraryError && (
-            <p className="mt-3 rounded-2xl border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
-              {libraryError}
-            </p>
-          )}
-        </div>
+              <div className="rounded-[20px] border border-border/60 bg-white/90 px-4 py-3 shadow-sm">
+                <div
+                  ref={editorRef}
+                  aria-label="Math input"
+                  className="math-input-editor min-h-12 w-full text-[1.45rem] text-foreground"
+                />
+                {!latex && (
+                  <p className="pointer-events-none mt-1 text-sm text-muted-foreground">
+                    {placeholder}
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-4 rounded-[20px] border border-dashed border-border/80 bg-muted/30 px-4 py-3">
+                <div className="mb-2 text-[11px] font-semibold tracking-[0.22em] text-muted-foreground">
+                  KaTeX Preview
+                </div>
+
+                {previewHtml ? (
+                  <div
+                    className="math-preview min-h-16 overflow-x-auto text-foreground"
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  />
+                ) : (
+                  <div className="flex min-h-16 items-center text-sm text-muted-foreground">
+                    {librariesReady.katex
+                      ? "Rendered preview will appear here."
+                      : "Loading KaTeX preview..."}
+                  </div>
+                )}
+              </div>
+
+              {libraryError && (
+                <p className="mt-3 rounded-2xl border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+                  {libraryError}
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="border-b border-border/70 bg-muted/30 px-3 py-3 sm:px-4">
@@ -800,7 +892,7 @@ export function MathInput({
                   return
                 }
 
-                insertLatex(action.latex, action.moveLeftAfterWrite ?? 0)
+                handleInsertAction(action.latex, action.moveLeftAfterWrite ?? 0)
               }}
               onMouseDown={(event) => event.preventDefault()}
             >

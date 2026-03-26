@@ -136,6 +136,34 @@ function coercePoints(value: string) {
   return parsed;
 }
 
+function splitPromptAndPoints(rawPrompt: string, fallbackPoints: number) {
+  const trimmedPrompt = rawPrompt.trim();
+  const trailingPointsMatch = trimmedPrompt.match(
+    /\s*(?:[/(\[]\s*)?(\d+)\s*оноо\s*(?:[/)\]])?\s*$/iu,
+  );
+
+  if (!trailingPointsMatch || trailingPointsMatch.index === undefined) {
+    return {
+      points: fallbackPoints,
+      prompt: trimmedPrompt,
+    };
+  }
+
+  const parsedPoints = Number.parseInt(trailingPointsMatch[1] ?? "", 10);
+  const nextPrompt = trimmedPrompt
+    .slice(0, trailingPointsMatch.index)
+    .replace(/[/(\[\s]+$/u, "")
+    .trim();
+
+  return {
+    points:
+      Number.isNaN(parsedPoints) || parsedPoints < 1
+        ? fallbackPoints
+        : parsedPoints,
+    prompt: nextPrompt || trimmedPrompt,
+  };
+}
+
 function ExamStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
@@ -182,8 +210,15 @@ function normalizeGeneratedQuestions(
   const normalizedMcq = rawQuestions
     .filter((question) => question.type === "mcq")
     .slice(0, settings.mcqCount)
-    .map((question) =>
-      createMcqQuestion({
+    .map((question) => {
+      const { points, prompt } = splitPromptAndPoints(
+        question.prompt?.trim() ?? "",
+        typeof question.points === "number" && question.points > 0
+          ? question.points
+          : 1,
+      );
+
+      return createMcqQuestion({
         correctOption:
           typeof question.correctOption === "number"
             ? question.correctOption
@@ -194,32 +229,33 @@ function normalizeGeneratedQuestions(
           question.options?.length && question.options.length >= 2
             ? question.options.slice(0, 6)
             : undefined,
-        points:
-          typeof question.points === "number" && question.points > 0
-            ? question.points
-            : 1,
-        prompt: question.prompt?.trim() ?? "",
-      }),
-    );
+        points,
+        prompt,
+      });
+    });
 
   const normalizedMath = rawQuestions
     .filter((question) => question.type === "math")
     .slice(0, settings.mathCount)
-    .map((question) =>
-      createMathQuestion({
+    .map((question) => {
+      const { points, prompt } = splitPromptAndPoints(
+        question.prompt?.trim() ?? "",
+        typeof question.points === "number" && question.points > 0
+          ? question.points
+          : 1,
+      );
+
+      return createMathQuestion({
         answerLatex: question.answerLatex?.trim() ?? "",
         imageAlt: question.imageAlt?.trim() ?? "",
         imageDataUrl: undefined,
-        points:
-          typeof question.points === "number" && question.points > 0
-            ? question.points
-            : 1,
-        prompt: question.prompt?.trim() ?? "",
+        points,
+        prompt,
         responseGuide:
           question.responseGuide?.trim() ??
           "Бодолтын бүх алхмаа тодорхой бичнэ үү.",
-      }),
-    );
+      });
+    });
 
   while (normalizedMcq.length < settings.mcqCount) {
     normalizedMcq.push(createMcqQuestion());
@@ -252,6 +288,15 @@ function normalizeImportedQuestions(
   return rawQuestions
     .filter((question) => question.type === "mcq" || question.type === "math")
     .map((question) => {
+      const { points, prompt } = splitPromptAndPoints(
+        question.prompt?.trim() ?? "",
+        typeof question.points === "number" && question.points > 0
+          ? question.points
+          : question.type === "math"
+            ? 2
+            : 1,
+      );
+
       if (question.type === "mcq") {
         return createMcqQuestion({
           correctOption:
@@ -266,11 +311,8 @@ function normalizeImportedQuestions(
             question.options?.length && question.options.length >= 2
               ? question.options.slice(0, 6)
               : undefined,
-          points:
-            typeof question.points === "number" && question.points > 0
-              ? question.points
-              : 1,
-          prompt: question.prompt?.trim() ?? "",
+          points,
+          prompt,
         });
       }
 
@@ -280,11 +322,8 @@ function normalizeImportedQuestions(
         imageDataUrl: question.sourceImageName
           ? sourceImagesByName[question.sourceImageName]
           : undefined,
-        points:
-          typeof question.points === "number" && question.points > 0
-            ? question.points
-            : 2,
-        prompt: question.prompt?.trim() ?? "",
+        points,
+        prompt,
         responseGuide:
           question.responseGuide?.trim() ??
           "Бодолтын бүх алхмаа тодорхой бичнэ үү.",
@@ -381,7 +420,6 @@ function MathAssistField({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
-  const [mathValue, setMathValue] = useState("");
   const inputRef = useRef<TextLikeElement | null>(null);
   const selectionRef = useRef({
     end: value.length,
@@ -401,17 +439,16 @@ function MathAssistField({
     };
   }
 
-  function applyMathValue() {
-    if (!mathValue.trim()) {
-      return;
-    }
-
+  function insertIntoField(nextChunk: string, moveLeftAfterWrite = 0) {
     const { start, end } = selectionRef.current;
-    const nextValue = `${value.slice(0, start)}${mathValue}${value.slice(end)}`;
-    const nextCaretPosition = start + mathValue.length;
+    const nextValue = `${value.slice(0, start)}${nextChunk}${value.slice(end)}`;
+    const nextCaretPosition = Math.max(
+      start,
+      start + nextChunk.length - moveLeftAfterWrite,
+    );
 
     onChange(nextValue);
-    setMathValue("");
+    setIsEditing(true);
 
     requestAnimationFrame(() => {
       const element = inputRef.current;
@@ -425,6 +462,49 @@ function MathAssistField({
       selectionRef.current = {
         start: nextCaretPosition,
         end: nextCaretPosition,
+      };
+    });
+  }
+
+  function moveCursor(direction: "left" | "right") {
+    requestAnimationFrame(() => {
+      const element = inputRef.current;
+
+      if (!element) {
+        return;
+      }
+
+      const currentPosition = element.selectionStart ?? value.length;
+      const nextPosition =
+        direction === "left"
+          ? Math.max(0, currentPosition - 1)
+          : Math.min(value.length, currentPosition + 1);
+
+      element.focus();
+      element.setSelectionRange(nextPosition, nextPosition);
+      selectionRef.current = {
+        start: nextPosition,
+        end: nextPosition,
+      };
+    });
+  }
+
+  function clearField() {
+    onChange("");
+    setIsEditing(true);
+
+    requestAnimationFrame(() => {
+      const element = inputRef.current;
+
+      if (!element) {
+        return;
+      }
+
+      element.focus();
+      element.setSelectionRange(0, 0);
+      selectionRef.current = {
+        start: 0,
+        end: 0,
       };
     });
   }
@@ -453,6 +533,10 @@ function MathAssistField({
   };
   const shouldShowRenderedPreview =
     !isEditing && !isKeyboardOpen && Boolean(value.trim());
+  const shouldShowLivePreview =
+    (isEditing || isKeyboardOpen) &&
+    Boolean(value.trim()) &&
+    (previewForceMath || /[$\\^_{}]/.test(value));
 
   return (
     <div className="w-full space-y-2">
@@ -543,27 +627,37 @@ function MathAssistField({
         ) : null}
       </div>
 
+      {shouldShowLivePreview ? (
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+          <MathPreviewText
+            content={value}
+            displayMode={previewDisplayMode}
+            forceMath={previewForceMath}
+            className="w-full text-foreground"
+          />
+        </div>
+      ) : null}
+
       <Collapsible open={isKeyboardOpen} onOpenChange={setIsKeyboardOpen}>
         <CollapsibleContent className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-3">
           <MathInput
-            value={mathValue}
-            onChange={setMathValue}
-            placeholder="Математикийн тэмдэглэгээг энд оруулна уу"
+            mode="palette"
+            onInsertLatex={insertIntoField}
+            onMoveLeft={() => moveCursor("left")}
+            onMoveRight={() => moveCursor("right")}
+            onClear={clearField}
+            className="shadow-none"
           />
           <div className="flex flex-wrap justify-end gap-2">
             <Button
               type="button"
               variant="ghost"
               onClick={() => {
-                setMathValue("");
                 setIsKeyboardOpen(false);
-                setIsEditing(false);
+                inputRef.current?.focus();
               }}
             >
               Хаах
-            </Button>
-            <Button type="button" onClick={applyMathValue}>
-              Оруулах
             </Button>
           </div>
         </CollapsibleContent>
@@ -709,9 +803,9 @@ function QuestionEditor({
                 {buildQuestionLabel(question.type)}
               </Badge>
             </div>
-            <CardTitle>Асуулт засварлах</CardTitle>
+
             <CardDescription>
-              Асуултын өгүүлбэрээ бичиж, төрлөө сонгоод хариултыг тохируулна уу.
+              Асуултын өгүүлбэрээ бичиж, хариултыг тохируулна уу.
             </CardDescription>
           </div>
           <Button
@@ -925,9 +1019,7 @@ function QuestionEditor({
         ) : (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor={`${fieldId}-guide`}>
-                Сурагчид өгөх заавар
-              </Label>
+              <Label htmlFor={`${fieldId}-guide`}>Сурагчид өгөх заавар</Label>
               <MathAssistField
                 id={`${fieldId}-guide`}
                 value={question.responseGuide}
@@ -1206,16 +1298,7 @@ function EditorSection({
 export default function MathExam() {
   const generatorFileInputRef = useRef<HTMLInputElement | null>(null);
   const [examTitle, setExamTitle] = useState("Жишиг шалгалт");
-  const [questions, setQuestions] = useState<ExamQuestion[]>([
-    createMcqQuestion({
-      prompt: "y = x^2 функцийг аль график зөв дүрсэлж байна вэ?",
-      correctOption: 1,
-    }),
-    createMathQuestion({
-      prompt: "x-ийг ол: 2x + 5 = 19",
-      answerLatex: "x=7",
-    }),
-  ]);
+  const [questions, setQuestions] = useState<ExamQuestion[]>([]);
   const [previewSections, setPreviewSections] = useState({
     math: true,
     mcq: true,
@@ -1426,15 +1509,7 @@ export default function MathExam() {
         throw new Error("Файлаас танигдсан асуулт олдсонгүй.");
       }
 
-      const sourceImagesByName = Object.fromEntries(
-        await Promise.all(
-          files
-            .filter((file) => file.type.startsWith("image/"))
-            .map(async (file) => [file.name, await readFileAsDataUrl(file)]),
-        ),
-      ) as Record<string, string>;
-
-      setQuestions(normalizeImportedQuestions(exam, sourceImagesByName));
+      setQuestions(normalizedImportedQuestions);
       setExamTitle(exam.title?.trim() || "Docs-оос импортолсон шалгалт");
       setEditorSections({
         math: true,
@@ -1470,7 +1545,7 @@ export default function MathExam() {
                     ref={generatorFileInputRef}
                     type="file"
                     multiple
-                    accept=".pdf,.txt,.md,.doc,.docx,image/*"
+                    accept=".pdf,.txt,.md,.doc,.docx"
                     className="hidden"
                     onChange={(event) => {
                       void handleSourceFilesSelected(
@@ -1481,9 +1556,17 @@ export default function MathExam() {
                   <Button
                     type="button"
                     variant="outline"
+                    disabled={isExtractingSource}
                     onClick={() => generatorFileInputRef.current?.click()}
                   >
-                    Docs file
+                    {isExtractingSource ? (
+                      <>
+                        <LoaderCircle className="animate-spin" />
+                        Уншиж байна
+                      </>
+                    ) : (
+                      <>Docs file</>
+                    )}
                   </Button>
                   <Button
                     type="button"
@@ -1618,7 +1701,7 @@ export default function MathExam() {
                               ))}
                             </div>
                           ) : (
-                            <div>Баримт эсвэл зураг хавсаргаагүй байна.</div>
+                            <div>Баримт хавсаргаагүй байна.</div>
                           )}
                         </div>
                       </div>

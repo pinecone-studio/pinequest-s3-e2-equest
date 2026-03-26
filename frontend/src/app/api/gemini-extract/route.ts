@@ -2,6 +2,43 @@ import mammoth from "mammoth";
 
 const DOCX_MIME_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const DOCX_XML_NAMESPACE_MAP = {
+  "http://schemas.openxmlformats.org/officeDocument/2006/math": "m",
+  "http://schemas.openxmlformats.org/wordprocessingml/2006/main": "w",
+};
+
+type XmlTextNode = {
+  type: "text";
+  value: string;
+};
+
+type XmlElementNode = {
+  attributes: Record<string, string>;
+  children: XmlNode[];
+  first: (name: string) => XmlElementNode | null;
+  firstOrEmpty: (name: string) => XmlElementNode;
+  getElementsByTagName: (name: string) => XmlElementNode[];
+  name: string;
+  type: "element";
+};
+
+type XmlNode = XmlElementNode | XmlTextNode;
+
+type DocxZipFile = {
+  exists: (name: string) => boolean;
+  read: (name: string, encoding?: string) => Promise<string>;
+};
+
+const mammothUnzip = require("mammoth/lib/unzip") as {
+  openZip: (options: { buffer: Buffer }) => Promise<DocxZipFile>;
+};
+
+const mammothXml = require("mammoth/lib/xml") as {
+  readString: (
+    xmlString: string,
+    namespaceMap: Record<string, string>,
+  ) => Promise<XmlElementNode>;
+};
 
 type ExtractRequest = {
   attachments?: Array<{
@@ -59,46 +96,12 @@ type BinaryAttachment = {
 };
 
 type DocxArtifacts = {
-  embeddedImages: BinaryAttachment[];
   mathHints: string[];
   text: string;
 };
 
 function isMarkdownLikeTextFile(name?: string) {
   return Boolean(name?.match(/\.(md|markdown|txt|csv|json)$/i));
-}
-
-function extensionFromMimeType(mimeType: string) {
-  if (mimeType === "image/png") {
-    return "png";
-  }
-
-  if (mimeType === "image/jpeg") {
-    return "jpg";
-  }
-
-  if (mimeType === "image/webp") {
-    return "webp";
-  }
-
-  if (mimeType === "image/gif") {
-    return "gif";
-  }
-
-  if (mimeType === "image/bmp") {
-    return "bmp";
-  }
-
-  if (mimeType === "image/svg+xml") {
-    return "svg";
-  }
-
-  return "bin";
-}
-
-function buildEmbeddedImageName(docxName: string, index: number, mimeType: string) {
-  const safeName = docxName.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]+/g, "_");
-  return `${safeName}_embedded_${index + 1}.${extensionFromMimeType(mimeType)}`;
 }
 
 function detectPotentialMathGaps(text: string) {
@@ -128,6 +131,348 @@ function detectPotentialMathGaps(text: string) {
     .slice(0, 20);
 }
 
+function normalizeMathToken(value: string) {
+  return value
+    .replace(/∙/g, "\\cdot ")
+    .replace(/×/g, "\\times ")
+    .replace(/÷/g, "\\div ")
+    .replace(/−/g, "-")
+    .replace(/≤/g, "\\leq ")
+    .replace(/≥/g, "\\geq ")
+    .replace(/≠/g, "\\neq ");
+}
+
+function getChildElements(node: XmlElementNode, name?: string) {
+  return node.children.filter((child): child is XmlElementNode => {
+    if (child.type !== "element") {
+      return false;
+    }
+
+    return name ? child.name === name : true;
+  });
+}
+
+function normalizeMathFunctionName(value: string) {
+  const trimmed = value.trim().replace(/^\{([A-Za-z]+)\}/, "$1");
+
+  if (!trimmed) {
+    return "";
+  }
+
+  if (trimmed.startsWith("\\")) {
+    return trimmed;
+  }
+
+  const operatorMatch = trimmed.match(/^([A-Za-z]+)(.*)$/);
+
+  if (!operatorMatch) {
+    return trimmed;
+  }
+
+  const [, operator, suffix] = operatorMatch;
+  const normalizedOperator = operator.toLowerCase();
+
+  if (
+    [
+      "cos",
+      "cot",
+      "csc",
+      "lim",
+      "ln",
+      "log",
+      "max",
+      "min",
+      "prod",
+      "sec",
+      "sin",
+      "sum",
+      "tan",
+    ].includes(normalizedOperator)
+  ) {
+    return `\\${normalizedOperator}${suffix}`;
+  }
+
+  return `\\operatorname{${operator}}${suffix}`;
+}
+
+function normalizeNaryOperator(value?: string) {
+  switch (value) {
+    case "∫":
+      return "\\int";
+    case "∮":
+      return "\\oint";
+    case "∑":
+      return "\\sum";
+    case "∏":
+      return "\\prod";
+    case "⋃":
+      return "\\bigcup";
+    case "⋂":
+      return "\\bigcap";
+    default:
+      return value ? normalizeMathFunctionName(value) : "\\int";
+  }
+}
+
+function normalizeDelimiterCharacter(
+  value: string | undefined,
+  fallback: string,
+) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (value === "") {
+    return ".";
+  }
+
+  return value;
+}
+
+function wrapMathBase(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  if (/^\\(?:frac|sqrt|left|right|operatorname)/.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/^[A-Za-z0-9]+$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `{${trimmed}}`;
+}
+
+function readMathArgument(node: XmlElementNode | null) {
+  if (!node) {
+    return "";
+  }
+
+  return readXmlNodeText(node).trim();
+}
+
+function joinXmlChildrenText(children: XmlNode[]) {
+  return children.map(readXmlNodeText).join("");
+}
+
+function normalizeTopLevelMathContent(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  if (trimmed.includes("\\\\") && !/\\begin\{[a-zA-Z*]+\}/.test(trimmed)) {
+    return `\\begin{aligned} ${trimmed} \\end{aligned}`;
+  }
+
+  return trimmed;
+}
+
+function normalizeEquationLineForAlignment(value: string) {
+  if (value.includes("&")) {
+    return value;
+  }
+
+  return value.replace(
+    /(.*?)(=|\\leq|\\geq|<|>)(.*)/,
+    (_, left, operator, right) => `${left.trim()} &${operator} ${right.trim()}`,
+  );
+}
+
+function readXmlNodeText(node: XmlNode): string {
+  if (node.type === "text") {
+    return node.value;
+  }
+
+  switch (node.name) {
+    case "w:t":
+      return joinXmlChildrenText(node.children);
+    case "w:tab":
+      return "\t";
+    case "w:br":
+      return "\n";
+    case "m:t":
+      return normalizeMathToken(joinXmlChildrenText(node.children));
+    case "m:oMath":
+    case "m:oMathPara":
+      return `$${normalizeTopLevelMathContent(joinXmlChildrenText(node.children))}$`;
+    case "m:r":
+    case "m:num":
+    case "m:den":
+    case "m:e":
+    case "m:sup":
+    case "m:sub":
+    case "m:deg":
+    case "m:fName":
+    case "m:lim":
+      return joinXmlChildrenText(node.children);
+    case "m:eqArr":
+      return getChildElements(node, "m:e")
+        .map((element) => normalizeEquationLineForAlignment(readXmlNodeText(element)))
+        .join(" \\\\ ");
+    case "m:f":
+      return `\\frac{${readMathArgument(node.first("m:num"))}}{${readMathArgument(node.first("m:den"))}}`;
+    case "m:sSup":
+      return `${wrapMathBase(readMathArgument(node.first("m:e")))}^{${readMathArgument(node.first("m:sup"))}}`;
+    case "m:sSub":
+      return `${wrapMathBase(readMathArgument(node.first("m:e")))}_{${readMathArgument(node.first("m:sub"))}}`;
+    case "m:sSubSup":
+      return `${wrapMathBase(readMathArgument(node.first("m:e")))}_{${readMathArgument(node.first("m:sub"))}}^{${readMathArgument(node.first("m:sup"))}}`;
+    case "m:func": {
+      const functionName = normalizeMathFunctionName(
+        readMathArgument(node.first("m:fName")),
+      );
+      const expression = readMathArgument(node.first("m:e"));
+
+      if (!functionName) {
+        return expression;
+      }
+
+      if (!expression) {
+        return functionName;
+      }
+
+      return `${functionName}${wrapMathBase(expression)}`;
+    }
+    case "m:limLow": {
+      const expression = normalizeMathFunctionName(
+        readMathArgument(node.first("m:e")) || "lim",
+      );
+      const limit = readMathArgument(node.first("m:lim"));
+
+      if (!limit) {
+        return expression;
+      }
+
+      return `${expression}_{${limit}}`;
+    }
+    case "m:limUpp": {
+      const expression = normalizeMathFunctionName(
+        readMathArgument(node.first("m:e")),
+      );
+      const limit = readMathArgument(node.first("m:lim"));
+
+      if (!limit) {
+        return expression;
+      }
+
+      return `${expression}^{${limit}}`;
+    }
+    case "m:nary": {
+      const operator = normalizeNaryOperator(
+        node.first("m:naryPr")?.first("m:chr")?.attributes["m:val"],
+      );
+      const subscript = readMathArgument(node.first("m:sub"));
+      const superscript = readMathArgument(node.first("m:sup"));
+      const expression = readMathArgument(node.first("m:e"));
+      const lowerBound = subscript ? `_{${subscript}}` : "";
+      const upperBound = superscript ? `^{${superscript}}` : "";
+
+      return `${operator}${lowerBound}${upperBound}${expression ? ` ${expression}` : ""}`;
+    }
+    case "m:d": {
+      const delimiterProperties = node.first("m:dPr");
+      const beginCharacter = normalizeDelimiterCharacter(
+        delimiterProperties?.first("m:begChr")?.attributes["m:val"],
+        "(",
+      );
+      const endCharacter = normalizeDelimiterCharacter(
+        delimiterProperties?.first("m:endChr")?.attributes["m:val"],
+        ")",
+      );
+      const innerValue = readMathArgument(node.first("m:e"));
+
+      if (beginCharacter === "{" && innerValue.includes("\\\\")) {
+        return `\\begin{cases} ${innerValue} \\end{cases}`;
+      }
+
+      return `\\left${beginCharacter}${innerValue}\\right${endCharacter}`;
+    }
+    case "m:rad": {
+      const degree = readMathArgument(node.first("m:deg"));
+      const expression = readMathArgument(node.first("m:e"));
+
+      if (degree) {
+        return `\\sqrt[${degree}]{${expression}}`;
+      }
+
+      return `\\sqrt{${expression}}`;
+    }
+    default:
+      return joinXmlChildrenText(node.children);
+  }
+}
+
+function normalizeExtractedParagraphText(value: string) {
+  return value
+    .replace(/\u00A0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\s*\n\s*/g, " ")
+    .replace(/\$\s+/g, "$")
+    .replace(/\s+\$/g, "$")
+    .trim();
+}
+
+async function extractDocxStructuredText(buffer: Buffer) {
+  const zipFile = await mammothUnzip.openZip({ buffer });
+
+  if (!zipFile.exists("word/document.xml")) {
+    return "";
+  }
+
+  const documentXml = await zipFile.read("word/document.xml", "utf-8");
+  const documentNode = await mammothXml.readString(
+    documentXml,
+    DOCX_XML_NAMESPACE_MAP,
+  );
+  const body = documentNode.first("w:body");
+
+  if (!body) {
+    return "";
+  }
+
+  const lines: string[] = [];
+  let questionIndex = 0;
+
+  for (const child of body.children) {
+    if (child.type !== "element" || child.name !== "w:p") {
+      continue;
+    }
+
+    const paragraphProperties = child.first("w:pPr");
+    const isNumberedQuestion = Boolean(paragraphProperties?.first("w:numPr"));
+    const paragraphText = normalizeExtractedParagraphText(
+      child.children
+        .filter(
+          (paragraphChild) =>
+            paragraphChild.type !== "element" ||
+            paragraphChild.name !== "w:pPr",
+        )
+        .map(readXmlNodeText)
+        .join(""),
+    );
+
+    if (!paragraphText) {
+      continue;
+    }
+
+    if (isNumberedQuestion) {
+      questionIndex += 1;
+      lines.push(`Q${questionIndex}. ${paragraphText}`);
+      continue;
+    }
+
+    lines.push(paragraphText);
+  }
+
+  return lines.join("\n\n");
+}
+
 async function extractDocxArtifacts(
   attachment: AttachmentPayload,
 ): Promise<DocxArtifacts> {
@@ -135,7 +480,6 @@ async function extractDocxArtifacts(
 
   if (!data) {
     return {
-      embeddedImages: [],
       mathHints: [],
       text: "",
     };
@@ -143,34 +487,10 @@ async function extractDocxArtifacts(
 
   const buffer = Buffer.from(data, "base64");
   const rawTextResult = await mammoth.extractRawText({ buffer });
-  const embeddedImages: BinaryAttachment[] = [];
-
-  await mammoth.convertToHtml(
-    { buffer },
-    {
-      convertImage: mammoth.images.imgElement(async (image) => {
-        const base64 = await image.read("base64");
-        const mimeType = image.contentType || "application/octet-stream";
-
-        embeddedImages.push({
-          data: base64,
-          mimeType,
-          name: buildEmbeddedImageName(
-            attachment.name ?? "docx",
-            embeddedImages.length,
-            mimeType,
-          ),
-        });
-
-        return { src: "" };
-      }),
-    },
-  );
-
-  const text = rawTextResult.value.trim();
+  const structuredText = await extractDocxStructuredText(buffer);
+  const text = structuredText || rawTextResult.value.trim();
 
   return {
-    embeddedImages,
     mathHints: detectPotentialMathGaps(text),
     text,
   };
@@ -249,7 +569,6 @@ async function normalizeAttachments(attachments: AttachmentPayload[]) {
   const textAttachments: TextAttachment[] = [];
   const binaryAttachments: BinaryAttachment[] = [];
   const docxContexts: Array<{
-    embeddedImageNames: string[];
     mathHints: string[];
     name: string;
   }> = [];
@@ -271,9 +590,7 @@ async function normalizeAttachments(attachments: AttachmentPayload[]) {
         });
       }
 
-      binaryAttachments.push(...artifacts.embeddedImages);
       docxContexts.push({
-        embeddedImageNames: artifacts.embeddedImages.map((image) => image.name),
         mathHints: artifacts.mathHints,
         name,
       });
@@ -304,6 +621,10 @@ async function normalizeAttachments(attachments: AttachmentPayload[]) {
         });
       }
 
+      continue;
+    }
+
+    if (mimeType.startsWith("image/")) {
       continue;
     }
 
@@ -367,23 +688,26 @@ export async function POST(request: Request) {
               parts: [
                 {
                   text: `
-Хавсаргасан материал доторх шалгалтын асуултуудыг шууд таньж JSON болгон буцаа.
+Хавсаргасан материал доторх БҮХ шалгалтын асуулт, хариултыг аль болох яг хэвээр нь таньж JSON болгон буцаа.
 
 Дүрэм:
 - Зөвхөн JSON буцаа. Тайлбар, markdown, code fence бүү нэм.
 - Асуулт бүрийг дарааллаар нь Q1, Q2 гэж таньж ав.
 - Prompt талбарт боломжтой бол асуултын дугаарыг хадгал. Жишээ: "Q1. ..."
+- Материалыг бүү хураангуйл, бүү дүгнэ, бүү товчил.
+- Асуулт, сонголт, хариу, оноо, тайлбар байвал яг тексттэй нь хадгал.
 - Текстийг бүү хураангуйл. Тоо, томьёо, илэрхийлэл, бутархай, зэргийг яг байгаа хэлбэрээр нь хадгал.
+- Prompt, options, responseGuide доторх математик хэсгийг боломжтой бол $...$ хэлбэрээр wrap хий.
+- Prompt-ийн төгсгөлд байгаа /1 оноо/, /2 оноо/ гэх мэт онооны текстийг prompt дотор бүү хадгал, points талбарт тусад нь өг.
+- answerLatex талбарт зөв хариуг цэвэр LaTeX хэлбэрээр өг. $ тэмдэг бүү ашигла.
 - Хариултын түлхүүр, зөв сонголт, бодлогын зөв хариу байвал заавал гаргаж ав.
 - Сонголтууд доторх тоо, тэмдэг, нэгж, томьёог алдалгүй буцаа.
 - Сонгох асуултыг "mcq", задгай/бодлогын асуултыг "math" гэж тэмдэглэ.
-- DOCX raw text дутуу байж болох тул embedded images болон standalone images-ийг заавал давхар шалгаж missing formula, diagram, graph, table, equation-ийг нөхөн сэргээ.
-- Хэрэв материал дотор зураг байвал түүнийг уншаад тухайн асуултын prompt дотор утгыг нь шингээ.
-- Хэрэв зураг нь тухайн асуултад чухал бол imageAlt талбарт богино тайлбар өг.
-- Хэрэв тусдаа image file-аас ирсэн зураг ашигласан бол sourceImageName талбарт файлын нэрийг яг оноо.
-- DOCX доторх embedded image ашигласан бол sourceImageName талбарт embedded image-ийн файлын нэрийг яг оноо.
-- Хэрэв raw text мөр эвдэрсэн, томьёо тасарсан, сонголт дутуу, эсвэл математикийн мөр incomplete байвал image болон context-оос сэргээн бүрэн болго.
+- Одоогоор зураг унших feature түр унтарсан. Зурагтай холбоотой таамаг бүү хий.
+- sourceImageName болон imageAlt талбаруудыг хоосон үлдээж болно.
+- Хэрэв raw text мөр эвдэрсэн, томьёо тасарсан, сонголт дутуу, эсвэл математикийн мөр incomplete байвал зөвхөн харагдаж буй text context-оос аль болох сэргээ.
 - Материал доторх асуултын эх бичвэрийг аль болох хадгал.
+- Систем тэгшитгэл, логарифм, интеграл, лимит зэрэг тусгай математик бүтэц байвал LaTeX-ийг алдалгүй хадгал.
 - mcq асуулт бол A/B/C/D дарааллыг зөв таньж options болон correctOption-ийг гарга.
 - math асуулт бол answerLatex-ийг аль болох LaTeX хэлбэрээр гарга.
 - responseGuide боломжтой бол богино заавар өг.
@@ -419,13 +743,17 @@ JSON бүтэц:
                   text: `Хавсаргасан текст (${attachment.name ?? "text"}):\n${attachment.text}`,
                 })),
                 ...docxContexts.map((context) => ({
-                  text: `DOCX reconstruction hints (${context.name}):\nPotentially broken math lines:\n${context.mathHints.join("\n") || "none"}\nEmbedded image names:\n${context.embeddedImageNames.join("\n") || "none"}`,
+                  text: `DOCX text hints (${context.name}):\nPotentially broken math lines:\n${context.mathHints.join("\n") || "none"}`,
                 })),
-                {
-                  text: `Тусдаа binary файл нэрс: ${uploadedFiles
-                    .map((file) => file.name)
-                    .join(", ")}`,
-                },
+                ...(uploadedFiles.length > 0
+                  ? [
+                      {
+                        text: `Тусдаа binary файл нэрс: ${uploadedFiles
+                          .map((file) => file.name)
+                          .join(", ")}`,
+                      },
+                    ]
+                  : []),
                 ...uploadedFiles.map((file) => ({
                   file_data: {
                     file_uri: file.uri,

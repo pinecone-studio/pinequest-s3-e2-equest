@@ -48,6 +48,12 @@ type Segment = MathSegment | TextSegment;
 
 let katexAssetsPromise: Promise<void> | null = null;
 
+function containsBlockLatex(value: string) {
+  return /\\begin\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix)\}/.test(
+    value,
+  );
+}
+
 function ensureStyle(id: string, href: string) {
   return new Promise<void>((resolve, reject) => {
     const existing = document.getElementById(id) as HTMLLinkElement | null;
@@ -136,14 +142,14 @@ function looksLikeLatexExpression(value: string) {
 
   if (
     trimmed.startsWith("$") ||
-    /\\(?:frac|sqrt|times|div|pi|alpha|beta|gamma|theta|sin|cos|tan|cot|log|ln|int|sum|lim|infty|left|right|cdot|pm|mp|leq|geq|neq|approx|circ|operatorname)\b/.test(
+    /\\(?:begin|cdot|circ|cos|cot|div|end|frac|geq|infty|int|left|leq|lg|lim|ln|log|neq|oint|operatorname|pi|pm|mp|prod|right|sin|sqrt|sum|tan|times|alpha|beta|gamma|theta|bigcap|bigcup)\b/.test(
       trimmed,
     )
   ) {
     return true;
   }
 
-  return /^[A-Za-z0-9\s=+\-*/^_()[\]{}.,|]+$/.test(trimmed) &&
+  return /^[A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]+$/.test(trimmed) &&
     /[=^_]/.test(trimmed);
 }
 
@@ -192,7 +198,7 @@ function tokenizeLine(
 
     segments.push({
       content: stripOuterMathDelimiters(matchedText),
-      displayMode: Boolean(match[1]),
+      displayMode: Boolean(match[1]) || containsBlockLatex(matchedText),
       raw: matchedText,
       type: "math",
     });
@@ -208,6 +214,81 @@ function tokenizeLine(
 
   if (segments.length > 0) {
     return segments;
+  }
+
+  const environmentPattern = /\\begin\{([a-zA-Z*]+)\}([\s\S]+?)\\end\{\1\}/g;
+  const environmentSegments: Segment[] = [];
+  let environmentCursor = 0;
+
+  for (const match of normalizedLine.matchAll(environmentPattern)) {
+    const matchedText = match[0];
+    const matchedIndex = match.index ?? 0;
+
+    if (matchedIndex > environmentCursor) {
+      environmentSegments.push({
+        content: normalizedLine.slice(environmentCursor, matchedIndex),
+        type: "text",
+      });
+    }
+
+    environmentSegments.push({
+      content: matchedText,
+      displayMode: true,
+      raw: matchedText,
+      type: "math",
+    });
+    environmentCursor = matchedIndex + matchedText.length;
+  }
+
+  if (environmentSegments.length > 0) {
+    if (environmentCursor < normalizedLine.length) {
+      environmentSegments.push({
+        content: normalizedLine.slice(environmentCursor),
+        type: "text",
+      });
+    }
+
+    return environmentSegments;
+  }
+
+  const inlineLatexPattern =
+    /(\\(?:[a-zA-Z]+|.)(?:\[[^\]]*\])?(?:\{[^{}]*\}){0,3}|[A-Za-z0-9]+(?:_[A-Za-z0-9{}]+|\^[A-Za-z0-9{}]+)+)/g;
+  const inlineSegments: Segment[] = [];
+  let inlineCursor = 0;
+
+  for (const match of normalizedLine.matchAll(inlineLatexPattern)) {
+    const matchedText = match[0];
+    const matchedIndex = match.index ?? 0;
+
+    if (!looksLikeLatexExpression(matchedText)) {
+      continue;
+    }
+
+    if (matchedIndex > inlineCursor) {
+      inlineSegments.push({
+        content: normalizedLine.slice(inlineCursor, matchedIndex),
+        type: "text",
+      });
+    }
+
+    inlineSegments.push({
+      content: stripOuterMathDelimiters(matchedText),
+      displayMode: false,
+      raw: matchedText,
+      type: "math",
+    });
+    inlineCursor = matchedIndex + matchedText.length;
+  }
+
+  if (inlineSegments.length > 0) {
+    if (inlineCursor < normalizedLine.length) {
+      inlineSegments.push({
+        content: normalizedLine.slice(inlineCursor),
+        type: "text",
+      });
+    }
+
+    return inlineSegments;
   }
 
   if (looksLikeLatexExpression(normalizedLine)) {
@@ -275,12 +356,18 @@ export default function MathPreviewText({
           return <div key={`line-${lineIndex}`} className="h-4" />;
         }
 
+        const hasDisplaySegment = segments.some(
+          (segment) => segment.type === "math" && segment.displayMode,
+        );
+
         return (
           <div
             key={`line-${lineIndex}`}
             className={cn(
               "flex flex-wrap items-baseline gap-x-1 gap-y-2",
-              forceMath && displayMode && "block",
+              (forceMath && displayMode) || hasDisplaySegment
+                ? "items-start"
+                : null,
             )}
           >
             {segments.map((segment, segmentIndex) => {
@@ -304,12 +391,16 @@ export default function MathPreviewText({
                   return (
                     <Wrapper
                       key={`segment-${lineIndex}-${segmentIndex}`}
+                      className={segment.displayMode ? "w-full overflow-x-auto" : undefined}
                       dangerouslySetInnerHTML={{ __html: html }}
                     />
                   );
                 } catch {
                   return (
-                    <span key={`segment-${lineIndex}-${segmentIndex}`}>
+                    <span
+                      key={`segment-${lineIndex}-${segmentIndex}`}
+                      className={segment.displayMode ? "w-full" : undefined}
+                    >
                       {segment.raw}
                     </span>
                   );
@@ -317,7 +408,10 @@ export default function MathPreviewText({
               }
 
               return (
-                <span key={`segment-${lineIndex}-${segmentIndex}`}>
+                <span
+                  key={`segment-${lineIndex}-${segmentIndex}`}
+                  className={segment.displayMode ? "w-full" : undefined}
+                >
                   {segment.raw}
                 </span>
               );
