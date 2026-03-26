@@ -2,7 +2,6 @@ import { createCipheriv, createHash, createHmac, pbkdf2Sync, randomBytes } from 
 import { gzipSync } from "zlib";
 
 export const SEB_SUCCESS_PATH = "/seb/success";
-export const SEB_CONFIG_PATH = "/api/seb/config";
 
 export type SebSettingsValue =
 	| boolean
@@ -19,6 +18,15 @@ type ColumnlessSebRule = {
 	active: boolean;
 	expression: string;
 	regex: boolean;
+};
+
+type SebProcessRule = {
+	active: boolean;
+	currentUser?: boolean;
+	description: string;
+	executable?: string;
+	identifier?: string;
+	os: 0 | 1;
 };
 
 const PBKDF2_ITERATIONS = 10_000;
@@ -202,12 +210,125 @@ function buildAllowedUrlRules(baseUrl: URL): ColumnlessSebRule[] {
 	];
 }
 
+function buildProhibitedProcesses(): SebProcessRule[] {
+	return [
+		{
+			active: true,
+			currentUser: true,
+			description: "Windows Snipping Tool",
+			executable: "SnippingTool.exe",
+			os: 1,
+		},
+		{
+			active: true,
+			currentUser: true,
+			description: "Windows Screen Clipping overlay",
+			executable: "ScreenClippingHost.exe",
+			os: 1,
+		},
+		{
+			active: true,
+			currentUser: true,
+			description: "Windows Problem Steps Recorder",
+			executable: "psr.exe",
+			os: 1,
+		},
+		{
+			active: true,
+			currentUser: true,
+			description: "OBS Studio 64-bit",
+			executable: "obs64.exe",
+			os: 1,
+		},
+		{
+			active: true,
+			currentUser: true,
+			description: "OBS Studio 32-bit",
+			executable: "obs32.exe",
+			os: 1,
+		},
+		{
+			active: true,
+			currentUser: true,
+			description: "TeamViewer remote desktop",
+			executable: "TeamViewer.exe",
+			os: 1,
+		},
+		{
+			active: true,
+			currentUser: true,
+			description: "AnyDesk remote desktop",
+			executable: "AnyDesk.exe",
+			os: 1,
+		},
+		{
+			active: true,
+			currentUser: true,
+			description: "Windows Remote Desktop client",
+			executable: "mstsc.exe",
+			os: 1,
+		},
+		{
+			active: true,
+			currentUser: true,
+			description: "Microsoft Remote Desktop client",
+			executable: "msrdc.exe",
+			os: 1,
+		},
+		{
+			active: true,
+			description: "macOS Screenshot utility",
+			executable: "Screenshot",
+			identifier: "com.apple.screenshot",
+			os: 0,
+		},
+		{
+			active: true,
+			description: "macOS QuickTime Player screen recording",
+			executable: "QuickTime Player",
+			identifier: "com.apple.QuickTimePlayerX",
+			os: 0,
+		},
+		{
+			active: true,
+			description: "OBS Studio",
+			executable: "OBS",
+			identifier: "com.obsproject.obs-studio",
+			os: 0,
+		},
+		{
+			active: true,
+			description: "TeamViewer remote desktop",
+			executable: "TeamViewer",
+			identifier: "com.teamviewer.TeamViewer",
+			os: 0,
+		},
+		{
+			active: true,
+			description: "AnyDesk remote desktop",
+			executable: "AnyDesk",
+			identifier: "com.philandro.anydesk",
+			os: 0,
+		},
+		{
+			active: true,
+			description: "Microsoft Remote Desktop",
+			executable: "Microsoft Remote Desktop",
+			identifier: "com.microsoft.rdc.macos",
+			os: 0,
+		},
+	];
+}
+
 export function buildSebSettings(baseUrl: string): SebSettings {
 	const origin = new URL(baseUrl);
 	const startURL = new URL("/", origin).toString();
 	const quitURL = new URL(SEB_SUCCESS_PATH, origin).toString();
 
 	return {
+		additionalResources: [],
+		additionalResourcesIdentifierCounter: 0,
+		allowSwitchToApplications: false,
 		sebConfigPurpose: 0,
 		sebMode: 0,
 		startURL,
@@ -215,26 +336,41 @@ export function buildSebSettings(baseUrl: string): SebSettings {
 		quitURLConfirm: false,
 		quitURLRestart: false,
 		sendBrowserExamKey: true,
-		downloadAndOpenSebConfig: true,
+		downloadAndOpenSebConfig: false,
 		allowQuit: false,
 		showQuitButton: false,
 		allowDeveloperConsole: false,
+		blockPopUpWindows: true,
+		browserViewMode: 1,
 		browserWindowAllowAddressBar: false,
 		browserWindowAllowReload: false,
+		browserWindowShowURL: 0,
+		newBrowserWindowAllowReload: false,
+		newBrowserWindowNavigation: false,
+		newBrowserWindowShowURL: 0,
 		showReloadButton: false,
+		showBackToStartButton: false,
 		allowBrowsingBackForward: false,
 		showTaskBar: false,
 		showMenuBar: false,
 		allowSpellCheck: false,
+		enableAppSwitcherCheck: true,
+		enableMacOSAAC: true,
 		enablePrivateClipboard: true,
 		enablePrivateClipboardMacEnforce: true,
+		// macOS / newer SEB: block screen capture / recording
 		allowScreenCapture: false,
+		// macOS: block window capture / screenshots
 		allowWindowCapture: false,
+		// Legacy SEB key name kept for compatibility with older clients
 		blockScreenShotsLegacy: true,
+		// Screen sharing / recording related restrictions
 		allowScreenSharing: false,
 		screenSharingMacEnforceBlocked: true,
 		removeBrowserProfile: true,
+		// Kiosk-style isolation relevant to app/task switching
 		createNewDesktop: true,
+		// Windows task / app switching restrictions
 		enableAltTab: false,
 		enableAltF4: false,
 		enablePrintScreen: false,
@@ -242,6 +378,9 @@ export function buildSebSettings(baseUrl: string): SebSettings {
 		enableStartMenu: false,
 		ignoreExitKeys: true,
 		ignoreQuitPassword: true,
+		monitorProcesses: true,
+		permittedProcesses: [],
+		prohibitedProcesses: buildProhibitedProcesses(),
 		URLFilterEnable: true,
 		URLFilterEnableContentFilter: true,
 		URLFilterRules: buildAllowedUrlRules(origin),

@@ -34,6 +34,32 @@ type MockExam = {
 	title: string;
 };
 
+type PersistedExamSession = {
+	answers: Record<string, string>;
+	completedExamIds: string[];
+	currentQuestionIndex: number;
+	examStartedAt: number | null;
+	hasSecurityViolation: boolean;
+	isLocked: boolean;
+	selectedExamId: string | null;
+	version: 1;
+};
+
+type SebClientSummary = {
+	isDetected: boolean;
+	minimumVersion: string | null;
+	platform: "Windows" | "macOS" | "iOS" | null;
+	userAgent: string | null;
+	version: string | null;
+};
+
+type SebCheckPayload = {
+	client?: SebClientSummary;
+	message?: string;
+	ok?: boolean;
+};
+
+const EXAM_SESSION_STORAGE_KEY = "mock-test-page-session";
 const MOCK_EXAMS: MockExam[] = [
 	{
 		id: "math-logic",
@@ -182,12 +208,15 @@ export default function MockTestPage() {
 	const [isLocked, setIsLocked] = useState(false);
 	const [completedExamIds, setCompletedExamIds] = useState<string[]>([]);
 	const [sebCheckMessage, setSebCheckMessage] = useState<string | null>(null);
+	const [sebClient, setSebClient] = useState<SebClientSummary | null>(null);
 	const [isSebCheckRunning, setIsSebCheckRunning] = useState(false);
+	const [isSebVerified, setIsSebVerified] = useState(false);
 	const [hasSecurityViolation, setHasSecurityViolation] = useState(false);
 	const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
 	const [examStartedAt, setExamStartedAt] = useState<number | null>(null);
 	const [elapsedSeconds, setElapsedSeconds] = useState(0);
 	const violationHandledRef = useRef(false);
+	const hasRestoredSessionRef = useRef(false);
 
 	const selectedExam = useMemo(
 		() => MOCK_EXAMS.find((exam) => exam.id === selectedExamId) ?? null,
@@ -205,6 +234,93 @@ export default function MockTestPage() {
 	const hasNextQuestion = selectedExam
 		? currentQuestionIndex < selectedExam.questions.length - 1
 		: false;
+	const sebClientLabel =
+		sebClient?.platform && sebClient?.version
+			? `${sebClient.platform} ${sebClient.version}`
+			: null;
+
+	useEffect(() => {
+		if (hasRestoredSessionRef.current || typeof window === "undefined") {
+			return;
+		}
+
+		hasRestoredSessionRef.current = true;
+
+		const rawSession = window.localStorage.getItem(EXAM_SESSION_STORAGE_KEY);
+		if (!rawSession) {
+			return;
+		}
+
+		try {
+			const session = JSON.parse(rawSession) as PersistedExamSession;
+			if (session.version !== 1) {
+				window.localStorage.removeItem(EXAM_SESSION_STORAGE_KEY);
+				return;
+			}
+
+			const examExists =
+				session.selectedExamId === null ||
+				MOCK_EXAMS.some((exam) => exam.id === session.selectedExamId);
+
+			if (!examExists) {
+				window.localStorage.removeItem(EXAM_SESSION_STORAGE_KEY);
+				return;
+			}
+
+			setSelectedExamId(session.selectedExamId);
+			setAnswers(session.answers ?? {});
+			setIsLocked(session.isLocked);
+			setCompletedExamIds(session.completedExamIds ?? []);
+			setHasSecurityViolation(session.hasSecurityViolation);
+			setCurrentQuestionIndex(session.currentQuestionIndex ?? 0);
+			setExamStartedAt(session.examStartedAt);
+
+			if (session.selectedExamId) {
+				toast.info("Өмнөх шалгалтын session сэргээгдлээ.");
+			}
+
+			if (session.selectedExamId && session.isLocked) {
+				void enterFullscreen();
+			}
+		} catch {
+			window.localStorage.removeItem(EXAM_SESSION_STORAGE_KEY);
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!hasRestoredSessionRef.current || typeof window === "undefined") {
+			return;
+		}
+
+		const session: PersistedExamSession = {
+			answers,
+			completedExamIds,
+			currentQuestionIndex,
+			examStartedAt,
+			hasSecurityViolation,
+			isLocked,
+			selectedExamId,
+			version: 1,
+		};
+
+		const hasActiveState =
+			selectedExamId !== null || completedExamIds.length > 0 || examStartedAt !== null;
+
+		if (!hasActiveState) {
+			window.localStorage.removeItem(EXAM_SESSION_STORAGE_KEY);
+			return;
+		}
+
+		window.localStorage.setItem(EXAM_SESSION_STORAGE_KEY, JSON.stringify(session));
+	}, [
+		answers,
+		completedExamIds,
+		currentQuestionIndex,
+		examStartedAt,
+		hasSecurityViolation,
+		isLocked,
+		selectedExamId,
+	]);
 
 	useEffect(() => {
 		if (!isLocked || !examStartedAt) {
@@ -328,6 +444,12 @@ export default function MockTestPage() {
 	}, [isLocked]);
 
 	async function handleStartExam(examId: string) {
+		const isVerified = await handleSebCheck({ silent: true });
+
+		if (!isVerified) {
+			return;
+		}
+
 		setSelectedExamId(examId);
 		setAnswers({});
 		setHasSecurityViolation(false);
@@ -355,6 +477,9 @@ export default function MockTestPage() {
 				: [...current, selectedExam.id],
 		);
 		setIsLocked(false);
+		if (typeof window !== "undefined") {
+			window.localStorage.removeItem(EXAM_SESSION_STORAGE_KEY);
+		}
 		await exitFullscreen();
 		toast.success("Шалгалт амжилттай дууслаа.");
 		window.setTimeout(() => {
@@ -370,35 +495,45 @@ export default function MockTestPage() {
 		setCurrentQuestionIndex(0);
 		setElapsedSeconds(0);
 		setExamStartedAt(null);
+		if (typeof window !== "undefined") {
+			window.localStorage.removeItem(EXAM_SESSION_STORAGE_KEY);
+		}
 		await exitFullscreen();
 	}
 
-	async function handleSebCheck() {
+	async function handleSebCheck(options?: { silent?: boolean }) {
 		setSebCheckMessage(null);
 		setIsSebCheckRunning(true);
 
 		try {
-			const response = await fetch("/api/seb/check");
-			const payload = (await response.json()) as {
-				message?: string;
-				ok?: boolean;
-			};
+			const response = await fetch("/api/seb/check", { cache: "no-store" });
+			const payload = (await response.json()) as SebCheckPayload;
+			setSebClient(payload.client ?? null);
 
 			if (!response.ok) {
+				setIsSebVerified(false);
 				throw new Error(payload.message || "SEB шалгалт амжилтгүй боллоо.");
 			}
 
 			const message =
 				payload.message || "Safe Exam Browser verification амжилттай боллоо.";
+			setIsSebVerified(Boolean(payload.ok));
 			setSebCheckMessage(message);
-			toast.success(message);
+			if (!options?.silent) {
+				toast.success(message);
+			}
+			return true;
 		} catch (error) {
 			const message =
 				error instanceof Error
 					? error.message
 					: "SEB verification шалгалт амжилтгүй боллоо.";
-			setSebCheckMessage(message);
-			toast.error(message);
+			setIsSebVerified(false);
+			setSebCheckMessage(null);
+			if (!options?.silent) {
+				toast.error(message);
+			}
+			return false;
 		} finally {
 			setIsSebCheckRunning(false);
 		}
@@ -556,10 +691,13 @@ export default function MockTestPage() {
 										{sebCheckMessage ? (
 											<p className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm leading-6 text-slate-300">
 												{sebCheckMessage}
+												{sebClientLabel ? ` ${sebClientLabel}` : ""}
 											</p>
 										) : (
 											<p className="mt-3 text-sm leading-6 text-slate-400">
-												`/api/seb/check` ашиглан config key hash-ийг шалгана.
+												{sebClientLabel
+													? `SEB ${sebClientLabel} client баталгаажсан.`
+													: "SEB төлөвийг шалгаж болно."}
 											</p>
 										)}
 									</section>
@@ -723,8 +861,8 @@ export default function MockTestPage() {
 										</h1>
 										<p className="text-sm leading-7 text-slate-300 sm:text-base">
 											Энэ page нь launch screen-ээс шалгалтын secure workspace
-											руу орж, exam эхэлсний дараа dashboard маягийн UI-г
-											нуун зөвхөн шалгалтын орчинг харуулна.
+											руу орж, `Secure session эхлүүлэх` дарахад SEB
+											verification хийсний дараа exam workspace руу орно.
 										</p>
 									</div>
 
@@ -822,12 +960,13 @@ export default function MockTestPage() {
 										{isSebCheckRunning ? "Шалгаж байна..." : "SEB ажиллаж байна уу?"}
 									</button>
 									<p className="mt-3 text-sm leading-6 text-slate-400">
-										Шаардлагатай үед config key hash-ийг энэ launch screen дээрээс ч
-										шалгаж болно.
+										Launch screen нээлттэй байж болно. Харин шалгалт эхлүүлэх
+										үед SEB session болон version-ийг заавал баталгаажуулна.
 									</p>
 									{sebCheckMessage ? (
 										<div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm leading-6 text-slate-200">
 											{sebCheckMessage}
+											{sebClientLabel ? ` ${sebClientLabel}` : ""}
 										</div>
 									) : null}
 								</div>
