@@ -102,10 +102,16 @@ export type GeneratedQuestion = {
   text: Scalars['String']['output'];
 };
 
+export enum MathExamQuestionType {
+  Math = 'MATH',
+  Mcq = 'MCQ'
+}
+
 export type Mutation = {
   __typename?: 'Mutation';
   generateExamQuestions: ExamGenerationResult;
   saveExam: SaveExamPayload;
+  saveNewMathExam: SaveNewMathExamPayload;
 };
 
 
@@ -116,6 +122,30 @@ export type MutationGenerateExamQuestionsArgs = {
 
 export type MutationSaveExamArgs = {
   input: SaveExamInput;
+};
+
+
+export type MutationSaveNewMathExamArgs = {
+  input: SaveNewMathExamInput;
+};
+
+export type NewMathExamGeneratorMetaInput = {
+  difficulty?: InputMaybe<Scalars['String']['input']>;
+  sourceContext?: InputMaybe<Scalars['String']['input']>;
+  topics?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type NewMathExamQuestionInput = {
+  answerLatex?: InputMaybe<Scalars['String']['input']>;
+  correctOption?: InputMaybe<Scalars['Int']['input']>;
+  id?: InputMaybe<Scalars['ID']['input']>;
+  imageAlt?: InputMaybe<Scalars['String']['input']>;
+  imageDataUrl?: InputMaybe<Scalars['String']['input']>;
+  options?: InputMaybe<Array<Scalars['String']['input']>>;
+  points: Scalars['Int']['input'];
+  prompt: Scalars['String']['input'];
+  responseGuide?: InputMaybe<Scalars['String']['input']>;
+  type: MathExamQuestionType;
 };
 
 export type Query = {
@@ -145,5 +175,22 @@ export type SaveExamPayload = {
   errorLog?: Maybe<Scalars['String']['output']>;
   examId: Scalars['ID']['output'];
   status: ExamStatus;
+  updatedAt: Scalars['String']['output'];
+};
+
+export type SaveNewMathExamInput = {
+  examId?: InputMaybe<Scalars['ID']['input']>;
+  generator?: InputMaybe<NewMathExamGeneratorMetaInput>;
+  mathCount: Scalars['Int']['input'];
+  mcqCount: Scalars['Int']['input'];
+  questions: Array<NewMathExamQuestionInput>;
+  title: Scalars['String']['input'];
+  totalPoints: Scalars['Int']['input'];
+};
+
+export type SaveNewMathExamPayload = {
+  __typename?: 'SaveNewMathExamPayload';
+  createdAt: Scalars['String']['output'];
+  examId: Scalars['ID']['output'];
   updatedAt: Scalars['String']['output'];
 };

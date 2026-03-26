@@ -25,3 +25,13 @@ export const SaveExamDocument = gql(`
 		}
 	}
 `);
+
+export const SaveNewMathExamDocument = gql(`
+	mutation SaveNewMathExam($input: SaveNewMathExamInput!) {
+		saveNewMathExam(input: $input) {
+			examId
+			createdAt
+			updatedAt
+		}
+	}
+`);

@@ -42,3 +42,36 @@ CREATE TABLE `exam_questions` (
 	`updated_at` text NOT NULL,
 	FOREIGN KEY (`exam_id`) REFERENCES `exams`(`id`) ON UPDATE no action ON DELETE cascade
 );
+--> statement-breakpoint
+CREATE TABLE `new_exams` (
+	`id` text PRIMARY KEY NOT NULL,
+	`title` text NOT NULL,
+	`mcq_count` integer NOT NULL,
+	`math_count` integer NOT NULL,
+	`total_points` integer NOT NULL,
+	`difficulty` text,
+	`topics` text,
+	`source_context` text,
+	`payload_json` text,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `new_exam_questions` (
+	`id` text PRIMARY KEY NOT NULL,
+	`exam_id` text NOT NULL,
+	`position` integer NOT NULL,
+	`type` text NOT NULL,
+	`prompt` text NOT NULL,
+	`points` integer NOT NULL,
+	`image_alt` text NOT NULL,
+	`image_data_url` text,
+	`options_json` text,
+	`correct_option` integer,
+	`correct_answer` text,
+	`response_guide` text,
+	`answer_latex` text,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL,
+	FOREIGN KEY (`exam_id`) REFERENCES `new_exams`(`id`) ON UPDATE no action ON DELETE cascade
+);
