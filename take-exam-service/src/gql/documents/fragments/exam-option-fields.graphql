@@ -1,0 +1,4 @@
+fragment ExamOptionFields on ExamOption {
+  id
+  text
+}

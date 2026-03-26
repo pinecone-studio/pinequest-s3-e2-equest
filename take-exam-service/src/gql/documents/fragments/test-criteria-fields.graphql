@@ -1,0 +1,8 @@
+fragment TestCriteriaFields on TestCriteria {
+  gradeLevel
+  className
+  subject
+  topic
+  difficulty
+  questionCount
+}

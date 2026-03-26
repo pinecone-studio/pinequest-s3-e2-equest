@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { createDb } from "@/lib/db";
+import { ensureExamSchema } from "@/lib/db/bootstrap";
 import { students } from "@/lib/db/schema";
 import { seedStudents } from "@/lib/db/seed";
 import { listTests, listAttempts } from "@/lib/exam-service/store";
@@ -8,6 +9,7 @@ export const queries = {
     students: async () => {
         const { env } = getCloudflareContext() as any;
         const db = createDb(env.DB);
+        await ensureExamSchema(env.DB);
         let all = await db.select().from(students);
         if (all.length === 0) {
             await seedStudents(db);
@@ -18,6 +20,7 @@ export const queries = {
     availableTests: async () => {
         const { env } = getCloudflareContext() as any;
         const db = createDb(env.DB);
+        await ensureExamSchema(env.DB);
         const tests = await listTests(db, env.EXAM_CACHE);
         return tests.map(t => ({
             ...t,
@@ -34,6 +37,7 @@ export const queries = {
     attempts: async () => {
         const { env } = getCloudflareContext() as any;
         const db = createDb(env.DB);
+        await ensureExamSchema(env.DB);
         return listAttempts(db);
     },
 };

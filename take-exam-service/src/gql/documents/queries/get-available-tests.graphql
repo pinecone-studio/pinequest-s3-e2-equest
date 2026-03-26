@@ -1,0 +1,5 @@
+query GetAvailableTests {
+  availableTests {
+    ...TestFields
+  }
+}

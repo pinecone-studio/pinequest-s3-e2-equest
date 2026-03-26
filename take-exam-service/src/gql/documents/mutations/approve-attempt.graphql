@@ -1,0 +1,3 @@
+mutation ApproveAttempt($attemptId: String!) {
+  approveAttempt(attemptId: $attemptId)
+}

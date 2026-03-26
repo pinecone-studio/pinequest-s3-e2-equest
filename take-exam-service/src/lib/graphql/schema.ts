@@ -25,6 +25,49 @@ export const typeDefs = /* GraphQL */ `
     updatedAt: String!
   }
 
+  type ExamOption {
+    id: ID!
+    text: String!
+  }
+
+  type StudentExamQuestion {
+    questionId: ID!
+    type: String!
+    prompt: String!
+    options: [ExamOption!]!
+    points: Int!
+    competency: String
+    imageUrl: String
+    audioUrl: String
+    videoUrl: String
+  }
+
+  type ExamSession {
+    testId: ID!
+    title: String!
+    description: String!
+    criteria: TestCriteria!
+    timeLimitMinutes: Int!
+    questions: [StudentExamQuestion!]!
+  }
+
+  type ExamProgress {
+    totalQuestions: Int!
+    answeredQuestions: Int!
+    remainingQuestions: Int!
+    completionRate: Int!
+  }
+
+  type QuestionResult {
+    questionId: ID!
+    selectedOptionId: String
+    correctOptionId: String!
+    isCorrect: Boolean!
+    pointsAwarded: Int!
+    maxPoints: Int!
+    explanation: String
+  }
+
   type AttemptResultSummary {
     score: Int!
     maxScore: Int!
@@ -35,15 +78,7 @@ export const typeDefs = /* GraphQL */ `
     questionResults: [QuestionResult!]!
   }
 
-  type QuestionResult {
-    questionId: ID!
-    selectedOptionId: String
-    correctOptionId: String!
-    isCorrect: Boolean!
-    explanation: String
-  }
-
-  type Attempt {
+  type AttemptSummary {
     attemptId: ID!
     testId: ID!
     title: String!
@@ -58,17 +93,35 @@ export const typeDefs = /* GraphQL */ `
     result: AttemptResultSummary
   }
 
+  type StartExamPayload {
+    attemptId: ID!
+    status: String!
+    studentId: String!
+    studentName: String!
+    startedAt: String!
+    expiresAt: String!
+    exam: ExamSession!
+    progress: ExamProgress!
+  }
+
+  type SubmitAnswersPayload {
+    attemptId: ID!
+    status: String!
+    progress: ExamProgress!
+    result: AttemptResultSummary
+  }
+
   type Query {
     students: [Student!]!
     availableTests: [Test!]!
-    attempts: [Attempt!]!
+    attempts: [AttemptSummary!]!
   }
 
   type Mutation {
     saveTest(test: String!): Boolean!
-    startExam(testId: String!, studentId: String!, studentName: String!): Attempt!
-    resumeExam(attemptId: String!): Attempt!
-    submitAnswers(attemptId: String!, answers: [AnswerInput!]!, finalize: Boolean!): Attempt!
+    startExam(testId: String!, studentId: String!, studentName: String!): StartExamPayload!
+    resumeExam(attemptId: String!): StartExamPayload!
+    submitAnswers(attemptId: String!, answers: [AnswerInput!]!, finalize: Boolean!): SubmitAnswersPayload!
     approveAttempt(attemptId: String!): Boolean!
   }
 

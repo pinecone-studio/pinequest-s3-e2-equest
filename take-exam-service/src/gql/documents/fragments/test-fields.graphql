@@ -1,0 +1,9 @@
+fragment TestFields on Test {
+  id
+  title
+  description
+  updatedAt
+  criteria {
+    ...TestCriteriaFields
+  }
+}

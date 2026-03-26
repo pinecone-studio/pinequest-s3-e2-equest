@@ -1,0 +1,13 @@
+fragment StudentExamQuestionFields on StudentExamQuestion {
+  questionId
+  type
+  prompt
+  points
+  competency
+  imageUrl
+  audioUrl
+  videoUrl
+  options {
+    ...ExamOptionFields
+  }
+}

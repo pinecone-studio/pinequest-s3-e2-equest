@@ -1,0 +1,3 @@
+mutation SaveTest($test: String!) {
+  saveTest(test: $test)
+}

@@ -119,7 +119,9 @@ export default function StudentApp() {
       setTests(data.availableTests || []);
       setAllAttempts(data.attempts || []);
     } catch (err) {
-      setError("Мэдээллийг уншиж чадсангүй.");
+      setError(
+        err instanceof Error ? err.message : "Мэдээллийг уншиж чадсангүй.",
+      );
     }
   };
 
@@ -141,7 +143,10 @@ export default function StudentApp() {
     const newAnswers = { ...answers, [questionId]: optionId };
     setAnswers(newAnswers);
     if (attempt) {
-      localStorage.setItem(`answers_${attempt.attemptId}`, JSON.stringify(newAnswers));
+      localStorage.setItem(
+        `answers_${attempt.attemptId}`,
+        JSON.stringify(newAnswers),
+      );
     }
   };
 
@@ -332,9 +337,23 @@ export default function StudentApp() {
                         Шалгалт эхлэх
                       </button>
 
-                      {allAttempts.find(a => a.testId === t.id && a.studentId === selectedStudent?.id && a.status === "in_progress") && (
+                      {allAttempts.find(
+                        (a) =>
+                          a.testId === t.id &&
+                          a.studentId === selectedStudent?.id &&
+                          a.status === "in_progress",
+                      ) && (
                         <button
-                          onClick={() => handleResumeExam(allAttempts.find(a => a.testId === t.id && a.studentId === selectedStudent?.id && a.status === "in_progress")!.attemptId)}
+                          onClick={() =>
+                            handleResumeExam(
+                              allAttempts.find(
+                                (a) =>
+                                  a.testId === t.id &&
+                                  a.studentId === selectedStudent?.id &&
+                                  a.status === "in_progress",
+                              )!.attemptId,
+                            )
+                          }
                           disabled={isPending}
                           className="mt-2 w-full rounded-full border border-cyan-500/50 bg-cyan-500/10 py-3 text-sm font-semibold text-cyan-400 transition hover:bg-cyan-500/20 disabled:opacity-50"
                         >
@@ -347,7 +366,8 @@ export default function StudentApp() {
               </div>
             </div>
 
-            {(progress?.status === "submitted" || progress?.status === "processing") && (
+            {(progress?.status === "submitted" ||
+              progress?.status === "processing") && (
               <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-12 text-center space-y-4 animate-in zoom-in duration-500">
                 <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 shadow-[0_0_40px_rgba(16,185,129,0.4)]">
                   {progress?.status === "processing" ? (
@@ -391,63 +411,63 @@ export default function StudentApp() {
               (a) =>
                 a.studentId === selectedStudent?.id && a.status === "approved",
             ) && (
-                <div className="space-y-4 pt-8">
-                  <h2 className="text-xl font-semibold text-emerald-400">
-                    Миний батлагдсан дүнгүүд
-                  </h2>
-                  <div className="grid gap-4">
-                    {allAttempts
-                      .filter(
-                        (a) =>
-                          a.studentId === selectedStudent?.id &&
-                          a.status === "approved",
-                      )
-                      .map((a) => (
-                        <div
-                          key={a.attemptId}
-                          className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 animate-in fade-in duration-300"
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <h3 className="text-lg font-bold">{a.title}</h3>
-                              <p className="text-xs text-slate-500">
-                                {new Date(
-                                  a.submittedAt || "",
-                                ).toLocaleDateString()}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-2xl font-black text-emerald-400">
-                                {a.score}/{a.maxScore}
-                              </p>
-                              <p className="text-[10px] uppercase font-bold text-slate-500">
-                                {a.percentage}% АМЖИЛТ
-                              </p>
-                            </div>
+              <div className="space-y-4 pt-8">
+                <h2 className="text-xl font-semibold text-emerald-400">
+                  Миний батлагдсан дүнгүүд
+                </h2>
+                <div className="grid gap-4">
+                  {allAttempts
+                    .filter(
+                      (a) =>
+                        a.studentId === selectedStudent?.id &&
+                        a.status === "approved",
+                    )
+                    .map((a) => (
+                      <div
+                        key={a.attemptId}
+                        className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 animate-in fade-in duration-300"
+                      >
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <h3 className="text-lg font-bold">{a.title}</h3>
+                            <p className="text-xs text-slate-500">
+                              {new Date(
+                                a.submittedAt || "",
+                              ).toLocaleDateString()}
+                            </p>
                           </div>
-                          <div className="mt-4 space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
-                            {a.result?.questionResults.map((r, i) => (
-                              <div
-                                key={r.questionId}
-                                className={`flex items-center gap-3 p-2 rounded-lg text-xs ${r.isCorrect ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}
-                              >
-                                <span className="font-bold">{i + 1}.</span>
-                                <span>
-                                  {r.isCorrect ? "Зөв хариулсан" : "Алдсан"}
-                                </span>
-                                {r.explanation && (
-                                  <span className="opacity-50 italic">
-                                    - {r.explanation}
-                                  </span>
-                                )}
-                              </div>
-                            ))}
+                          <div className="text-right">
+                            <p className="text-2xl font-black text-emerald-400">
+                              {a.score}/{a.maxScore}
+                            </p>
+                            <p className="text-[10px] uppercase font-bold text-slate-500">
+                              {a.percentage}% АМЖИЛТ
+                            </p>
                           </div>
                         </div>
-                      ))}
-                  </div>
+                        <div className="mt-4 space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                          {a.result?.questionResults.map((r, i) => (
+                            <div
+                              key={r.questionId}
+                              className={`flex items-center gap-3 p-2 rounded-lg text-xs ${r.isCorrect ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}
+                            >
+                              <span className="font-bold">{i + 1}.</span>
+                              <span>
+                                {r.isCorrect ? "Зөв хариулсан" : "Алдсан"}
+                              </span>
+                              {r.explanation && (
+                                <span className="opacity-50 italic">
+                                  - {r.explanation}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                 </div>
-              )}
+              </div>
+            )}
           </section>
         ) : (
           <section className="space-y-8">
@@ -493,22 +513,26 @@ export default function StudentApp() {
                     {q.options.map((opt) => (
                       <label
                         key={opt.id}
-                        className={`flex cursor-pointer items-center gap-4 rounded-2xl border px-6 py-4 transition-all duration-200 ${answers[q.questionId] === opt.id
-                          ? "border-cyan-500 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.1)]"
-                          : "border-white/5 bg-white/5 hover:bg-white/10"
-                          }`}
+                        className={`flex cursor-pointer items-center gap-4 rounded-2xl border px-6 py-4 transition-all duration-200 ${
+                          answers[q.questionId] === opt.id
+                            ? "border-cyan-500 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.1)]"
+                            : "border-white/5 bg-white/5 hover:bg-white/10"
+                        }`}
                       >
                         <input
                           type="radio"
                           className="hidden"
                           checked={answers[q.questionId] === opt.id}
-                          onChange={() => handleSelectAnswer(q.questionId, opt.id)}
+                          onChange={() =>
+                            handleSelectAnswer(q.questionId, opt.id)
+                          }
                         />
                         <div
-                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${answers[q.questionId] === opt.id
-                            ? "border-cyan-400 bg-cyan-400"
-                            : "border-slate-600"
-                            }`}
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                            answers[q.questionId] === opt.id
+                              ? "border-cyan-400 bg-cyan-400"
+                              : "border-slate-600"
+                          }`}
                         >
                           {answers[q.questionId] === opt.id && (
                             <div className="h-2 w-2 rounded-full bg-slate-950" />

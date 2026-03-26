@@ -1,0 +1,10 @@
+fragment SubmitAnswersPayloadFields on SubmitAnswersPayload {
+  attemptId
+  status
+  progress {
+    ...ExamProgressFields
+  }
+  result {
+    ...AttemptResultSummaryFields
+  }
+}

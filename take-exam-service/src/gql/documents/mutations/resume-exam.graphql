@@ -1,0 +1,5 @@
+mutation ResumeExam($attemptId: String!) {
+  resumeExam(attemptId: $attemptId) {
+    ...StartExamPayloadFields
+  }
+}
