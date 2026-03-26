@@ -1,0 +1,16 @@
+fragment AttemptSummaryFields on AttemptSummary {
+  attemptId
+  testId
+  title
+  studentId
+  studentName
+  status
+  score
+  maxScore
+  percentage
+  startedAt
+  submittedAt
+  result {
+    ...AttemptResultSummaryFields
+  }
+}

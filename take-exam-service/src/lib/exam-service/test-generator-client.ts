@@ -1,8 +1,8 @@
-import type { GetTestByIdResponse, MockTest } from "@shared/contracts/mock-exam";
+import type { ExamTest, GetTestByIdResponse } from "@/lib/exam-service/types";
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, "");
 
-export async function fetchPublishedTest(testId: string): Promise<MockTest> {
+export async function fetchPublishedTest(testId: string): Promise<ExamTest> {
 	const baseUrl = process.env.TEST_GENERATOR_BASE_URL?.trim();
 
 	if (!baseUrl) {

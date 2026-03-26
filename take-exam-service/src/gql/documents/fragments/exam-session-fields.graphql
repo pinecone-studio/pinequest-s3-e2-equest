@@ -1,0 +1,12 @@
+fragment ExamSessionFields on ExamSession {
+  testId
+  title
+  description
+  timeLimitMinutes
+  criteria {
+    ...TestCriteriaFields
+  }
+  questions {
+    ...StudentExamQuestionFields
+  }
+}

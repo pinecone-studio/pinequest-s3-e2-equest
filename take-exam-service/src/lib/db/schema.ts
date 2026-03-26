@@ -1,5 +1,5 @@
-import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, primaryKey, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { relations, sql } from "drizzle-orm";
+import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from "drizzle-orm/sqlite-core";
 
 export const students = sqliteTable("students", {
     id: text("id").primaryKey(),
@@ -17,14 +17,17 @@ export const tests = sqliteTable("tests", {
     topic: text("topic").notNull(),
     subject: text("subject").notNull(),
     timeLimitMinutes: integer("time_limit_minutes").notNull(),
-    status: text("status", { enum: ["published"] }).default("published").notNull(),
+    status: text("status", { enum: ["draft", "published", "archived"] }).default("draft").notNull(),
     createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
     updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
 export const questions = sqliteTable("questions", {
     id: text("id").primaryKey(),
-    testId: text("test_id").notNull(),
+    testId: text("test_id").notNull().references(() => tests.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+    }),
     prompt: text("prompt").notNull(),
     options: text("options").notNull(), // JSON string
     correctOptionId: text("correct_option_id").notNull(),
@@ -35,12 +38,20 @@ export const questions = sqliteTable("questions", {
     audioUrl: text("audio_url"),
     videoUrl: text("video_url"),
     orderSlot: integer("order_slot").notNull(),
-});
+}, (table) => ({
+    testOrderIdx: index("questions_test_order_idx").on(table.testId, table.orderSlot),
+}));
 
 export const attempts = sqliteTable("attempts", {
     id: text("id").primaryKey(),
-    testId: text("test_id").notNull(),
-    studentId: text("student_id").notNull(),
+    testId: text("test_id").notNull().references(() => tests.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+    }),
+    studentId: text("student_id").notNull().references(() => students.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+    }),
     studentName: text("student_name").notNull(),
     shuffleManifest: text("shuffle_manifest"),
     status: text("status", { enum: ["in_progress", "processing", "submitted", "approved"] }).notNull(),
@@ -50,14 +61,62 @@ export const attempts = sqliteTable("attempts", {
     startedAt: text("started_at").notNull(),
     expiresAt: text("expires_at").notNull(),
     submittedAt: text("submitted_at"),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
     studentPerTestUniqueIdx: uniqueIndex("attempts_test_student_unique_idx").on(table.testId, table.studentId),
+    studentIdx: index("attempts_student_idx").on(table.studentId),
 }));
 
 export const answers = sqliteTable("answers", {
-    attemptId: text("attempt_id").notNull(),
-    questionId: text("question_id").notNull(),
+    attemptId: text("attempt_id").notNull().references(() => attempts.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+    }),
+    questionId: text("question_id").notNull().references(() => questions.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+    }),
     selectedOptionId: text("selected_option_id"),
 }, (table) => ({
     pk: primaryKey({ columns: [table.attemptId, table.questionId] }),
+}));
+
+export const studentsRelations = relations(students, ({ many }) => ({
+    attempts: many(attempts),
+}));
+
+export const testsRelations = relations(tests, ({ many }) => ({
+    questions: many(questions),
+    attempts: many(attempts),
+}));
+
+export const questionsRelations = relations(questions, ({ one, many }) => ({
+    test: one(tests, {
+        fields: [questions.testId],
+        references: [tests.id],
+    }),
+    answers: many(answers),
+}));
+
+export const attemptsRelations = relations(attempts, ({ one, many }) => ({
+    test: one(tests, {
+        fields: [attempts.testId],
+        references: [tests.id],
+    }),
+    student: one(students, {
+        fields: [attempts.studentId],
+        references: [students.id],
+    }),
+    answers: many(answers),
+}));
+
+export const answersRelations = relations(answers, ({ one }) => ({
+    attempt: one(attempts, {
+        fields: [answers.attemptId],
+        references: [attempts.id],
+    }),
+    question: one(questions, {
+        fields: [answers.questionId],
+        references: [questions.id],
+    }),
 }));

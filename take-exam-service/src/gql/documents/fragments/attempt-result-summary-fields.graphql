@@ -1,0 +1,11 @@
+fragment AttemptResultSummaryFields on AttemptResultSummary {
+  score
+  maxScore
+  percentage
+  correctCount
+  incorrectCount
+  unansweredCount
+  questionResults {
+    ...QuestionResultFields
+  }
+}

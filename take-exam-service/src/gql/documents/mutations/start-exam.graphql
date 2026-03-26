@@ -1,0 +1,13 @@
+mutation StartExam(
+  $testId: String!
+  $studentId: String!
+  $studentName: String!
+) {
+  startExam(
+    testId: $testId
+    studentId: $studentId
+    studentName: $studentName
+  ) {
+    ...StartExamPayloadFields
+  }
+}

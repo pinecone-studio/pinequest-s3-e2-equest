@@ -1,0 +1,9 @@
+fragment QuestionResultFields on QuestionResult {
+  questionId
+  selectedOptionId
+  correctOptionId
+  isCorrect
+  pointsAwarded
+  maxPoints
+  explanation
+}

@@ -1,0 +1,14 @@
+fragment StartExamPayloadFields on StartExamPayload {
+  attemptId
+  status
+  studentId
+  studentName
+  startedAt
+  expiresAt
+  exam {
+    ...ExamSessionFields
+  }
+  progress {
+    ...ExamProgressFields
+  }
+}

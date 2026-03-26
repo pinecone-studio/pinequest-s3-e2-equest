@@ -1,0 +1,6 @@
+fragment ExamProgressFields on ExamProgress {
+  totalQuestions
+  answeredQuestions
+  remainingQuestions
+  completionRate
+}

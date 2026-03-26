@@ -1,0 +1,13 @@
+mutation SubmitAnswers(
+  $attemptId: String!
+  $answers: [AnswerInput!]!
+  $finalize: Boolean!
+) {
+  submitAnswers(
+    attemptId: $attemptId
+    answers: $answers
+    finalize: $finalize
+  ) {
+    ...SubmitAnswersPayloadFields
+  }
+}
