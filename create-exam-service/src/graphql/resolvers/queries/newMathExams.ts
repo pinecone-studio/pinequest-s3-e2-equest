@@ -13,11 +13,7 @@ function gqlQuestionType(t: string): MathExamQuestionType {
 }
 
 export const newMathExamQueries = {
-  listNewMathExams: async (
-    _: unknown,
-    args: ListArgs,
-    ctx: GraphQLContext,
-  ) => {
+  listNewMathExams: async (_: unknown, args: ListArgs, ctx: GraphQLContext) => {
     if (!ctx.db) {
       throw new GraphQLError("D1 DB холбогдоогүй байна.");
     }
@@ -91,7 +87,9 @@ export const newMathExamQueries = {
       .orderBy(newExamQuestions.position);
 
     const questions = questionRows.map((q) => {
-      const options = q.optionsJson ? (JSON.parse(q.optionsJson) as string[]) : null;
+      const options = q.optionsJson
+        ? (JSON.parse(q.optionsJson) as string[])
+        : null;
       return {
         id: q.id,
         type: gqlQuestionType(q.type),
@@ -126,4 +124,3 @@ export const newMathExamQueries = {
     };
   },
 };
-

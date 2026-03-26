@@ -3,6 +3,10 @@ import type {
   GeneratedExamPayload,
   QuestionType,
 } from "@/lib/math-exam-contract";
+import {
+  normalizeBackendLatexOnly,
+  normalizeBackendMathText,
+} from "@/lib/normalize-math-text";
 
 export type BaseQuestion = {
   id: string;
@@ -190,7 +194,7 @@ export function normalizeGeneratedQuestions(
     .slice(0, settings.mcqCount)
     .map((question) => {
       const { points, prompt } = splitPromptAndPoints(
-        question.prompt?.trim() ?? "",
+        normalizeBackendMathText(question.prompt?.trim() ?? ""),
         typeof question.points === "number" && question.points > 0
           ? question.points
           : 1,
@@ -205,7 +209,7 @@ export function normalizeGeneratedQuestions(
         imageDataUrl: undefined,
         options:
           question.options?.length && question.options.length >= 2
-            ? question.options.slice(0, 6)
+            ? question.options.slice(0, 6).map((opt) => normalizeBackendMathText(opt))
             : undefined,
         points,
         prompt,
@@ -217,21 +221,23 @@ export function normalizeGeneratedQuestions(
     .slice(0, settings.mathCount)
     .map((question) => {
       const { points, prompt } = splitPromptAndPoints(
-        question.prompt?.trim() ?? "",
+        normalizeBackendMathText(question.prompt?.trim() ?? ""),
         typeof question.points === "number" && question.points > 0
           ? question.points
           : 1,
       );
 
       return createMathQuestion({
-        answerLatex: question.answerLatex?.trim() ?? "",
+        answerLatex: normalizeBackendLatexOnly(question.answerLatex?.trim() ?? ""),
         imageAlt: question.imageAlt?.trim() ?? "",
         imageDataUrl: undefined,
         points,
         prompt,
         responseGuide:
-          question.responseGuide?.trim() ??
-          "Бодолтын бүх алхмаа тодорхой бичнэ үү.",
+          normalizeBackendMathText(
+            question.responseGuide?.trim() ??
+              "Бодолтын бүх алхмаа тодорхой бичнэ үү.",
+          ),
       });
     });
 
@@ -267,7 +273,7 @@ export function normalizeImportedQuestions(
     .filter((question) => question.type === "mcq" || question.type === "math")
     .map((question) => {
       const { points, prompt } = splitPromptAndPoints(
-        question.prompt?.trim() ?? "",
+        normalizeBackendMathText(question.prompt?.trim() ?? ""),
         typeof question.points === "number" && question.points > 0
           ? question.points
           : question.type === "math"
@@ -287,7 +293,9 @@ export function normalizeImportedQuestions(
             : undefined,
           options:
             question.options?.length && question.options.length >= 2
-              ? question.options.slice(0, 6)
+              ? question.options
+                  .slice(0, 6)
+                  .map((opt) => normalizeBackendMathText(opt))
               : undefined,
           points,
           prompt,
@@ -295,7 +303,7 @@ export function normalizeImportedQuestions(
       }
 
       return createMathQuestion({
-        answerLatex: question.answerLatex?.trim() ?? "",
+        answerLatex: normalizeBackendLatexOnly(question.answerLatex?.trim() ?? ""),
         imageAlt: question.imageAlt?.trim() ?? "",
         imageDataUrl: question.sourceImageName
           ? sourceImagesByName[question.sourceImageName]
@@ -303,8 +311,10 @@ export function normalizeImportedQuestions(
         points,
         prompt,
         responseGuide:
-          question.responseGuide?.trim() ??
-          "Бодолтын бүх алхмаа тодорхой бичнэ үү.",
+          normalizeBackendMathText(
+            question.responseGuide?.trim() ??
+              "Бодолтын бүх алхмаа тодорхой бичнэ үү.",
+          ),
       });
     });
 }

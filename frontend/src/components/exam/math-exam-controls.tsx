@@ -92,13 +92,6 @@ export function MathExamControls({
   stats,
 }: MathExamControlsProps) {
   const generatorFileInputRef = useRef<HTMLInputElement | null>(null);
-  const pinnedTitles = [
-    "9-р анги — Математик (5 тест + 1 задгай)",
-    "VIII анги БШ",
-  ] as const;
-  const pinnedExams = pinnedTitles
-    .map((title) => bankExams.find((exam) => exam.title === title))
-    .filter((exam): exam is { examId: string; title: string } => Boolean(exam));
 
   function handleSourceFileChange(event: ChangeEvent<HTMLInputElement>) {
     void onSourceFilesSelected(Array.from(event.target.files ?? []));
@@ -121,7 +114,11 @@ export function MathExamControls({
               className="hidden"
               onChange={handleSourceFileChange}
             />
-            <DropdownMenu onOpenChange={(open) => open && onRequestBankExams()}>
+            <DropdownMenu
+              onOpenChange={(open) =>
+                open && bankExams.length === 0 && onRequestBankExams()
+              }
+            >
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline">
                   <Database />
@@ -131,8 +128,8 @@ export function MathExamControls({
               <DropdownMenuContent align="start">
                 <DropdownMenuLabel>Өмнөх шалгалтууд</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {pinnedExams.length > 0 ? (
-                  pinnedExams.map((exam) => (
+                {bankExams.length > 0 ? (
+                  bankExams.map((exam) => (
                     <DropdownMenuItem
                       key={exam.examId}
                       onSelect={() => onImportFromBank(exam.examId)}

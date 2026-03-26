@@ -1,6 +1,6 @@
 "use client";
 
-import { useLazyQuery, useMutation } from "@apollo/client/react";
+import { useApolloClient, useLazyQuery, useMutation } from "@apollo/client/react";
 import { useState } from "react";
 
 import { MathExamControls } from "@/components/exam/math-exam-controls";
@@ -36,8 +36,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { PreviewSection } from "./math-exam-student";
+import { normalizeBackendMathText } from "@/lib/normalize-math-text";
 
 export default function MathExam() {
+  const apolloClient = useApolloClient();
   const [examTitle, setExamTitle] = useState("Жишиг шалгалт");
   const [questions, setQuestions] = useState<ExamQuestion[]>([]);
   const [bankExams, setBankExams] = useState<{ examId: string; title: string }[]>(
@@ -63,10 +65,12 @@ export default function MathExam() {
 
   const [saveNewMathExamMutation] = useMutation(SaveNewMathExamDocument);
   const [fetchExamList] = useLazyQuery(ListNewMathExamsDocument, {
-    fetchPolicy: "network-only",
+    fetchPolicy: "cache-first",
+    nextFetchPolicy: "cache-first",
   });
   const [fetchExamById] = useLazyQuery(GetNewMathExamDocument, {
-    fetchPolicy: "network-only",
+    fetchPolicy: "cache-first",
+    nextFetchPolicy: "cache-first",
   });
 
   const {
@@ -81,56 +85,7 @@ export default function MathExam() {
   const requestedQuestionCount =
     generatorSettings.mcqCount + generatorSettings.mathCount;
 
-  function sanitizeImportedLatexArtifacts(value: string) {
-    if (!value) return value;
-
-    // Undo common "escaped dollar" artifacts that appear in stored text.
-    // Examples seen:
-    // - "\\$cdot"  -> "\\cdot"
-    // - "\\$right" -> "\\right"
-    // - "^{7$}"    -> "^{7}"
-    let next = value
-      .replace(/\\\$(?=[A-Za-z])/g, "\\")
-      .replace(/\\\$\{/g, "\\{");
-
-    // Remove trailing '$' before a closing brace/paren/bracket.
-    next = next.replace(/\$([}\]\)])/g, "$1");
-
-    // If there are still stray dollar signs (not used as delimiters), prefer removing them.
-    // We keep it conservative: only remove dollars when there are no matching pairs.
-    const dollarCount = (next.match(/\$/g) ?? []).length;
-    if (dollarCount > 0 && dollarCount % 2 === 1) {
-      next = next.replace(/\$/g, "");
-    }
-
-    return next;
-  }
-
-  function restoreInlineMathDelimiters(value: string) {
-    if (!value) return value;
-    if (value.includes("$")) return value;
-
-    // Wrap obvious LaTeX commands (e.g. \sqrt{50}, \frac{1}{2}) inline.
-    // Example: "Илэрхийллийг хялбарчил. \sqrt{50}" -> "Илэрхийллийг хялбарчил. $\sqrt{50}$"
-    const withWrappedCommands = value.replace(
-      /(\\[A-Za-z]+)(\s*(?:\{[^}]*\}|\[[^\]]*\]))+/g,
-      (full) => `$${full.trim()}$`,
-    );
-    if (withWrappedCommands !== value) {
-      return withWrappedCommands;
-    }
-
-    // Wrap ascii-only math-ish expressions containing =, ^, or _ with $...$
-    // Example: "D=b^2-4ac." => "$D=b^2-4ac$."
-    const pattern =
-      /([A-Za-z0-9][A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]*[=^_][A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]*[A-Za-z0-9])([.?!,;:]?)/g;
-
-    return value.replace(pattern, (_full, expr: string, punct: string) => {
-      const trimmed = expr.trim();
-      if (!trimmed) return _full;
-      return `$${trimmed}$${punct ?? ""}`;
-    });
-  }
+  const normalizeImportedText = (value: string) => normalizeBackendMathText(value);
 
   async function handleRequestBankExams() {
     try {
@@ -194,9 +149,6 @@ export default function MathExam() {
         mathCount: exam.mathCount,
         totalPoints: exam.totalPoints,
       }));
-
-      const normalizeImportedText = (value: string) =>
-        restoreInlineMathDelimiters(sanitizeImportedLatexArtifacts(value));
 
       const nextQuestions: ExamQuestion[] = (exam.questions ?? []).map((q: any) =>
         q.type === MathExamQuestionType.Mcq
@@ -426,7 +378,13 @@ export default function MathExam() {
         throw new Error("Хариу дээр examId ирээгүй байна.");
       }
       handleResetAll();
+      setBankExams([]);
       setSavedExamId(examId);
+
+      // DB өөрчлөгдсөн тул list cache-аа шинэчилнэ.
+      await apolloClient.refetchQueries({
+        include: [ListNewMathExamsDocument],
+      });
     } catch (e) {
       setSaveError(
         e instanceof Error
