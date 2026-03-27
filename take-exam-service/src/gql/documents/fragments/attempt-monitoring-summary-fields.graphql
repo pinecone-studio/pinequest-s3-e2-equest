@@ -1,0 +1,9 @@
+fragment AttemptMonitoringSummaryFields on AttemptMonitoringSummary {
+  totalEvents
+  warningCount
+  dangerCount
+  lastEventAt
+  recentEvents {
+    ...AttemptMonitoringEventFields
+  }
+}

@@ -2,6 +2,7 @@ import type {
 	AttemptSummary,
 	ExamAnswerInput,
 	ExamResultSummary,
+	ProctoringEventSeverity,
 	StartExamResponse,
 	StudentExamQuestion,
 	StudentInfo,
@@ -13,6 +14,14 @@ import type {
 type DashboardPayload = {
 	availableTests: TeacherTestSummary[];
 	attempts: AttemptSummary[];
+};
+
+type AttemptActivityInput = {
+	code: string;
+	detail: string;
+	occurredAt?: string;
+	severity: ProctoringEventSeverity;
+	title: string;
 };
 
 const MOCK_DELAY_MS = 120;
@@ -240,6 +249,10 @@ let attemptsStore: AttemptSummary[] = [
 
 const activeSessionStore = new Map<string, StartExamResponse>();
 const answersStore = new Map<string, Record<string, string | null>>();
+const monitoringStore = new Map<
+	string,
+	NonNullable<AttemptSummary["monitoring"]>
+>();
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -287,6 +300,41 @@ const toStartExamPayload = (
 const createAttemptId = () =>
 	`mock-attempt-${Math.random().toString(36).slice(2, 9)}-${Date.now().toString(36)}`;
 
+const appendMockMonitoringEvent = (
+	attemptId: string,
+	input: AttemptActivityInput,
+) => {
+	const current = monitoringStore.get(attemptId) ?? {
+		totalEvents: 0,
+		warningCount: 0,
+		dangerCount: 0,
+		lastEventAt: undefined,
+		recentEvents: [],
+	};
+
+	const occurredAt = input.occurredAt ?? new Date().toISOString();
+	const event = {
+		id: `mock-evt-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`,
+		code: input.code,
+		detail: input.detail,
+		severity: input.severity,
+		title: input.title,
+		occurredAt,
+	};
+
+	current.totalEvents += 1;
+	current.lastEventAt = occurredAt;
+	current.recentEvents = [event, ...current.recentEvents].slice(0, 8);
+
+	if (input.severity === "danger") {
+		current.dangerCount += 1;
+	} else {
+		current.warningCount += 1;
+	}
+
+	monitoringStore.set(attemptId, current);
+};
+
 export const mockStudentPortalClient = {
 	async getStudents() {
 		await sleep();
@@ -301,7 +349,12 @@ export const mockStudentPortalClient = {
 
 		return {
 			availableTests: clone(MOCK_TESTS),
-			attempts: clone(sortedAttempts),
+			attempts: clone(
+				sortedAttempts.map((attempt) => ({
+					...attempt,
+					monitoring: monitoringStore.get(attempt.attemptId),
+				})),
+			),
 		};
 	},
 
@@ -423,6 +476,14 @@ export const mockStudentPortalClient = {
 			status: "submitted",
 			progress: makeProgress(answeredQuestions, totalQuestions),
 		};
+	},
+
+	async logAttemptActivity(attemptId: string, input: AttemptActivityInput) {
+		await sleep();
+		const attempt = attemptsStore.find((item) => item.attemptId === attemptId);
+		if (!attempt) throw new Error("Оролдлого олдсонгүй.");
+		appendMockMonitoringEvent(attemptId, input);
+		return true;
 	},
 };
 

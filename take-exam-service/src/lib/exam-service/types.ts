@@ -68,6 +68,25 @@ export type ExamProgress = {
 
 export type AttemptStatus = "in_progress" | "processing" | "submitted" | "approved";
 
+export type ProctoringEventSeverity = "warning" | "danger";
+
+export type AttemptMonitoringEvent = {
+	id: string;
+	code: string;
+	severity: ProctoringEventSeverity;
+	title: string;
+	detail: string;
+	occurredAt: string;
+};
+
+export type AttemptMonitoringSummary = {
+	totalEvents: number;
+	warningCount: number;
+	dangerCount: number;
+	lastEventAt?: string;
+	recentEvents: AttemptMonitoringEvent[];
+};
+
 export type ExamQuestionResult = {
 	questionId: string;
 	selectedOptionId: string | null;
@@ -143,4 +162,5 @@ export type AttemptSummary = {
 	startedAt: string;
 	submittedAt?: string;
 	result?: ExamResultSummary;
+	monitoring?: AttemptMonitoringSummary;
 };

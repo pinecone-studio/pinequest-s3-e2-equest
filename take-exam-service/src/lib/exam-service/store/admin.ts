@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import type { AttemptSummary } from "@/lib/exam-service/types";
 import { DbClient } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
+import { getAttemptMonitoringSummaries } from "./activity";
 import { cacheAttemptState, getAttemptStateFromKv } from "./cache";
 import { computeResult, getAttemptResults } from "./results";
 
@@ -9,6 +10,10 @@ export const listAttempts = async (db: DbClient): Promise<AttemptSummary[]> => {
 	const records = await db.query.attempts.findMany({
 		orderBy: [desc(schema.attempts.startedAt)],
 	});
+	const monitoringByAttemptId = await getAttemptMonitoringSummaries(
+		db,
+		records.map((record) => record.id),
+	);
 
 	const summaries: AttemptSummary[] = [];
 
@@ -32,6 +37,7 @@ export const listAttempts = async (db: DbClient): Promise<AttemptSummary[]> => {
 			startedAt: record.startedAt,
 			submittedAt: record.submittedAt ?? undefined,
 			result: isApproved ? computeResult(resultRows) : undefined,
+			monitoring: monitoringByAttemptId.get(record.id),
 		});
 	}
 

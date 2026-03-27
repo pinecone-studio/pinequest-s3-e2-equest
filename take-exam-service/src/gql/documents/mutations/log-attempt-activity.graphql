@@ -1,0 +1,6 @@
+mutation LogAttemptActivity(
+  $attemptId: String!
+  $input: AttemptActivityInput!
+) {
+  logAttemptActivity(attemptId: $attemptId, input: $input)
+}

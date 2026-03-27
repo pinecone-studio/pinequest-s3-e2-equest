@@ -1,0 +1,8 @@
+fragment AttemptMonitoringEventFields on AttemptMonitoringEvent {
+  id
+  code
+  severity
+  title
+  detail
+  occurredAt
+}

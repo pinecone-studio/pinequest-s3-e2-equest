@@ -81,6 +81,22 @@ export const answers = sqliteTable("answers", {
     pk: primaryKey({ columns: [table.attemptId, table.questionId] }),
 }));
 
+export const proctoringEvents = sqliteTable("proctoring_events", {
+    id: text("id").primaryKey(),
+    attemptId: text("attempt_id").notNull().references(() => attempts.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+    }),
+    code: text("code").notNull(),
+    severity: text("severity", { enum: ["warning", "danger"] }).notNull(),
+    title: text("title").notNull(),
+    detail: text("detail").notNull(),
+    occurredAt: text("occurred_at").notNull(),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => ({
+    attemptOccurredIdx: index("proctoring_events_attempt_occurred_idx").on(table.attemptId, table.occurredAt),
+}));
+
 export const studentsRelations = relations(students, ({ many }) => ({
     attempts: many(attempts),
 }));
@@ -108,6 +124,7 @@ export const attemptsRelations = relations(attempts, ({ one, many }) => ({
         references: [students.id],
     }),
     answers: many(answers),
+    proctoringEvents: many(proctoringEvents),
 }));
 
 export const answersRelations = relations(answers, ({ one }) => ({
@@ -118,5 +135,12 @@ export const answersRelations = relations(answers, ({ one }) => ({
     question: one(questions, {
         fields: [answers.questionId],
         references: [questions.id],
+    }),
+}));
+
+export const proctoringEventsRelations = relations(proctoringEvents, ({ one }) => ({
+    attempt: one(attempts, {
+        fields: [proctoringEvents.attemptId],
+        references: [attempts.id],
     }),
 }));
