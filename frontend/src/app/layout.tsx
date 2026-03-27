@@ -19,6 +19,9 @@ export const metadata: Metadata = {
     template: "Pinequest",
   },
   description: "Exam Module — Pinequest",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+  },
 };
 
 export default function RootLayout({
@@ -27,10 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml"></link>
-      </head>
+    <html lang="mn">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

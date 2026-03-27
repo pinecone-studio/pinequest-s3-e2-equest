@@ -8,6 +8,13 @@
       "when": 1774502178291,
       "tag": "0000_gifted_infant_terrible",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1774502180000,
+      "tag": "0001_new_exams_session_meta",
+      "breakpoints": true
     }
   ]
 }

@@ -1,9 +1,9 @@
 "use client";
 
 import { useApolloClient, useLazyQuery, useMutation } from "@apollo/client/react";
-import { useState } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
+import { ExamSessionMetadataForm } from "@/components/exam/exam-session-metadata-form";
 import { MathExamControls } from "@/components/exam/math-exam-controls";
 import { EditorSection } from "@/components/exam/math-exam-editor-section";
 import { runMathExamDemo } from "@/components/exam/demo-button";
@@ -31,6 +31,7 @@ import {
 } from "@/gql/create-exam-documents";
 import {
   MathExamQuestionType,
+  type NewMathExamSessionMetaInput,
   type SaveNewMathExamInput,
   type SaveNewMathExamPayload,
 } from "@/gql/graphql";
@@ -38,10 +39,64 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { PreviewSection } from "./math-exam-student";
 import { normalizeBackendMathText } from "@/lib/normalize-math-text";
+import {
+  createDefaultExamSessionMetadata,
+  type ExamSessionExamType,
+  type ExamSessionMetadata,
+  type ExamSessionSubject,
+} from "@/lib/exam-session-metadata";
+
+const SESSION_EXAM_TYPES: ExamSessionExamType[] = [
+  "progress",
+  "term",
+  "year_final",
+  "practice",
+];
+const SESSION_SUBJECTS: ExamSessionSubject[] = [
+  "math",
+  "physics",
+  "mongolian",
+];
+
+function sessionMetadataToGqlInput(
+  meta: ExamSessionMetadata,
+): NewMathExamSessionMetaInput {
+  return {
+    grade: meta.grade ?? undefined,
+    groupClass: meta.groupClass || undefined,
+    examType: meta.examType ?? undefined,
+    subject: meta.subject ?? undefined,
+    topics: meta.topics.length ? meta.topics : undefined,
+    examDate: meta.examDate || undefined,
+    startTime: meta.startTime || undefined,
+    endTime: meta.endTime || undefined,
+    durationMinutes: meta.durationMinutes ?? undefined,
+    mixQuestions: meta.mixQuestions,
+    withVariants: meta.withVariants,
+    variantCount: meta.variantCount ?? undefined,
+    description: meta.description || undefined,
+  };
+}
+
+function parseStoredExamType(
+  v: string | null | undefined,
+): ExamSessionExamType | null {
+  return v && SESSION_EXAM_TYPES.includes(v as ExamSessionExamType)
+    ? (v as ExamSessionExamType)
+    : null;
+}
+
+function parseStoredSubject(
+  v: string | null | undefined,
+): ExamSessionSubject | null {
+  return v && SESSION_SUBJECTS.includes(v as ExamSessionSubject)
+    ? (v as ExamSessionSubject)
+    : null;
+}
 
 export default function MathExam() {
   const apolloClient = useApolloClient();
-  const [examTitle, setExamTitle] = useState("Жишиг шалгалт");
+  const [examTitle, setExamTitle] = useState("");
   const [questions, setQuestions] = useState<ExamQuestion[]>([]);
   const [bankExams, setBankExams] = useState<{ examId: string; title: string }[]>(
     [],
@@ -63,6 +118,9 @@ export default function MathExam() {
   const [savedExamId, setSavedExamId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sessionMetadata, setSessionMetadata] = useState<ExamSessionMetadata>(
+    createDefaultExamSessionMetadata,
+  );
 
   const [saveNewMathExamMutation] = useMutation(SaveNewMathExamDocument);
   const [fetchExamList] = useLazyQuery(ListNewMathExamsDocument, {
@@ -166,6 +224,21 @@ export default function MathExam() {
                   topics?: string | null;
                   sourceContext?: string | null;
                 } | null;
+                sessionMeta?: {
+                  grade?: number | null;
+                  groupClass?: string | null;
+                  examType?: string | null;
+                  subject?: string | null;
+                  topics?: string[] | null;
+                  examDate?: string | null;
+                  startTime?: string | null;
+                  endTime?: string | null;
+                  durationMinutes?: number | null;
+                  mixQuestions?: boolean | null;
+                  withVariants?: boolean | null;
+                  variantCount?: number | null;
+                  description?: string | null;
+                } | null;
                 questions?: any[] | null;
               } | null;
             }
@@ -178,6 +251,26 @@ export default function MathExam() {
       setIsGeneratorOpen(false);
       setSourceFiles([]);
       setExamTitle(exam.title);
+      if (exam.sessionMeta) {
+        const sm = exam.sessionMeta;
+        setSessionMetadata({
+          grade: sm.grade ?? null,
+          groupClass: sm.groupClass ?? "",
+          examType: parseStoredExamType(sm.examType ?? undefined),
+          subject: parseStoredSubject(sm.subject ?? undefined),
+          topics: sm.topics ?? [],
+          examDate: sm.examDate ?? "",
+          startTime: sm.startTime ?? "",
+          endTime: sm.endTime ?? "",
+          durationMinutes: sm.durationMinutes ?? null,
+          mixQuestions: sm.mixQuestions ?? false,
+          withVariants: sm.withVariants ?? false,
+          variantCount: sm.variantCount ?? null,
+          description: sm.description ?? "",
+        });
+      } else {
+        setSessionMetadata(createDefaultExamSessionMetadata());
+      }
       setGeneratorSettings((current) => ({
         ...current,
         difficulty:
@@ -277,7 +370,6 @@ export default function MathExam() {
       setSavedExamId,
       setIsGeneratorOpen,
       setSourceFiles,
-      setExamTitle,
       setGeneratorSettings,
       setQuestions,
       resetSectionState,
@@ -290,7 +382,8 @@ export default function MathExam() {
     setSavedExamId(null);
     setSaving(false);
 
-    setExamTitle("Жишиг шалгалт");
+    setExamTitle("");
+    setSessionMetadata(createDefaultExamSessionMetadata());
     setQuestions([]);
     setSourceFiles([]);
     setGeneratorSettings(createDefaultGeneratorSettings());
@@ -381,6 +474,7 @@ export default function MathExam() {
           topics: generatorSettings.topics,
           sourceContext: generatorSettings.sourceContext,
         },
+        sessionMeta: sessionMetadataToGqlInput(sessionMetadata),
         questions: questions.map((q) =>
           q.type === "mcq"
             ? {
@@ -443,6 +537,12 @@ export default function MathExam() {
     <section className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.12),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(59,130,246,0.14),_transparent_32%),linear-gradient(180deg,_rgba(248,250,252,0.96),_rgba(241,245,249,0.98))] px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-6">
+          <ExamSessionMetadataForm
+            metadata={sessionMetadata}
+            onMetadataChange={setSessionMetadata}
+            examTitle={examTitle}
+            onExamTitleChange={setExamTitle}
+          />
           <MathExamControls
             examTitle={examTitle}
             generatorError={generatorError}
@@ -452,7 +552,6 @@ export default function MathExam() {
             isGeneratorOpen={isGeneratorOpen}
             onAddQuestion={addQuestion}
             onDemo={handleDemo}
-            onExamTitleChange={setExamTitle}
             onGenerateExam={handleGenerateExam}
             onGeneratorOpenChange={setIsGeneratorOpen}
             bankExams={bankExams}

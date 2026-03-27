@@ -120,6 +120,22 @@ export const typeDefs = /* GraphQL */ `
     sourceContext: String
   }
 
+  input NewMathExamSessionMetaInput {
+    grade: Int
+    groupClass: String
+    examType: String
+    subject: String
+    topics: [String!]
+    examDate: String
+    startTime: String
+    endTime: String
+    durationMinutes: Int
+    mixQuestions: Boolean
+    withVariants: Boolean
+    variantCount: Int
+    description: String
+  }
+
   input NewMathExamQuestionInput {
     id: ID
     type: MathExamQuestionType!
@@ -140,6 +156,7 @@ export const typeDefs = /* GraphQL */ `
     mathCount: Int!
     totalPoints: Int!
     generator: NewMathExamGeneratorMetaInput
+    sessionMeta: NewMathExamSessionMetaInput
     questions: [NewMathExamQuestionInput!]!
   }
 
@@ -174,6 +191,22 @@ export const typeDefs = /* GraphQL */ `
     sourceContext: String
   }
 
+  type NewMathExamSessionMeta {
+    grade: Int
+    groupClass: String
+    examType: String
+    subject: String
+    topics: [String!]
+    examDate: String
+    startTime: String
+    endTime: String
+    durationMinutes: Int
+    mixQuestions: Boolean
+    withVariants: Boolean
+    variantCount: Int
+    description: String
+  }
+
   type NewMathExamQuestion {
     id: ID!
     type: MathExamQuestionType!
@@ -194,6 +227,7 @@ export const typeDefs = /* GraphQL */ `
     mathCount: Int!
     totalPoints: Int!
     generator: NewMathExamGeneratorMeta
+    sessionMeta: NewMathExamSessionMeta
     questions: [NewMathExamQuestion!]!
     createdAt: String!
     updatedAt: String!

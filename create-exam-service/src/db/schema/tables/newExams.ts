@@ -18,6 +18,21 @@ export const newExams = sqliteTable("new_exams", {
 	topics: text("topics"),
 	sourceContext: text("source_context"),
 
+	/** Ерөнхий мэдээлэл (math-exam session metadata) */
+	grade: integer("grade"),
+	groupClass: text("group_class"),
+	examType: text("exam_type"),
+	sessionSubject: text("session_subject"),
+	sessionTopicsJson: text("session_topics_json"),
+	examDate: text("exam_date"),
+	startTime: text("start_time"),
+	endTime: text("end_time"),
+	durationMinutes: integer("duration_minutes"),
+	mixQuestions: integer("mix_questions"),
+	withVariants: integer("with_variants"),
+	variantCount: integer("variant_count"),
+	sessionDescription: text("session_description"),
+
 	payloadJson: text("payload_json"),
 
 	createdAt: text("created_at").notNull(),

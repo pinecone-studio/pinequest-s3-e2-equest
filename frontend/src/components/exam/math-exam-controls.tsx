@@ -51,7 +51,6 @@ type MathExamControlsProps = {
   isGeneratorOpen: boolean;
   onAddQuestion: (type: QuestionType) => void;
   onDemo: () => void;
-  onExamTitleChange: (value: string) => void;
   onGenerateExam: () => void;
   onGeneratorOpenChange: (open: boolean) => void;
   bankExams: { examId: string; title: string }[];
@@ -78,7 +77,6 @@ export function MathExamControls({
   isGeneratorOpen,
   onAddQuestion,
   onDemo,
-  onExamTitleChange,
   onGenerateExam,
   onGeneratorOpenChange,
   bankExams,
@@ -103,7 +101,7 @@ export function MathExamControls({
       <CardHeader className="gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
-            Жишиг Шалгалт
+            Асуулт
           </Badge>
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -157,11 +155,10 @@ export function MathExamControls({
                 <>Docs file</>
               )}
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onGeneratorOpenChange(!isGeneratorOpen)}
-            >
+            <Button type="button" variant="outline" onClick={() => {}}>
+              AI
+            </Button>
+            <Button type="button" variant="outline" disabled>
               AI Generate
               <ChevronDown
                 className={cn(
@@ -174,14 +171,15 @@ export function MathExamControls({
         </div>
         <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
           <div className="space-y-2">
-            <Label htmlFor="exam-title">Шалгалтын нэр</Label>
-            <Input
-              id="exam-title"
-              value={examTitle}
-              onChange={(event) => onExamTitleChange(event.target.value)}
-              className="h-11 text-lg"
-              placeholder="Шалгалтын нэрээ оруулна уу"
-            />
+            <Label>Шалгалтын нэр</Label>
+            <div
+              className="flex h-8 w-full items-center rounded-lg border border-input bg-muted/30 px-2.5 text-sm font-medium text-foreground"
+              title={examTitle.trim() || undefined}
+            >
+              <span className="truncate">
+                {examTitle.trim() ? examTitle : "Ерөнхий мэдээллээс татна"}
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button

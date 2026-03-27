@@ -11,6 +11,54 @@ import { publishExamSaved } from "../../../lib/ably";
 
 type Args = { input: SaveNewMathExamInput };
 
+function dbSessionMetaFields(sm: SaveNewMathExamInput["sessionMeta"]) {
+	if (!sm) {
+		return {
+			grade: null as number | null,
+			groupClass: null as string | null,
+			examType: null as string | null,
+			sessionSubject: null as string | null,
+			sessionTopicsJson: null as string | null,
+			examDate: null as string | null,
+			startTime: null as string | null,
+			endTime: null as string | null,
+			durationMinutes: null as number | null,
+			mixQuestions: null as number | null,
+			withVariants: null as number | null,
+			variantCount: null as number | null,
+			sessionDescription: null as string | null,
+		};
+	}
+	const topics = (sm.topics ?? []).filter((t) => String(t).trim().length > 0);
+	return {
+		grade:
+			typeof sm.grade === "number" && Number.isFinite(sm.grade)
+				? Math.floor(sm.grade)
+				: null,
+		groupClass: sm.groupClass?.trim() || null,
+		examType: sm.examType?.trim() || null,
+		sessionSubject: sm.subject?.trim() || null,
+		sessionTopicsJson: topics.length ? JSON.stringify(topics) : null,
+		examDate: sm.examDate?.trim() || null,
+		startTime: sm.startTime?.trim() || null,
+		endTime: sm.endTime?.trim() || null,
+		durationMinutes:
+			typeof sm.durationMinutes === "number" &&
+			Number.isFinite(sm.durationMinutes)
+				? Math.floor(sm.durationMinutes)
+				: null,
+		mixQuestions:
+			typeof sm.mixQuestions === "boolean" ? (sm.mixQuestions ? 1 : 0) : null,
+		withVariants:
+			typeof sm.withVariants === "boolean" ? (sm.withVariants ? 1 : 0) : null,
+		variantCount:
+			typeof sm.variantCount === "number" && Number.isFinite(sm.variantCount)
+				? Math.floor(sm.variantCount)
+				: null,
+		sessionDescription: sm.description?.trim() || null,
+	};
+}
+
 function dbQuestionType(t: MathExamQuestionType): "mcq" | "math" {
 	if (t === MathExamQuestionType.Mcq) return "mcq";
 	if (t === MathExamQuestionType.Math) return "math";
@@ -41,6 +89,7 @@ export const saveNewMathExamMutation = {
 
 		const createdAt = existing[0]?.createdAt ?? now;
 		const gen = input.generator;
+		const sm = dbSessionMetaFields(input.sessionMeta);
 
 		const payloadJson = JSON.stringify({
 			title: input.title,
@@ -48,6 +97,7 @@ export const saveNewMathExamMutation = {
 			mathCount: input.mathCount,
 			totalPoints: input.totalPoints,
 			generator: gen,
+			sessionMeta: input.sessionMeta,
 			questions: input.questions,
 		});
 
@@ -62,6 +112,7 @@ export const saveNewMathExamMutation = {
 				difficulty: gen?.difficulty ?? null,
 				topics: gen?.topics ?? null,
 				sourceContext: gen?.sourceContext ?? null,
+				...sm,
 				payloadJson,
 				createdAt,
 				updatedAt: now,
@@ -76,6 +127,7 @@ export const saveNewMathExamMutation = {
 					difficulty: gen?.difficulty ?? null,
 					topics: gen?.topics ?? null,
 					sourceContext: gen?.sourceContext ?? null,
+					...sm,
 					payloadJson,
 					updatedAt: now,
 				},

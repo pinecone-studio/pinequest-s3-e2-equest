@@ -60,6 +60,21 @@ export const GetNewMathExamDocument = gql(`
 				topics
 				sourceContext
 			}
+			sessionMeta {
+				grade
+				groupClass
+				examType
+				subject
+				topics
+				examDate
+				startTime
+				endTime
+				durationMinutes
+				mixQuestions
+				withVariants
+				variantCount
+				description
+			}
 			questions {
 				id
 				type

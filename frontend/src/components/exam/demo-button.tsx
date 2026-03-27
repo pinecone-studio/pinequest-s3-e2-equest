@@ -26,7 +26,6 @@ type RunMathExamDemoArgs = {
   setSavedExamId: Dispatch<SetStateAction<string | null>>;
   setIsGeneratorOpen: Dispatch<SetStateAction<boolean>>;
   setSourceFiles: Dispatch<SetStateAction<File[]>>;
-  setExamTitle: Dispatch<SetStateAction<string>>;
   setGeneratorSettings: Dispatch<SetStateAction<GeneratorSettings>>;
   setQuestions: Dispatch<SetStateAction<ExamQuestion[]>>;
   resetSectionState: () => void;
@@ -38,7 +37,6 @@ export function runMathExamDemo({
   setSavedExamId,
   setIsGeneratorOpen,
   setSourceFiles,
-  setExamTitle,
   setGeneratorSettings,
   setQuestions,
   resetSectionState,
@@ -51,7 +49,6 @@ export function runMathExamDemo({
 
   const demo = generateDemoExam();
 
-  setExamTitle(demo.title);
   setGeneratorSettings((current) => ({
     ...current,
     ...demo.settings,

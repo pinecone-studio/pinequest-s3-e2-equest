@@ -137,6 +137,7 @@ export type NewMathExam = {
   mathCount: Scalars['Int']['output'];
   mcqCount: Scalars['Int']['output'];
   questions: Array<NewMathExamQuestion>;
+  sessionMeta?: Maybe<NewMathExamSessionMeta>;
   title: Scalars['String']['output'];
   totalPoints: Scalars['Int']['output'];
   updatedAt: Scalars['String']['output'];
@@ -180,6 +181,39 @@ export type NewMathExamQuestionInput = {
   prompt: Scalars['String']['input'];
   responseGuide?: InputMaybe<Scalars['String']['input']>;
   type: MathExamQuestionType;
+};
+
+export type NewMathExamSessionMeta = {
+  __typename?: 'NewMathExamSessionMeta';
+  description?: Maybe<Scalars['String']['output']>;
+  durationMinutes?: Maybe<Scalars['Int']['output']>;
+  endTime?: Maybe<Scalars['String']['output']>;
+  examDate?: Maybe<Scalars['String']['output']>;
+  examType?: Maybe<Scalars['String']['output']>;
+  grade?: Maybe<Scalars['Int']['output']>;
+  groupClass?: Maybe<Scalars['String']['output']>;
+  mixQuestions?: Maybe<Scalars['Boolean']['output']>;
+  startTime?: Maybe<Scalars['String']['output']>;
+  subject?: Maybe<Scalars['String']['output']>;
+  topics?: Maybe<Array<Scalars['String']['output']>>;
+  variantCount?: Maybe<Scalars['Int']['output']>;
+  withVariants?: Maybe<Scalars['Boolean']['output']>;
+};
+
+export type NewMathExamSessionMetaInput = {
+  description?: InputMaybe<Scalars['String']['input']>;
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
+  endTime?: InputMaybe<Scalars['String']['input']>;
+  examDate?: InputMaybe<Scalars['String']['input']>;
+  examType?: InputMaybe<Scalars['String']['input']>;
+  grade?: InputMaybe<Scalars['Int']['input']>;
+  groupClass?: InputMaybe<Scalars['String']['input']>;
+  mixQuestions?: InputMaybe<Scalars['Boolean']['input']>;
+  startTime?: InputMaybe<Scalars['String']['input']>;
+  subject?: InputMaybe<Scalars['String']['input']>;
+  topics?: InputMaybe<Array<Scalars['String']['input']>>;
+  variantCount?: InputMaybe<Scalars['Int']['input']>;
+  withVariants?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type NewMathExamSummary = {
@@ -237,6 +271,7 @@ export type SaveNewMathExamInput = {
   mathCount: Scalars['Int']['input'];
   mcqCount: Scalars['Int']['input'];
   questions: Array<NewMathExamQuestionInput>;
+  sessionMeta?: InputMaybe<NewMathExamSessionMetaInput>;
   title: Scalars['String']['input'];
   totalPoints: Scalars['Int']['input'];
 };

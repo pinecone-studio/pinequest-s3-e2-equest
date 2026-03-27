@@ -118,6 +118,22 @@ input NewMathExamGeneratorMetaInput {
   sourceContext: String
 }
 
+input NewMathExamSessionMetaInput {
+  grade: Int
+  groupClass: String
+  examType: String
+  subject: String
+  topics: [String!]
+  examDate: String
+  startTime: String
+  endTime: String
+  durationMinutes: Int
+  mixQuestions: Boolean
+  withVariants: Boolean
+  variantCount: Int
+  description: String
+}
+
 input NewMathExamQuestionInput {
   id: ID
   type: MathExamQuestionType!
@@ -138,6 +154,7 @@ input SaveNewMathExamInput {
   mathCount: Int!
   totalPoints: Int!
   generator: NewMathExamGeneratorMetaInput
+  sessionMeta: NewMathExamSessionMetaInput
   questions: [NewMathExamQuestionInput!]!
 }
 
@@ -172,6 +189,22 @@ type NewMathExamGeneratorMeta {
   sourceContext: String
 }
 
+type NewMathExamSessionMeta {
+  grade: Int
+  groupClass: String
+  examType: String
+  subject: String
+  topics: [String!]
+  examDate: String
+  startTime: String
+  endTime: String
+  durationMinutes: Int
+  mixQuestions: Boolean
+  withVariants: Boolean
+  variantCount: Int
+  description: String
+}
+
 type NewMathExamQuestion {
   id: ID!
   type: MathExamQuestionType!
@@ -192,6 +225,7 @@ type NewMathExam {
   mathCount: Int!
   totalPoints: Int!
   generator: NewMathExamGeneratorMeta
+  sessionMeta: NewMathExamSessionMeta
   questions: [NewMathExamQuestion!]!
   createdAt: String!
   updatedAt: String!

@@ -139,6 +139,7 @@ export type NewMathExam = {
   mathCount: Scalars['Int']['output'];
   mcqCount: Scalars['Int']['output'];
   questions: Array<NewMathExamQuestion>;
+  sessionMeta?: Maybe<NewMathExamSessionMeta>;
   title: Scalars['String']['output'];
   totalPoints: Scalars['Int']['output'];
   updatedAt: Scalars['String']['output'];
@@ -182,6 +183,39 @@ export type NewMathExamQuestionInput = {
   prompt: Scalars['String']['input'];
   responseGuide?: InputMaybe<Scalars['String']['input']>;
   type: MathExamQuestionType;
+};
+
+export type NewMathExamSessionMeta = {
+  __typename?: 'NewMathExamSessionMeta';
+  description?: Maybe<Scalars['String']['output']>;
+  durationMinutes?: Maybe<Scalars['Int']['output']>;
+  endTime?: Maybe<Scalars['String']['output']>;
+  examDate?: Maybe<Scalars['String']['output']>;
+  examType?: Maybe<Scalars['String']['output']>;
+  grade?: Maybe<Scalars['Int']['output']>;
+  groupClass?: Maybe<Scalars['String']['output']>;
+  mixQuestions?: Maybe<Scalars['Boolean']['output']>;
+  startTime?: Maybe<Scalars['String']['output']>;
+  subject?: Maybe<Scalars['String']['output']>;
+  topics?: Maybe<Array<Scalars['String']['output']>>;
+  variantCount?: Maybe<Scalars['Int']['output']>;
+  withVariants?: Maybe<Scalars['Boolean']['output']>;
+};
+
+export type NewMathExamSessionMetaInput = {
+  description?: InputMaybe<Scalars['String']['input']>;
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
+  endTime?: InputMaybe<Scalars['String']['input']>;
+  examDate?: InputMaybe<Scalars['String']['input']>;
+  examType?: InputMaybe<Scalars['String']['input']>;
+  grade?: InputMaybe<Scalars['Int']['input']>;
+  groupClass?: InputMaybe<Scalars['String']['input']>;
+  mixQuestions?: InputMaybe<Scalars['Boolean']['input']>;
+  startTime?: InputMaybe<Scalars['String']['input']>;
+  subject?: InputMaybe<Scalars['String']['input']>;
+  topics?: InputMaybe<Array<Scalars['String']['input']>>;
+  variantCount?: InputMaybe<Scalars['Int']['input']>;
+  withVariants?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type NewMathExamSummary = {
@@ -239,6 +273,7 @@ export type SaveNewMathExamInput = {
   mathCount: Scalars['Int']['input'];
   mcqCount: Scalars['Int']['input'];
   questions: Array<NewMathExamQuestionInput>;
+  sessionMeta?: InputMaybe<NewMathExamSessionMetaInput>;
   title: Scalars['String']['input'];
   totalPoints: Scalars['Int']['input'];
 };
@@ -345,6 +380,8 @@ export type ResolversTypes = ResolversObject<{
   NewMathExamGeneratorMetaInput: NewMathExamGeneratorMetaInput;
   NewMathExamQuestion: ResolverTypeWrapper<NewMathExamQuestion>;
   NewMathExamQuestionInput: NewMathExamQuestionInput;
+  NewMathExamSessionMeta: ResolverTypeWrapper<NewMathExamSessionMeta>;
+  NewMathExamSessionMetaInput: NewMathExamSessionMetaInput;
   NewMathExamSummary: ResolverTypeWrapper<NewMathExamSummary>;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
   QuestionFormat: QuestionFormat;
@@ -373,6 +410,8 @@ export type ResolversParentTypes = ResolversObject<{
   NewMathExamGeneratorMetaInput: NewMathExamGeneratorMetaInput;
   NewMathExamQuestion: NewMathExamQuestion;
   NewMathExamQuestionInput: NewMathExamQuestionInput;
+  NewMathExamSessionMeta: NewMathExamSessionMeta;
+  NewMathExamSessionMetaInput: NewMathExamSessionMetaInput;
   NewMathExamSummary: NewMathExamSummary;
   Query: Record<PropertyKey, never>;
   SaveExamInput: SaveExamInput;
@@ -414,6 +453,7 @@ export type NewMathExamResolvers<ContextType = GraphQLContext, ParentType extend
   mathCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   mcqCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   questions?: Resolver<Array<ResolversTypes['NewMathExamQuestion']>, ParentType, ContextType>;
+  sessionMeta?: Resolver<Maybe<ResolversTypes['NewMathExamSessionMeta']>, ParentType, ContextType>;
   title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   totalPoints?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -436,6 +476,22 @@ export type NewMathExamQuestionResolvers<ContextType = GraphQLContext, ParentTyp
   prompt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   responseGuide?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   type?: Resolver<ResolversTypes['MathExamQuestionType'], ParentType, ContextType>;
+}>;
+
+export type NewMathExamSessionMetaResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['NewMathExamSessionMeta'] = ResolversParentTypes['NewMathExamSessionMeta']> = ResolversObject<{
+  description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  durationMinutes?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  endTime?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  examDate?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  examType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  grade?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  groupClass?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  mixQuestions?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  startTime?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  subject?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  topics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
+  variantCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  withVariants?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
 }>;
 
 export type NewMathExamSummaryResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['NewMathExamSummary'] = ResolversParentTypes['NewMathExamSummary']> = ResolversObject<{
@@ -472,6 +528,7 @@ export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   NewMathExam?: NewMathExamResolvers<ContextType>;
   NewMathExamGeneratorMeta?: NewMathExamGeneratorMetaResolvers<ContextType>;
   NewMathExamQuestion?: NewMathExamQuestionResolvers<ContextType>;
+  NewMathExamSessionMeta?: NewMathExamSessionMetaResolvers<ContextType>;
   NewMathExamSummary?: NewMathExamSummaryResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
   SaveExamPayload?: SaveExamPayloadResolvers<ContextType>;
