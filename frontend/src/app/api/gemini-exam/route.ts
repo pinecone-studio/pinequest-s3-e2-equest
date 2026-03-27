@@ -3,6 +3,7 @@ import type {
   GenerateExamRequest,
   GeneratedExamPayload,
 } from "@/lib/math-exam-contract";
+import { buildGeminiErrorResponse } from "@/lib/gemini-error";
 
 function cleanJsonBlock(value: string) {
   const trimmed = value.trim();
@@ -234,14 +235,11 @@ JSON бүтэц:
     };
 
     if (!geminiResponse.ok) {
-      return Response.json(
-        {
-          error:
-            geminiPayload.error?.message ??
-            "Gemini-с хариу авах үед алдаа гарлаа.",
-        },
-        { status: geminiResponse.status },
-      );
+      return buildGeminiErrorResponse({
+        fallbackMessage: "Gemini-с хариу авах үед алдаа гарлаа.",
+        providerMessage: geminiPayload.error?.message,
+        status: geminiResponse.status,
+      });
     }
 
     const text = geminiPayload.candidates?.[0]?.content?.parts

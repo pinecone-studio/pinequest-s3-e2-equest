@@ -6,6 +6,7 @@ import type {
   ExtractExamRequest,
   GeneratedExamPayload,
 } from "@/lib/math-exam-contract";
+import { buildGeminiErrorResponse } from "@/lib/gemini-error";
 
 const DOCX_MIME_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -774,14 +775,11 @@ JSON бүтэц:
     };
 
     if (!response.ok) {
-      return Response.json(
-        {
-          error:
-            payload.error?.message ??
-            "Материалыг Gemini-аар унших үед алдаа гарлаа.",
-        },
-        { status: response.status },
-      );
+      return buildGeminiErrorResponse({
+        fallbackMessage: "Материалыг Gemini-аар унших үед алдаа гарлаа.",
+        providerMessage: payload.error?.message,
+        status: response.status,
+      });
     }
 
     const extractedText = payload.candidates?.[0]?.content?.parts

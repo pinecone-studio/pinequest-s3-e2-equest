@@ -1,15 +1,49 @@
 "use client";
 
 import { Keyboard } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import InlineMathEditor, {
+  type InlineMathEditorHandle,
+} from "@/components/inline-math-editor";
+import InlineTextEditor, {
+  type InlineTextEditorHandle,
+} from "@/components/inline-text-editor";
 import MathInput from "@/components/math-input";
-import MathPreviewText from "@/components/math-preview-text";
+import MathPreviewText, {
+  containsMathPreviewSyntax,
+  getMathPreviewSegments,
+  getTextPreviewSegments,
+  type MathPreviewMathSegment,
+  type MathPreviewTextSegment,
+} from "@/components/math-preview-text";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 type TextLikeElement = HTMLInputElement | HTMLTextAreaElement;
+
+function wrapMathSegmentRaw(raw: string, nextLatex: string) {
+  const trimmed = raw.trim();
+
+  if (trimmed.startsWith("\\[") && trimmed.endsWith("\\]")) {
+    return `\\[${nextLatex}\\]`;
+  }
+
+  if (trimmed.startsWith("\\(") && trimmed.endsWith("\\)")) {
+    return `\\(${nextLatex}\\)`;
+  }
+
+  if (trimmed.startsWith("$$") && trimmed.endsWith("$$")) {
+    return `$$${nextLatex}$$`;
+  }
+
+  if (trimmed.startsWith("$") && trimmed.endsWith("$")) {
+    return `$${nextLatex}$`;
+  }
+
+  return nextLatex;
+}
 
 type MathAssistFieldProps = {
   id?: string;
@@ -38,11 +72,67 @@ export function MathAssistField({
 }: MathAssistFieldProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [activeMathIndex, setActiveMathIndex] = useState<number | null>(null);
+  const [activeMathLatex, setActiveMathLatex] = useState("");
+  const [activeTextIndex, setActiveTextIndex] = useState<number | null>(null);
+  const [activeTextValue, setActiveTextValue] = useState("");
   const inputRef = useRef<TextLikeElement | null>(null);
+  const inlineMathEditorRef = useRef<InlineMathEditorHandle | null>(null);
+  const inlineTextEditorRef = useRef<InlineTextEditorHandle | null>(null);
   const selectionRef = useRef({
     end: value.length,
     start: value.length,
   });
+  const mathSegments = useMemo(
+    () =>
+      getMathPreviewSegments(value, {
+        displayMode: previewDisplayMode,
+        forceMath: previewForceMath,
+      }),
+    [previewDisplayMode, previewForceMath, value],
+  );
+  const textSegments = useMemo(
+    () =>
+      getTextPreviewSegments(value, {
+        displayMode: previewDisplayMode,
+        forceMath: previewForceMath,
+      }),
+    [previewDisplayMode, previewForceMath, value],
+  );
+  const usesRenderedMathEditor =
+    previewForceMath || mathSegments.length > 0;
+
+  useEffect(() => {
+    if (activeMathIndex === null) {
+      return;
+    }
+
+    const nextActiveSegment = mathSegments[activeMathIndex];
+
+    if (!nextActiveSegment && !(previewForceMath && activeMathIndex === 0)) {
+      setActiveMathIndex(null);
+      setActiveMathLatex("");
+      return;
+    }
+
+    setActiveMathLatex(nextActiveSegment?.content ?? value);
+  }, [activeMathIndex, mathSegments, previewForceMath, value]);
+
+  useEffect(() => {
+    if (activeTextIndex === null) {
+      return;
+    }
+
+    const nextActiveSegment = textSegments[activeTextIndex];
+
+    if (!nextActiveSegment) {
+      setActiveTextIndex(null);
+      setActiveTextValue("");
+      return;
+    }
+
+    setActiveTextValue(nextActiveSegment.content);
+  }, [activeTextIndex, textSegments]);
 
   function syncSelection() {
     const element = inputRef.current;
@@ -57,7 +147,155 @@ export function MathAssistField({
     };
   }
 
+  function replaceMathSegmentValue(
+    currentValue: string,
+    mathIndex: number,
+    nextLatex: string,
+  ) {
+    const currentMathSegments = getMathPreviewSegments(currentValue, {
+      displayMode: previewDisplayMode,
+      forceMath: previewForceMath,
+    });
+    let searchFrom = 0;
+
+    if (currentMathSegments.length === 0 && previewForceMath) {
+      return nextLatex;
+    }
+
+    for (const mathSegment of currentMathSegments) {
+      const matchedIndex = currentValue.indexOf(mathSegment.raw, searchFrom);
+
+      if (matchedIndex === -1) {
+        return currentValue;
+      }
+
+      if (mathSegment.mathIndex === mathIndex) {
+        const replacement = wrapMathSegmentRaw(mathSegment.raw, nextLatex);
+
+        return `${currentValue.slice(0, matchedIndex)}${replacement}${currentValue.slice(matchedIndex + mathSegment.raw.length)}`;
+      }
+
+      searchFrom = matchedIndex + mathSegment.raw.length;
+    }
+
+    return currentValue;
+  }
+
+  function replaceTextSegmentValue(
+    currentValue: string,
+    textIndex: number,
+    nextText: string,
+  ) {
+    const currentTextSegments = getTextPreviewSegments(currentValue, {
+      displayMode: previewDisplayMode,
+      forceMath: previewForceMath,
+    });
+    let searchFrom = 0;
+
+    for (const textSegment of currentTextSegments) {
+      const matchedIndex = currentValue.indexOf(textSegment.raw, searchFrom);
+
+      if (matchedIndex === -1) {
+        return currentValue;
+      }
+
+      if (textSegment.textIndex === textIndex) {
+        return `${currentValue.slice(0, matchedIndex)}${nextText}${currentValue.slice(matchedIndex + textSegment.raw.length)}`;
+      }
+
+      searchFrom = matchedIndex + textSegment.raw.length;
+    }
+
+    return currentValue;
+  }
+
+  function handleActiveMathChange(nextLatex: string) {
+    if (activeMathIndex === null) {
+      return;
+    }
+
+    setActiveMathLatex(nextLatex);
+    onChange(replaceMathSegmentValue(value, activeMathIndex, nextLatex));
+  }
+
+  function handleActiveTextChange(nextText: string) {
+    if (activeTextIndex === null) {
+      return;
+    }
+
+    setActiveTextValue(nextText);
+    onChange(replaceTextSegmentValue(value, activeTextIndex, nextText));
+  }
+
+  function activateMathSegment(segment: MathPreviewMathSegment) {
+    setActiveTextIndex(null);
+    setActiveTextValue("");
+    setActiveMathIndex(segment.mathIndex);
+    setActiveMathLatex(segment.content);
+
+    requestAnimationFrame(() => {
+      inlineMathEditorRef.current?.focus();
+    });
+  }
+
+  function activateTextSegment(segment: MathPreviewTextSegment) {
+    setActiveMathIndex(null);
+    setActiveMathLatex("");
+    setActiveTextIndex(segment.textIndex);
+    setActiveTextValue(segment.content);
+
+    requestAnimationFrame(() => {
+      inlineTextEditorRef.current?.focus();
+    });
+  }
+
+  function beginRenderedFieldEditing() {
+    const firstTextSegment = textSegments[0];
+
+    if (firstTextSegment) {
+      activateTextSegment(firstTextSegment);
+      return;
+    }
+
+    const firstSegment = mathSegments[0];
+
+    if (firstSegment) {
+      activateMathSegment(firstSegment);
+      return;
+    }
+
+    if (!previewForceMath) {
+      return;
+    }
+
+    setActiveMathIndex(0);
+    setActiveMathLatex(value);
+
+    requestAnimationFrame(() => {
+      inlineMathEditorRef.current?.focus();
+    });
+  }
+
   function insertIntoField(nextChunk: string, moveLeftAfterWrite = 0) {
+    if (activeTextIndex !== null) {
+      inlineTextEditorRef.current?.insertText(nextChunk);
+      return;
+    }
+
+    if (usesRenderedMathEditor && activeMathIndex === null) {
+      beginRenderedFieldEditing();
+
+      requestAnimationFrame(() => {
+        inlineMathEditorRef.current?.insertLatex(nextChunk, moveLeftAfterWrite);
+      });
+      return;
+    }
+
+    if (activeMathIndex !== null) {
+      inlineMathEditorRef.current?.insertLatex(nextChunk, moveLeftAfterWrite);
+      return;
+    }
+
     const { start, end } = selectionRef.current;
     const nextValue = `${value.slice(0, start)}${nextChunk}${value.slice(end)}`;
     const nextCaretPosition = Math.max(
@@ -85,6 +323,26 @@ export function MathAssistField({
   }
 
   function moveCursor(direction: "left" | "right") {
+    if (activeTextIndex !== null) {
+      if (direction === "left") {
+        inlineTextEditorRef.current?.moveLeft();
+        return;
+      }
+
+      inlineTextEditorRef.current?.moveRight();
+      return;
+    }
+
+    if (activeMathIndex !== null) {
+      if (direction === "left") {
+        inlineMathEditorRef.current?.moveLeft();
+        return;
+      }
+
+      inlineMathEditorRef.current?.moveRight();
+      return;
+    }
+
     requestAnimationFrame(() => {
       const element = inputRef.current;
 
@@ -108,6 +366,16 @@ export function MathAssistField({
   }
 
   function clearField() {
+    if (activeTextIndex !== null) {
+      inlineTextEditorRef.current?.clear();
+      return;
+    }
+
+    if (activeMathIndex !== null) {
+      inlineMathEditorRef.current?.clear();
+      return;
+    }
+
     onChange("");
     setIsEditing(true);
 
@@ -128,6 +396,13 @@ export function MathAssistField({
   }
 
   function startEditing() {
+    if (usesRenderedMathEditor) {
+      beginRenderedFieldEditing();
+      return;
+    }
+
+    setActiveMathIndex(null);
+    setActiveTextIndex(null);
     setIsEditing(true);
 
     requestAnimationFrame(() => {
@@ -150,32 +425,84 @@ export function MathAssistField({
     value,
   };
   const shouldShowRenderedPreview =
-    !isEditing && !isKeyboardOpen && Boolean(value.trim());
+    usesRenderedMathEditor ||
+    (!isEditing && !isKeyboardOpen && activeMathIndex === null && Boolean(value.trim()));
   const shouldShowLivePreview =
-    (isEditing || isKeyboardOpen) &&
+    !usesRenderedMathEditor &&
+    (isEditing || isKeyboardOpen || activeMathIndex !== null || activeTextIndex !== null) &&
     Boolean(value.trim()) &&
-    (previewForceMath || /[$\\^_{}]/.test(value));
+    (previewForceMath || containsMathPreviewSyntax(value));
+  const topFieldClassName = cn(
+    multiline
+      ? "flex min-h-16 w-full"
+      : "flex min-h-8 w-full items-center",
+    usesRenderedMathEditor
+      ? "rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 pr-12"
+      : multiline
+        ? "rounded-lg border border-input bg-transparent px-2.5 py-2 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30"
+        : "rounded-lg border border-input bg-transparent px-2.5 py-1 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30",
+  );
 
   return (
     <div className="w-full space-y-2">
       <div className="relative">
         {shouldShowRenderedPreview ? (
-          <button
-            type="button"
-            className={cn(
-              multiline
-                ? "flex min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30"
-                : "flex min-h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30",
-            )}
+          <div
+            role="button"
+            tabIndex={0}
+            className={topFieldClassName}
             onClick={startEditing}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") {
+                return;
+              }
+
+              event.preventDefault();
+              startEditing();
+            }}
           >
-            <MathPreviewText
-              content={value}
-              displayMode={previewDisplayMode}
-              forceMath={previewForceMath}
-              className="w-full text-foreground"
-            />
-          </button>
+            {usesRenderedMathEditor &&
+            activeMathIndex === 0 &&
+            mathSegments.length === 0 ? (
+              <InlineMathEditor
+                ref={inlineMathEditorRef}
+                value={activeMathLatex}
+                onChange={handleActiveMathChange}
+                autoFocus
+                variant="embedded"
+              />
+            ) : value.trim() ? (
+              <MathPreviewText
+                content={value}
+                displayMode={previewDisplayMode}
+                forceMath={previewForceMath}
+                className="w-full text-foreground"
+                activeMathIndex={usesRenderedMathEditor ? activeMathIndex : null}
+                activeTextIndex={usesRenderedMathEditor ? activeTextIndex : null}
+                onMathSegmentClick={activateMathSegment}
+                onTextSegmentClick={activateTextSegment}
+                renderActiveMathSegment={() => (
+                  <InlineMathEditor
+                    ref={inlineMathEditorRef}
+                    value={activeMathLatex}
+                    onChange={handleActiveMathChange}
+                    autoFocus
+                    variant="embedded"
+                  />
+                )}
+                renderActiveTextSegment={() => (
+                  <InlineTextEditor
+                    ref={inlineTextEditorRef}
+                    value={activeTextValue}
+                    onChange={handleActiveTextChange}
+                    autoFocus
+                  />
+                )}
+              />
+            ) : (
+              <span className="text-muted-foreground">{placeholder}</span>
+            )}
+          </div>
         ) : (
           <>
             {multiline ? (
@@ -185,12 +512,24 @@ export function MathAssistField({
                 }}
                 {...sharedProps}
                 onBlur={() => {
-                  if (!isKeyboardOpen) {
+                  if (
+                    !isKeyboardOpen &&
+                    activeMathIndex === null &&
+                    activeTextIndex === null
+                  ) {
                     setIsEditing(false);
                   }
                 }}
-                onChange={(event) => onChange(event.target.value)}
-                onFocus={() => setIsEditing(true)}
+                onChange={(event) => {
+                  setActiveMathIndex(null);
+                  setActiveTextIndex(null);
+                  onChange(event.target.value);
+                }}
+                onFocus={() => {
+                  setActiveMathIndex(null);
+                  setActiveTextIndex(null);
+                  setIsEditing(true);
+                }}
               />
             ) : (
               <input
@@ -199,12 +538,24 @@ export function MathAssistField({
                 }}
                 {...sharedProps}
                 onBlur={() => {
-                  if (!isKeyboardOpen) {
+                  if (
+                    !isKeyboardOpen &&
+                    activeMathIndex === null &&
+                    activeTextIndex === null
+                  ) {
                     setIsEditing(false);
                   }
                 }}
-                onChange={(event) => onChange(event.target.value)}
-                onFocus={() => setIsEditing(true)}
+                onChange={(event) => {
+                  setActiveMathIndex(null);
+                  setActiveTextIndex(null);
+                  onChange(event.target.value);
+                }}
+                onFocus={() => {
+                  setActiveMathIndex(null);
+                  setActiveTextIndex(null);
+                  setIsEditing(true);
+                }}
               />
             )}
           </>
@@ -219,6 +570,21 @@ export function MathAssistField({
             setIsKeyboardOpen((current) => !current);
 
             requestAnimationFrame(() => {
+              if (activeTextIndex !== null) {
+                inlineTextEditorRef.current?.focus();
+                return;
+              }
+
+              if (activeMathIndex !== null) {
+                inlineMathEditorRef.current?.focus();
+                return;
+              }
+
+              if (usesRenderedMathEditor) {
+                beginRenderedFieldEditing();
+                return;
+              }
+
               inputRef.current?.focus();
               syncSelection();
             });
@@ -252,6 +618,17 @@ export function MathAssistField({
             displayMode={previewDisplayMode}
             forceMath={previewForceMath}
             className="w-full text-foreground"
+            activeMathIndex={activeMathIndex}
+            onMathSegmentClick={activateMathSegment}
+            renderActiveMathSegment={() => (
+              <InlineMathEditor
+                ref={inlineMathEditorRef}
+                value={activeMathLatex}
+                onChange={handleActiveMathChange}
+                autoFocus
+                variant="embedded"
+              />
+            )}
           />
         </div>
       ) : null}
@@ -272,6 +649,22 @@ export function MathAssistField({
               variant="ghost"
               onClick={() => {
                 setIsKeyboardOpen(false);
+
+                if (activeTextIndex !== null) {
+                  inlineTextEditorRef.current?.focus();
+                  return;
+                }
+
+                if (activeMathIndex !== null) {
+                  inlineMathEditorRef.current?.focus();
+                  return;
+                }
+
+                if (usesRenderedMathEditor) {
+                  beginRenderedFieldEditing();
+                  return;
+                }
+
                 inputRef.current?.focus();
               }}
             >
