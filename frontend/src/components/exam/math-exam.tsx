@@ -35,6 +35,7 @@ import {
   type SaveNewMathExamInput,
   type SaveNewMathExamPayload,
 } from "@/gql/graphql";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { PreviewSection } from "./math-exam-student";
@@ -514,6 +515,7 @@ export default function MathExam() {
       if (!examId) {
         throw new Error("Хариу дээр examId ирээгүй байна.");
       }
+      toast.success("Амжилттай хадгаллаа.");
       handleResetAll();
       setBankExams([]);
       setSavedExamId(examId);
