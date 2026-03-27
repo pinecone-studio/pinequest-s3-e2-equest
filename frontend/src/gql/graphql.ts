@@ -129,10 +129,44 @@ export type MutationSaveNewMathExamArgs = {
   input: SaveNewMathExamInput;
 };
 
+export type NewMathExam = {
+  __typename?: 'NewMathExam';
+  createdAt: Scalars['String']['output'];
+  examId: Scalars['ID']['output'];
+  generator?: Maybe<NewMathExamGeneratorMeta>;
+  mathCount: Scalars['Int']['output'];
+  mcqCount: Scalars['Int']['output'];
+  questions: Array<NewMathExamQuestion>;
+  title: Scalars['String']['output'];
+  totalPoints: Scalars['Int']['output'];
+  updatedAt: Scalars['String']['output'];
+};
+
+export type NewMathExamGeneratorMeta = {
+  __typename?: 'NewMathExamGeneratorMeta';
+  difficulty?: Maybe<Scalars['String']['output']>;
+  sourceContext?: Maybe<Scalars['String']['output']>;
+  topics?: Maybe<Scalars['String']['output']>;
+};
+
 export type NewMathExamGeneratorMetaInput = {
   difficulty?: InputMaybe<Scalars['String']['input']>;
   sourceContext?: InputMaybe<Scalars['String']['input']>;
   topics?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type NewMathExamQuestion = {
+  __typename?: 'NewMathExamQuestion';
+  answerLatex?: Maybe<Scalars['String']['output']>;
+  correctOption?: Maybe<Scalars['Int']['output']>;
+  id: Scalars['ID']['output'];
+  imageAlt?: Maybe<Scalars['String']['output']>;
+  imageDataUrl?: Maybe<Scalars['String']['output']>;
+  options?: Maybe<Array<Scalars['String']['output']>>;
+  points: Scalars['Int']['output'];
+  prompt: Scalars['String']['output'];
+  responseGuide?: Maybe<Scalars['String']['output']>;
+  type: MathExamQuestionType;
 };
 
 export type NewMathExamQuestionInput = {
@@ -148,9 +182,28 @@ export type NewMathExamQuestionInput = {
   type: MathExamQuestionType;
 };
 
+export type NewMathExamSummary = {
+  __typename?: 'NewMathExamSummary';
+  examId: Scalars['ID']['output'];
+  title: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+};
+
 export type Query = {
   __typename?: 'Query';
+  getNewMathExam?: Maybe<NewMathExam>;
   health: Scalars['String']['output'];
+  listNewMathExams: Array<NewMathExamSummary>;
+};
+
+
+export type QueryGetNewMathExamArgs = {
+  examId: Scalars['ID']['input'];
+};
+
+
+export type QueryListNewMathExamsArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export enum QuestionFormat {
@@ -192,5 +245,6 @@ export type SaveNewMathExamPayload = {
   __typename?: 'SaveNewMathExamPayload';
   createdAt: Scalars['String']['output'];
   examId: Scalars['ID']['output'];
+  title: Scalars['String']['output'];
   updatedAt: Scalars['String']['output'];
 };

@@ -1,0 +1,8 @@
+query GetStudentDashboard {
+  availableTests {
+    ...TestFields
+  }
+  attempts {
+    ...AttemptSummaryFields
+  }
+}

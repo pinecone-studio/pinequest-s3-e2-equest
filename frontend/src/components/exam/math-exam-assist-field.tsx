@@ -18,10 +18,7 @@ import MathPreviewText, {
   type MathPreviewTextSegment,
 } from "@/components/math-preview-text";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 type TextLikeElement = HTMLInputElement | HTMLTextAreaElement;

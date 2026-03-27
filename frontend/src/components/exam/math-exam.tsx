@@ -1,10 +1,12 @@
 "use client";
 
-import { useMutation } from "@apollo/client/react";
+import { useApolloClient, useLazyQuery, useMutation } from "@apollo/client/react";
 import { useState } from "react";
+import { useEffect } from "react";
 
 import { MathExamControls } from "@/components/exam/math-exam-controls";
 import { EditorSection } from "@/components/exam/math-exam-editor-section";
+import { runMathExamDemo } from "@/components/exam/demo-button";
 import { Button } from "@/components/ui/button";
 
 import {
@@ -24,6 +26,10 @@ import {
 } from "@/lib/math-exam-api";
 import { SaveNewMathExamDocument } from "@/gql/create-exam-documents";
 import {
+  GetNewMathExamDocument,
+  ListNewMathExamsDocument,
+} from "@/gql/create-exam-documents";
+import {
   MathExamQuestionType,
   type SaveNewMathExamInput,
   type SaveNewMathExamPayload,
@@ -31,10 +37,15 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { PreviewSection } from "./math-exam-student";
+import { normalizeBackendMathText } from "@/lib/normalize-math-text";
 
 export default function MathExam() {
+  const apolloClient = useApolloClient();
   const [examTitle, setExamTitle] = useState("Жишиг шалгалт");
   const [questions, setQuestions] = useState<ExamQuestion[]>([]);
+  const [bankExams, setBankExams] = useState<{ examId: string; title: string }[]>(
+    [],
+  );
   const [previewSections, setPreviewSections] = useState(
     createDefaultSectionState,
   );
@@ -54,6 +65,14 @@ export default function MathExam() {
   const [saving, setSaving] = useState(false);
 
   const [saveNewMathExamMutation] = useMutation(SaveNewMathExamDocument);
+  const [fetchExamList] = useLazyQuery(ListNewMathExamsDocument, {
+    fetchPolicy: "cache-first",
+    nextFetchPolicy: "cache-first",
+  });
+  const [fetchExamById] = useLazyQuery(GetNewMathExamDocument, {
+    fetchPolicy: "cache-first",
+    nextFetchPolicy: "cache-first",
+  });
 
   const {
     totalPoints,
@@ -66,6 +85,146 @@ export default function MathExam() {
   } = getQuestionCollections(questions);
   const requestedQuestionCount =
     generatorSettings.mcqCount + generatorSettings.mathCount;
+
+  useEffect(() => {
+    const authUrl =
+      process.env.NEXT_PUBLIC_ABLY_AUTH_URL ||
+      "http://localhost:3001/api/ably/auth";
+    let active = true;
+    let cleanup: (() => void) | null = null;
+
+    void import("ably")
+      .then((mod) => {
+        if (!active) return;
+        const Ably = (mod.default ?? mod) as any;
+        const realtime = new Ably.Realtime({
+          authUrl,
+          authMethod: "POST",
+        });
+
+        const channel = realtime.channels.get("new-math-exams");
+        channel.subscribe("exam.saved", () => {
+          // Refresh list cache; dropdown UI state will pick it up on next open (or via cache-first query).
+          void apolloClient.refetchQueries({ include: [ListNewMathExamsDocument] });
+          setBankExams([]);
+        });
+
+        cleanup = () => {
+          try {
+            channel.unsubscribe();
+            realtime.close();
+          } catch {
+            // ignore
+          }
+        };
+      })
+      .catch(() => {
+        // Ignore realtime init failures; exam editing should still work.
+      });
+
+    return () => {
+      active = false;
+      cleanup?.();
+    };
+  }, [apolloClient]);
+
+  const normalizeImportedText = (value: string) => normalizeBackendMathText(value);
+
+  async function handleRequestBankExams() {
+    try {
+      const listResult = await fetchExamList({ variables: { limit: 50 } });
+      const exams =
+        (listResult.data as
+          | { listNewMathExams?: { examId: string; title: string }[] }
+          | undefined)?.listNewMathExams ?? [];
+      setBankExams(exams);
+    } catch {
+      setBankExams([]);
+    }
+  }
+
+  async function handleImportFromBank(examIdRaw: string) {
+    setGeneratorError("");
+    setSaveError(null);
+    setSavedExamId(null);
+
+    try {
+      const examResult = await fetchExamById({
+        variables: { examId: examIdRaw },
+      });
+      const exam = (
+        examResult.data as
+          | {
+              getNewMathExam?: {
+                examId: string;
+                title: string;
+                mcqCount: number;
+                mathCount: number;
+                totalPoints: number;
+                generator?: {
+                  difficulty?: string | null;
+                  topics?: string | null;
+                  sourceContext?: string | null;
+                } | null;
+                questions?: any[] | null;
+              } | null;
+            }
+          | undefined
+      )?.getNewMathExam;
+      if (!exam) {
+        throw new Error("Сонгосон шалгалтын дэлгэрэнгүй ирсэнгүй.");
+      }
+
+      setIsGeneratorOpen(false);
+      setSourceFiles([]);
+      setExamTitle(exam.title);
+      setGeneratorSettings((current) => ({
+        ...current,
+        difficulty:
+          exam.generator?.difficulty === "easy" ||
+          exam.generator?.difficulty === "medium" ||
+          exam.generator?.difficulty === "advanced"
+            ? exam.generator.difficulty
+            : current.difficulty,
+        topics: exam.generator?.topics ?? "",
+        sourceContext: exam.generator?.sourceContext ?? "",
+        mcqCount: exam.mcqCount,
+        mathCount: exam.mathCount,
+        totalPoints: exam.totalPoints,
+      }));
+
+      const nextQuestions: ExamQuestion[] = (exam.questions ?? []).map((q: any) =>
+        q.type === MathExamQuestionType.Mcq
+          ? createMcqQuestion({
+              id: q.id,
+              prompt: normalizeImportedText(q.prompt ?? ""),
+              points: q.points,
+              imageAlt: q.imageAlt ?? "",
+              imageDataUrl: q.imageDataUrl ?? undefined,
+              options: (q.options ?? []).map((opt: string) =>
+                normalizeImportedText(opt),
+              ),
+              correctOption: q.correctOption ?? null,
+            })
+          : createMathQuestion({
+              id: q.id,
+              prompt: normalizeImportedText(q.prompt ?? ""),
+              points: q.points,
+              imageAlt: q.imageAlt ?? "",
+              imageDataUrl: q.imageDataUrl ?? undefined,
+              responseGuide: normalizeImportedText(q.responseGuide ?? ""),
+              answerLatex: q.answerLatex ?? "",
+            }),
+      );
+
+      setQuestions(nextQuestions);
+      resetSectionState();
+    } catch (e) {
+      setGeneratorError(
+        e instanceof Error ? e.message : "Сангаас шалгалт татахад алдаа гарлаа.",
+      );
+    }
+  }
 
   function resetSectionState() {
     setEditorSections(createDefaultSectionState());
@@ -112,69 +271,17 @@ export default function MathExam() {
   }
 
   function handleDemo() {
-    setGeneratorError("");
-    setSaveError(null);
-    setSavedExamId(null);
-    setIsGeneratorOpen(false);
-    setSourceFiles([]);
-
-    setExamTitle("9-р анги — Математик (5 тест + 1 задгай)");
-    setGeneratorSettings((current) => ({
-      ...current,
-      difficulty: "medium",
-      mcqCount: 5,
-      mathCount: 1,
-      totalPoints: 6,
-      topics: "Квадрат тэгшитгэл, Пифагорын теорем, квадрат язгуур",
-      sourceContext: "",
-    }));
-
-    setQuestions(
-      [
-        ...Array.from({ length: 5 }, (_, idx): ExamQuestion => {
-          const n = idx + 1;
-          // 9-р ангийн математикийн энгийн demo тестүүд (LaTeX ашиглаж болно)
-          return createMcqQuestion({
-            prompt:
-              n === 1
-                ? "Дараах тэгшитгэлийг бод. $x^2 - 5x + 6 = 0$"
-                : n === 2
-                  ? "Пифагорын теоремоор $a=3$, $b=4$ бол гипотенуз $c$ хэд вэ?"
-                  : n === 3
-                    ? "Илэрхийллийг хялбарчил. $\\sqrt{50}$"
-                    : n === 4
-                      ? "Функц $y=2x+1$ үед $x=3$ бол $y$ хэд вэ?"
-                      : "Квадрат тэгшитгэлийн дискриминант $D=b^2-4ac$. $x^2-4x+1=0$ үед $D$ хэд вэ?",
-            points: 1,
-            options:
-              n === 1
-                ? ["$x=2,3$", "$x=1,6$", "$x=-2,-3$", "$x=0,6$"]
-                : n === 2
-                  ? ["$c=5$", "$c=6$", "$c=7$", "$c=8$"]
-                  : n === 3
-                    ? [
-                        "$5\\sqrt{2}$",
-                        "$10\\sqrt{5}$",
-                        "$25\\sqrt{2}$",
-                        "$5\\sqrt{5}$",
-                      ]
-                    : n === 4
-                      ? ["5", "6", "7", "8"]
-                      : ["$12$", "$16$", "$-12$", "$-16$"],
-            correctOption:
-              n === 1 ? 0 : n === 2 ? 0 : n === 3 ? 0 : n === 4 ? 2 : 0,
-          });
-        }),
-        createMathQuestion({
-          prompt:
-            "Задгай: Дараах тэгшитгэлийг бодож, хариуг хялбарчил. $x^2-2x-3=0$",
-          points: 1,
-          responseGuide: "Бодолтын алхмуудаа бичээд, эцсийн хариуг $...$ хэлбэрээр өг.",
-          answerLatex: "x = 3,\\,-1",
-        }),
-      ],
-    );
-    resetSectionState();
+    runMathExamDemo({
+      setGeneratorError,
+      setSaveError,
+      setSavedExamId,
+      setIsGeneratorOpen,
+      setSourceFiles,
+      setExamTitle,
+      setGeneratorSettings,
+      setQuestions,
+      resetSectionState,
+    });
   }
 
   function handleResetAll() {
@@ -313,7 +420,14 @@ export default function MathExam() {
       if (!examId) {
         throw new Error("Хариу дээр examId ирээгүй байна.");
       }
+      handleResetAll();
+      setBankExams([]);
       setSavedExamId(examId);
+
+      // DB өөрчлөгдсөн тул list cache-аа шинэчилнэ.
+      await apolloClient.refetchQueries({
+        include: [ListNewMathExamsDocument],
+      });
     } catch (e) {
       setSaveError(
         e instanceof Error
@@ -341,6 +455,9 @@ export default function MathExam() {
             onExamTitleChange={setExamTitle}
             onGenerateExam={handleGenerateExam}
             onGeneratorOpenChange={setIsGeneratorOpen}
+            bankExams={bankExams}
+            onRequestBankExams={handleRequestBankExams}
+            onImportFromBank={handleImportFromBank}
             onReset={handleResetAll}
             onSourceFilesSelected={handleSourceFilesSelected}
             requestedQuestionCount={requestedQuestionCount}

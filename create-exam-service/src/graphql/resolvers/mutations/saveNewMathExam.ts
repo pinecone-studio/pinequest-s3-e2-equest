@@ -7,6 +7,7 @@ import {
 	type SaveNewMathExamInput,
 } from "../../generated/resolvers-types";
 import { stripMathDelimitersForDb } from "../../../lib/normalizeMathExamText";
+import { publishExamSaved } from "../../../lib/ably";
 
 type Args = { input: SaveNewMathExamInput };
 
@@ -151,10 +152,19 @@ export const saveNewMathExamMutation = {
 			await ctx.db.insert(newExamQuestions).values(rows);
 		}
 
-		return {
+		const result = {
 			examId: id,
+			title: input.title.trim() || "Нэргүй шалгалт",
 			createdAt,
 			updatedAt: now,
 		};
+
+		await publishExamSaved({
+			examId: id,
+			title: result.title,
+			updatedAt: now,
+		});
+
+		return result;
 	},
 };

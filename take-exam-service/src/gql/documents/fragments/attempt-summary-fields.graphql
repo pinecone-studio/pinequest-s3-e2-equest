@@ -10,6 +10,9 @@ fragment AttemptSummaryFields on AttemptSummary {
   percentage
   startedAt
   submittedAt
+  monitoring {
+    ...AttemptMonitoringSummaryFields
+  }
   result {
     ...AttemptResultSummaryFields
   }

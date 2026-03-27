@@ -58,6 +58,23 @@ export const typeDefs = /* GraphQL */ `
     completionRate: Int!
   }
 
+  type AttemptMonitoringEvent {
+    id: ID!
+    code: String!
+    severity: String!
+    title: String!
+    detail: String!
+    occurredAt: String!
+  }
+
+  type AttemptMonitoringSummary {
+    totalEvents: Int!
+    warningCount: Int!
+    dangerCount: Int!
+    lastEventAt: String
+    recentEvents: [AttemptMonitoringEvent!]!
+  }
+
   type QuestionResult {
     questionId: ID!
     selectedOptionId: String
@@ -91,6 +108,7 @@ export const typeDefs = /* GraphQL */ `
     startedAt: String!
     submittedAt: String
     result: AttemptResultSummary
+    monitoring: AttemptMonitoringSummary
   }
 
   type StartExamPayload {
@@ -123,11 +141,20 @@ export const typeDefs = /* GraphQL */ `
     resumeExam(attemptId: String!): StartExamPayload!
     submitAnswers(attemptId: String!, answers: [AnswerInput!]!, finalize: Boolean!): SubmitAnswersPayload!
     approveAttempt(attemptId: String!): Boolean!
+    logAttemptActivity(attemptId: String!, input: AttemptActivityInput!): Boolean!
   }
 
   input AnswerInput {
     questionId: ID!
     selectedOptionId: String
+  }
+
+  input AttemptActivityInput {
+    code: String!
+    severity: String!
+    title: String!
+    detail: String!
+    occurredAt: String
   }
 `;
 

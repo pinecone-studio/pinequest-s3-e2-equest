@@ -1,29 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo } from "react";
+import "katex/dist/katex.min.css";
+import katex from "katex";
 
 import { cn } from "@/lib/utils";
-
-const KATEX_CSS =
-  "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css";
-const KATEX_JS =
-  "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js";
-
-type KatexRenderer = {
-  renderToString: (
-    latex: string,
-    options?: {
-      displayMode?: boolean;
-      throwOnError?: boolean;
-    },
-  ) => string;
-};
-
-declare global {
-  interface Window {
-    katex?: KatexRenderer;
-  }
-}
+import {
+  normalizeBackendLatexOnly,
+  normalizeBackendMathText,
+} from "@/lib/normalize-math-text";
 
 type MathPreviewTextProps = {
   activeMathIndex?: number | null;
@@ -73,70 +59,6 @@ function containsBlockLatex(value: string) {
   );
 }
 
-function ensureStyle(id: string, href: string) {
-  return new Promise<void>((resolve, reject) => {
-    const existing = document.getElementById(id) as HTMLLinkElement | null;
-
-    if (existing) {
-      resolve();
-      return;
-    }
-
-    const link = document.createElement("link");
-    link.id = id;
-    link.rel = "stylesheet";
-    link.href = href;
-    link.onload = () => resolve();
-    link.onerror = () =>
-      reject(new Error(`Failed to load stylesheet: ${href}`));
-    document.head.appendChild(link);
-  });
-}
-
-function ensureScript(id: string, src: string) {
-  return new Promise<void>((resolve, reject) => {
-    const existing = document.getElementById(id) as HTMLScriptElement | null;
-
-    if (existing) {
-      if (existing.dataset.loaded === "true") {
-        resolve();
-        return;
-      }
-
-      const onLoad = () => {
-        existing.dataset.loaded = "true";
-        resolve();
-      };
-      const onError = () => reject(new Error(`Failed to load script: ${src}`));
-
-      existing.addEventListener("load", onLoad, { once: true });
-      existing.addEventListener("error", onError, { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.id = id;
-    script.src = src;
-    script.async = true;
-    script.onload = () => {
-      script.dataset.loaded = "true";
-      resolve();
-    };
-    script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
-    document.body.appendChild(script);
-  });
-}
-
-function ensureKatexAssets() {
-  if (!katexAssetsPromise) {
-    katexAssetsPromise = (async () => {
-      await ensureStyle("math-preview-katex-css", KATEX_CSS);
-      await ensureScript("math-preview-katex-js", KATEX_JS);
-    })();
-  }
-
-  return katexAssetsPromise;
-}
 
 function stripOuterMathDelimiters(value: string) {
   const trimmed = value.trim();
@@ -439,37 +361,23 @@ export default function MathPreviewText({
   renderActiveMathSegment,
   renderActiveTextSegment,
 }: MathPreviewTextProps) {
-  const [katexReady, setKatexReady] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-
-    void ensureKatexAssets()
-      .then(() => {
-        if (active && window.katex) {
-          setKatexReady(true);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setKatexReady(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const sanitizedContent = useMemo(
+    // If the caller forces math, treat content as pure LaTeX (ex: answerLatex).
+    // In that case we must NOT auto-wrap pieces with $...$, otherwise strings like
+    // "x = 3,\\,-1" can be split into "$x = 3,$\\,-1" and render incorrectly.
+    () => (forceMath ? normalizeBackendLatexOnly(content) : normalizeBackendMathText(content)),
+    [content, forceMath],
+  );
 
   const lines = useMemo(
     () =>
-      content.split(/\r?\n/).map((line) =>
+      sanitizedContent.split(/\r?\n/).map((line) =>
         tokenizeLine(line, {
           displayMode,
           forceMath,
         }),
       ),
-    [content, displayMode, forceMath],
+    [sanitizedContent, displayMode, forceMath],
   );
   let mathCounter = 0;
   let textCounter = 0;
@@ -647,6 +555,31 @@ export default function MathPreviewText({
                   {mathNode}
                 </InteractiveWrapper>
               );
+              try {
+                const html = katex.renderToString(segment.content, {
+                  displayMode: segment.displayMode,
+                  throwOnError: false,
+                });
+
+                const Wrapper = segment.displayMode ? "div" : "span";
+
+                return (
+                  <Wrapper
+                    key={`segment-${lineIndex}-${segmentIndex}`}
+                    className={segment.displayMode ? "w-full overflow-x-auto" : undefined}
+                    dangerouslySetInnerHTML={{ __html: html }}
+                  />
+                );
+              } catch {
+                return (
+                  <span
+                    key={`segment-${lineIndex}-${segmentIndex}`}
+                    className={segment.displayMode ? "w-full" : undefined}
+                  >
+                    {segment.raw}
+                  </span>
+                );
+              }
             })}
           </div>
         );

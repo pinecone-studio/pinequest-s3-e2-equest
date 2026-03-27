@@ -107,6 +107,21 @@ export async function ensureExamSchema(db: D1Database) {
 		)
 		.run();
 
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS proctoring_events (
+				id text PRIMARY KEY NOT NULL,
+				attempt_id text NOT NULL,
+				code text NOT NULL,
+				severity text NOT NULL,
+				title text NOT NULL,
+				detail text NOT NULL,
+				occurred_at text NOT NULL,
+				created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+			)`,
+		)
+		.run();
+
 	const studentColumns = await getColumnNames(db, "students");
 	await addColumnIfMissing(
 		db,
@@ -194,6 +209,15 @@ export async function ensureExamSchema(db: D1Database) {
 		"created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL",
 	);
 
+	const proctoringEventColumns = await getColumnNames(db, "proctoring_events");
+	await addColumnIfMissing(
+		db,
+		"proctoring_events",
+		proctoringEventColumns,
+		"created_at",
+		"created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL",
+	);
+
 	await db
 		.prepare(
 			"CREATE UNIQUE INDEX IF NOT EXISTS attempts_test_student_unique_idx ON attempts (test_id, student_id)",
@@ -207,6 +231,11 @@ export async function ensureExamSchema(db: D1Database) {
 	await db
 		.prepare(
 			"CREATE INDEX IF NOT EXISTS questions_test_order_idx ON questions (test_id, order_slot)",
+		)
+		.run();
+	await db
+		.prepare(
+			"CREATE INDEX IF NOT EXISTS proctoring_events_attempt_occurred_idx ON proctoring_events (attempt_id, occurred_at)",
 		)
 		.run();
 }

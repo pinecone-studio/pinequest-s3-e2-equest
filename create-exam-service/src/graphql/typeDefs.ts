@@ -145,17 +145,57 @@ export const typeDefs = /* GraphQL */ `
 
   type SaveNewMathExamPayload {
     examId: ID!
+    title: String!
     createdAt: String!
     updatedAt: String!
   }
 
   type Query {
     health: String!
+    listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
+    getNewMathExam(examId: ID!): NewMathExam
   }
 
   type Mutation {
     generateExamQuestions(input: ExamGenerationInput!): ExamGenerationResult!
     saveExam(input: SaveExamInput!): SaveExamPayload!
     saveNewMathExam(input: SaveNewMathExamInput!): SaveNewMathExamPayload!
+  }
+
+  type NewMathExamSummary {
+    examId: ID!
+    title: String!
+    updatedAt: String!
+  }
+
+  type NewMathExamGeneratorMeta {
+    difficulty: String
+    topics: String
+    sourceContext: String
+  }
+
+  type NewMathExamQuestion {
+    id: ID!
+    type: MathExamQuestionType!
+    prompt: String!
+    points: Int!
+    imageAlt: String
+    imageDataUrl: String
+    options: [String!]
+    correctOption: Int
+    responseGuide: String
+    answerLatex: String
+  }
+
+  type NewMathExam {
+    examId: ID!
+    title: String!
+    mcqCount: Int!
+    mathCount: Int!
+    totalPoints: Int!
+    generator: NewMathExamGeneratorMeta
+    questions: [NewMathExamQuestion!]!
+    createdAt: String!
+    updatedAt: String!
   }
 `;
