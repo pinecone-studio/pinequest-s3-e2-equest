@@ -114,6 +114,57 @@ export const typeDefs = /* GraphQL */ `
     MATH
   }
 
+  enum QuestionAnalysisSuggestedType {
+    MCQ
+    MATH
+    MATCHING
+    FILL_IN
+    FREE_TEXT
+  }
+
+  type QuestionAnalysisResult {
+    difficulty: Difficulty!
+    points: Int!
+    tags: [String!]!
+    explanation: String!
+    options: [String!]
+    correctAnswer: String!
+    suggestedType: QuestionAnalysisSuggestedType!
+    source: String
+    skillLevel: String
+  }
+
+  input CreateAiExamTemplateInput {
+    title: String!
+    subject: String!
+    grade: Int!
+    teacherId: String!
+    durationMinutes: Int!
+    questions: [AiQuestionTemplateInput!]!
+  }
+
+  input AiQuestionTemplateInput {
+    type: String!
+    aiSuggestedType: String
+    prompt: String!
+    optionsJson: String
+    correctAnswer: String
+    points: Int
+    difficulty: Difficulty
+    tags: String
+    explanation: String
+    source: String
+    skillLevel: String
+  }
+
+  type AiExamTemplatePayload {
+    templateId: ID!
+    title: String!
+    totalPoints: Int!
+    difficulty: Difficulty!
+    createdAt: String!
+  }
+
   input NewMathExamGeneratorMetaInput {
     difficulty: String
     topics: String
@@ -178,6 +229,10 @@ export const typeDefs = /* GraphQL */ `
     generateExamQuestions(input: ExamGenerationInput!): ExamGenerationResult!
     saveExam(input: SaveExamInput!): SaveExamPayload!
     saveNewMathExam(input: SaveNewMathExamInput!): SaveNewMathExamPayload!
+    # AI-аар шинжлүүлэх
+    analyzeQuestion(prompt: String!): QuestionAnalysisResult!
+    # AI-аар үүсгэсэн загварыг хадгалах
+    createAiExamTemplate(input: CreateAiExamTemplateInput!): AiExamTemplatePayload!
   }
 
   type NewMathExamSummary {

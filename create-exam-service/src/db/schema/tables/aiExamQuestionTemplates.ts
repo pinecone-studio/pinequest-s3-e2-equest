@@ -17,7 +17,7 @@ export const aiExamQuestionTemplates = sqliteTable("ai_exam_question_templates",
 		.references(() => aiExamTemplates.id, { onDelete: "cascade" }),
 
 	position: integer("position").notNull(),
-	/** MCQ | MATH | FREE_TEXT */
+	/** MCQ | MATH | MATCHING | FILL_IN | FREE_TEXT */
 	type: text("type").notNull(),
 	aiSuggestedType: text("ai_suggested_type"),
 

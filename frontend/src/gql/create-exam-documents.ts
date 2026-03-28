@@ -47,6 +47,40 @@ export const ListNewMathExamsDocument = gql(`
 	}
 `);
 
+export const AnalyzeQuestionDocument = gql(`
+	mutation AnalyzeQuestion($prompt: String!) {
+		analyzeQuestion(prompt: $prompt) {
+			difficulty
+			points
+			tags
+			explanation
+			options
+			correctAnswer
+			suggestedType
+			source
+			skillLevel
+		}
+	}
+`);
+
+export const CreateAiExamTemplateDocument = gql(`
+	mutation CreateAiExamTemplate($input: CreateAiExamTemplateInput!) {
+		createAiExamTemplate(input: $input) {
+			templateId
+			title
+			totalPoints
+			difficulty
+			createdAt
+		}
+	}
+`);
+
+/** Жишээ / баримтын нэрээр ашиглах бол (AnalyzeQuestionDocument-тай ижил). */
+export const ANALYZE_QUESTION = AnalyzeQuestionDocument;
+
+/** Жишээ / баримтын нэрээр ашиглах бол (CreateAiExamTemplateDocument-тай ижил). */
+export const CREATE_AI_EXAM_TEMPLATE = CreateAiExamTemplateDocument;
+
 export const GetNewMathExamDocument = gql(`
 	query GetNewMathExam($examId: ID!) {
 		getNewMathExam(examId: $examId) {

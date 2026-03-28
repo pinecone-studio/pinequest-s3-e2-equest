@@ -6,8 +6,11 @@ import { getDb } from "../db";
 export interface GraphQLContext {
 	env: {
 		DB?: D1Database;
+		/** Workers AI — `analyzeQuestion` энд `ai.run(...)` (Gemini биш). */
+		AI?: Ai;
+		/** Google Gemini API — зөвхөн `generateExamQuestions` / `lib/ai.ts`. */
 		GEMINI_API_KEY?: string;
-		/** Optional override for Gemini model name (e.g. `gemini-flash-latest`) */
+		/** Gemini model string — зөвхөн `lib/ai.ts` (Workers AI-д хэрэглэгдэхгүй). */
 		GEMINI_MODEL?: string;
 		/** `1` / `true` — `generateExamQuestions` AI-аас өмнө input-ийг консолд бичнэ */
 		LOG_GRAPHQL_GENERATION?: string;
@@ -19,6 +22,7 @@ export async function createGraphQLContext(): Promise<GraphQLContext> {
 	const { env } = await getCloudflareContext();
 	const e = env as CloudflareEnv & {
 		DB?: D1Database;
+		AI?: Ai;
 		GEMINI_API_KEY?: string;
 		GEMINI_MODEL?: string;
 		LOG_GRAPHQL_GENERATION?: string;
@@ -26,6 +30,7 @@ export async function createGraphQLContext(): Promise<GraphQLContext> {
 	return {
 		env: {
 			DB: e.DB,
+			AI: e.AI,
 			GEMINI_API_KEY: e.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY,
 			GEMINI_MODEL: e.GEMINI_MODEL ?? process.env.GEMINI_MODEL,
 			LOG_GRAPHQL_GENERATION:

@@ -15,6 +15,38 @@ export type Scalars = {
   Float: { input: number; output: number; }
 };
 
+export type AiExamTemplatePayload = {
+  __typename?: 'AiExamTemplatePayload';
+  createdAt: Scalars['String']['output'];
+  difficulty: Difficulty;
+  templateId: Scalars['ID']['output'];
+  title: Scalars['String']['output'];
+  totalPoints: Scalars['Int']['output'];
+};
+
+export type AiQuestionTemplateInput = {
+  aiSuggestedType?: InputMaybe<Scalars['String']['input']>;
+  correctAnswer?: InputMaybe<Scalars['String']['input']>;
+  difficulty?: InputMaybe<Difficulty>;
+  explanation?: InputMaybe<Scalars['String']['input']>;
+  optionsJson?: InputMaybe<Scalars['String']['input']>;
+  points?: InputMaybe<Scalars['Int']['input']>;
+  prompt: Scalars['String']['input'];
+  skillLevel?: InputMaybe<Scalars['String']['input']>;
+  source?: InputMaybe<Scalars['String']['input']>;
+  tags?: InputMaybe<Scalars['String']['input']>;
+  type: Scalars['String']['input'];
+};
+
+export type CreateAiExamTemplateInput = {
+  durationMinutes: Scalars['Int']['input'];
+  grade: Scalars['Int']['input'];
+  questions: Array<AiQuestionTemplateInput>;
+  subject: Scalars['String']['input'];
+  teacherId: Scalars['String']['input'];
+  title: Scalars['String']['input'];
+};
+
 export enum Difficulty {
   Easy = 'EASY',
   Hard = 'HARD',
@@ -109,9 +141,21 @@ export enum MathExamQuestionType {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  analyzeQuestion: QuestionAnalysisResult;
+  createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
   saveExam: SaveExamPayload;
   saveNewMathExam: SaveNewMathExamPayload;
+};
+
+
+export type MutationAnalyzeQuestionArgs = {
+  prompt: Scalars['String']['input'];
+};
+
+
+export type MutationCreateAiExamTemplateArgs = {
+  input: CreateAiExamTemplateInput;
 };
 
 
@@ -242,6 +286,29 @@ export type QueryGetNewMathExamArgs = {
 export type QueryListNewMathExamsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
+
+export type QuestionAnalysisResult = {
+  __typename?: 'QuestionAnalysisResult';
+  correctAnswer: Scalars['String']['output'];
+  difficulty: Difficulty;
+  explanation: Scalars['String']['output'];
+  options?: Maybe<Array<Scalars['String']['output']>>;
+  points: Scalars['Int']['output'];
+  /** Bloom-ийн таксономи — Мэдлэг | Ойлгомж | Хэрэглээ | Шинжилгээ. */
+  skillLevel?: Maybe<Scalars['String']['output']>;
+  /** Эх сурвалжийн таамаглал (жишээ нь ЭЕШ, сурах бичиг). */
+  source?: Maybe<Scalars['String']['output']>;
+  suggestedType: QuestionAnalysisSuggestedType;
+  tags: Array<Scalars['String']['output']>;
+};
+
+export enum QuestionAnalysisSuggestedType {
+  FillIn = 'FILL_IN',
+  FreeText = 'FREE_TEXT',
+  Matching = 'MATCHING',
+  Math = 'MATH',
+  Mcq = 'MCQ'
+}
 
 export enum QuestionFormat {
   FillIn = 'FILL_IN',
