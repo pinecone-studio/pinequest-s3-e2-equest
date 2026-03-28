@@ -146,6 +146,7 @@ export type Mutation = {
   analyzeQuestion: QuestionAnalysisResult;
   createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
+  requestExamSchedule: RequestExamSchedulePayload;
   saveExam: SaveExamPayload;
   saveNewMathExam: SaveNewMathExamPayload;
 };
@@ -163,6 +164,13 @@ export type MutationCreateAiExamTemplateArgs = {
 
 export type MutationGenerateExamQuestionsArgs = {
   input: ExamGenerationInput;
+};
+
+
+export type MutationRequestExamScheduleArgs = {
+  classId: Scalars['String']['input'];
+  preferredDate: Scalars['String']['input'];
+  testId: Scalars['ID']['input'];
 };
 
 
@@ -320,6 +328,13 @@ export enum QuestionFormat {
   Written = 'WRITTEN'
 }
 
+export type RequestExamSchedulePayload = {
+  __typename?: 'RequestExamSchedulePayload';
+  examId?: Maybe<Scalars['ID']['output']>;
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+};
+
 export type SaveExamInput = {
   errorLog?: InputMaybe<Scalars['String']['input']>;
   examId?: InputMaybe<Scalars['ID']['input']>;
@@ -460,6 +475,7 @@ export type ResolversTypes = ResolversObject<{
   QuestionAnalysisResult: ResolverTypeWrapper<QuestionAnalysisResult>;
   QuestionAnalysisSuggestedType: QuestionAnalysisSuggestedType;
   QuestionFormat: QuestionFormat;
+  RequestExamSchedulePayload: ResolverTypeWrapper<RequestExamSchedulePayload>;
   SaveExamInput: SaveExamInput;
   SaveExamPayload: ResolverTypeWrapper<SaveExamPayload>;
   SaveNewMathExamInput: SaveNewMathExamInput;
@@ -493,6 +509,7 @@ export type ResolversParentTypes = ResolversObject<{
   NewMathExamSummary: NewMathExamSummary;
   Query: Record<PropertyKey, never>;
   QuestionAnalysisResult: QuestionAnalysisResult;
+  RequestExamSchedulePayload: RequestExamSchedulePayload;
   SaveExamInput: SaveExamInput;
   SaveExamPayload: SaveExamPayload;
   SaveNewMathExamInput: SaveNewMathExamInput;
@@ -531,6 +548,7 @@ export type MutationResolvers<ContextType = GraphQLContext, ParentType extends R
   analyzeQuestion?: Resolver<ResolversTypes['QuestionAnalysisResult'], ParentType, ContextType, RequireFields<MutationAnalyzeQuestionArgs, 'prompt'>>;
   createAiExamTemplate?: Resolver<ResolversTypes['AiExamTemplatePayload'], ParentType, ContextType, RequireFields<MutationCreateAiExamTemplateArgs, 'input'>>;
   generateExamQuestions?: Resolver<ResolversTypes['ExamGenerationResult'], ParentType, ContextType, RequireFields<MutationGenerateExamQuestionsArgs, 'input'>>;
+  requestExamSchedule?: Resolver<ResolversTypes['RequestExamSchedulePayload'], ParentType, ContextType, RequireFields<MutationRequestExamScheduleArgs, 'classId' | 'preferredDate' | 'testId'>>;
   saveExam?: Resolver<ResolversTypes['SaveExamPayload'], ParentType, ContextType, RequireFields<MutationSaveExamArgs, 'input'>>;
   saveNewMathExam?: Resolver<ResolversTypes['SaveNewMathExamPayload'], ParentType, ContextType, RequireFields<MutationSaveNewMathExamArgs, 'input'>>;
 }>;
@@ -608,6 +626,12 @@ export type QuestionAnalysisResultResolvers<ContextType = GraphQLContext, Parent
   tags?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
 }>;
 
+export type RequestExamSchedulePayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['RequestExamSchedulePayload'] = ResolversParentTypes['RequestExamSchedulePayload']> = ResolversObject<{
+  examId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  success?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+}>;
+
 export type SaveExamPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['SaveExamPayload'] = ResolversParentTypes['SaveExamPayload']> = ResolversObject<{
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   errorLog?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -635,6 +659,7 @@ export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   NewMathExamSummary?: NewMathExamSummaryResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
   QuestionAnalysisResult?: QuestionAnalysisResultResolvers<ContextType>;
+  RequestExamSchedulePayload?: RequestExamSchedulePayloadResolvers<ContextType>;
   SaveExamPayload?: SaveExamPayloadResolvers<ContextType>;
   SaveNewMathExamPayload?: SaveNewMathExamPayloadResolvers<ContextType>;
 }>;

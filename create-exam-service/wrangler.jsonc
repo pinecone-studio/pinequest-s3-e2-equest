@@ -1,10 +1,5 @@
 /**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
+ * Wrangler: https://developers.cloudflare.com/workers/wrangler/configuration/
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -41,7 +36,20 @@
       "migrations_dir": "drizzle",
     },
   ],
-  // Workers AI: GraphQL `analyzeQuestion` → `ctx.env.AI.run(@cf/meta/llama-3-8b-instruct). Gemini биш.
+  /**
+   * AI Scheduler — producer энд; consumer тусдаа Worker (`workers/exam-schedule-consumer`).
+   * Queue: `wrangler queues create exam-scheduler-queue` (эсвэл Dashboard).
+   * Consumer deploy: `npm run deploy:exam-schedule-consumer` + `wrangler secret put GEMINI_API_KEY -c workers/exam-schedule-consumer/wrangler.toml`
+   */
+  "queues": {
+    "producers": [
+      {
+        "queue": "exam-scheduler-queue",
+        "binding": "SCHEDULER_QUEUE",
+      },
+    ],
+  },
+  // Workers AI (туршилт / бусад). GraphQL `analyzeQuestion` → Gemini + Google Search grounding (`src/lib/analyze-question-gemini.ts`).
   "ai": {
     "binding": "AI",
   },
@@ -67,10 +75,26 @@
     // Workers Logs эсвэл: npx wrangler tail create-exam-service
     // Унтраах: "0" | Dashboard → Variables → LOG_GRAPHQL_GENERATION
     "LOG_GRAPHQL_GENERATION": "1",
-    // Gemini model override (optional). Example: "gemini-flash-latest"
+    // Gemini model — generateExamQuestions (`lib/ai.ts`). Жишээ: "gemini-flash-latest"
     "GEMINI_MODEL": "gemini-flash-latest",
+    // analyzeQuestion — JSON mode тогтвортой байдлаар ихэвчлэн gemini-1.5-flash; шаардлагатай бол 2.5 руу солино
+    "GEMINI_ANALYZE_MODEL": "gemini-1.5-flash",
     // Frontend deploy origin-ууд (таслалаар тусгаарлагдана)
     "GRAPHQL_CORS_ORIGINS": "https://my-next-app.tsetsegulziiocherdene.workers.dev",
   },
-  // GEMINI_API_KEY: wrangler secret put GEMINI_API_KEY эсвэл .dev.vars
+  /**
+   * ── Gemini / Google AI түлхүүр (нууц) ──
+   * Зөвлөмж (Deploy): `cd create-exam-service` дээр:
+   *   npx wrangler secret put GOOGLE_AI_API_KEY
+   * эсвэл одоогийн нэрээр: npx wrangler secret put GEMINI_API_KEY
+   * (Paste хийгээд Enter — git, vars дотор битгий хадгал.)
+   *
+   * Локал туршилт: `.dev.vars` (энэ файлыг git-д оруулахгүй). Жишээ: `.dev.vars.example`.
+   *
+   * Анхаар: `vars` хэсэгт API түлхүүр битгий бич (public repo / Dashboard-д ил гарна).
+   * Фронтенд (React) кодонд түлхүүр хэзээ ч бүү оруул — зөвхөн Worker/backend.
+   *
+   * Google AI Studio түвшин/хязгаар: үнэгүй төлөвт хүсэлтийн хязгаар байдаг (жишээ нь минут/өдөр);
+   * яг тоог https://ai.google.dev/pricing эсвэл Studio-оос шалгана уу.
+   */
 }

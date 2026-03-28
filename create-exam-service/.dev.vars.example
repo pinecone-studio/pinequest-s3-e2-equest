@@ -1,11 +1,24 @@
-# Хуулаад `.dev.vars` болгон нэрлэнэ (git-д орохгүй).
-# Wrangler dev / OpenNext local дээр Worker-д GEMINI түлхүүр дамжуулна.
+# Хуулаад `.dev.vars` болгон нэрлэнэ (.gitignore-д байгаа тул git-д орохгүй).
+# Локал: `bun run dev` / wrangler — Worker-д env дамжуулна.
 
+# ── Deploy дээр нууцаар (зөвлөмж) ──
+# Төслийн хавтаснаас:
+#   npx wrangler secret put GOOGLE_AI_API_KEY
+# эсвэл:
+#   npx wrangler secret put GEMINI_API_KEY
+# Дараа нь түлхүүрээ paste → Enter. wrangler.jsonc эсвэл `vars` дотор түлхүүр битгий бич.
+
+# ── Зөвхөн локал (доор нэгийг нь бөглөнө) ──
+# GOOGLE_AI_API_KEY=
 GEMINI_API_KEY=
 
-# Deploy-тай ижил: `wrangler.jsonc` → vars.LOG_GRAPHQL_GENERATION (эсвэл Dashboard Variables).
-# 1 = фронтоос ирсэн generate input-ийг AI-аас өмнө лог (терминал / wrangler tail / Workers Logs)
+# analyzeQuestion model (сонголттой; wrangler.jsonc `vars.GEMINI_ANALYZE_MODEL`-тай нийлнэ)
+# GEMINI_ANALYZE_MODEL=gemini-1.5-flash
+
+# Deploy-тай ижил: wrangler.jsonc → vars.LOG_GRAPHQL_GENERATION
 # LOG_GRAPHQL_GENERATION=1
 
-# Шаардлагатай бол CORS (wrangler.jsonc vars эсвэл энд)
+# CORS (шаардлагатай бол)
 # GRAPHQL_CORS_ORIGINS=http://localhost:3000
+
+# Нууцлал: Gemini түлхүүрийг React/фронт кодонд бүү оруул — зөвхөн backend/Worker.

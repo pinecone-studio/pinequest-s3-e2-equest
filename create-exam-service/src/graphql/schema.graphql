@@ -225,6 +225,12 @@ type Query {
   getNewMathExam(examId: ID!): NewMathExam
 }
 
+type RequestExamSchedulePayload {
+  success: Boolean!
+  message: String!
+  examId: ID
+}
+
 type Mutation {
   generateExamQuestions(input: ExamGenerationInput!): ExamGenerationResult!
   saveExam(input: SaveExamInput!): SaveExamPayload!
@@ -233,6 +239,12 @@ type Mutation {
   analyzeQuestion(prompt: String!): QuestionAnalysisResult!
   # AI-аар үүсгэсэн загварыг хадгалах
   createAiExamTemplate(input: CreateAiExamTemplateInput!): AiExamTemplatePayload!
+  # Шалгалтын хуваарь: D1-д pending үүсгээд Queue руу — AI consumer дараа нь батална
+  requestExamSchedule(
+    testId: ID!
+    classId: String!
+    preferredDate: String!
+  ): RequestExamSchedulePayload!
 }
 
 type NewMathExamSummary {

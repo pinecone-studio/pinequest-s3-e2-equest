@@ -1,0 +1,26 @@
+# Тусдаа Worker: OpenNext үндсэн worker-д queue() байхгүй тул consumer энд.
+# Deploy: npm run deploy:exam-schedule-consumer
+# Нууц: npx wrangler secret put GEMINI_API_KEY -c workers/exam-schedule-consumer/wrangler.toml
+name = "exam-schedule-consumer"
+main = "src/index.ts"
+compatibility_date = "2026-03-17"
+compatibility_flags = ["nodejs_compat"]
+
+# [limits] <--- Энэ хэсгийг устга эсвэл хас (Free: Cloudflare стандарт CPU-г автоматаар онооно)
+# cpu_ms = 5000
+
+[placement]
+mode = "smart"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "create-exams"
+database_id = "f90dad03-6683-4e49-b58b-167632fdc471"
+
+[[queues.consumers]]
+queue = "exam-scheduler-queue"
+max_batch_size = 1
+max_batch_timeout = 2
+
+[vars]
+GEMINI_MODEL = "gemini-flash-latest"

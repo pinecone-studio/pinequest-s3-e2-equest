@@ -81,6 +81,24 @@ export const ANALYZE_QUESTION = AnalyzeQuestionDocument;
 /** Жишээ / баримтын нэрээр ашиглах бол (CreateAiExamTemplateDocument-тай ижил). */
 export const CREATE_AI_EXAM_TEMPLATE = CreateAiExamTemplateDocument;
 
+export const RequestExamScheduleDocument = gql(`
+	mutation RequestExamSchedule(
+		$testId: ID!
+		$classId: String!
+		$preferredDate: String!
+	) {
+		requestExamSchedule(
+			testId: $testId
+			classId: $classId
+			preferredDate: $preferredDate
+		) {
+			success
+			message
+			examId
+		}
+	}
+`);
+
 export const GetNewMathExamDocument = gql(`
 	query GetNewMathExam($examId: ID!) {
 		getNewMathExam(examId: $examId) {

@@ -52,7 +52,7 @@ function parseRetryDelaySeconds(raw: string): number | undefined {
   return undefined;
 }
 
-function classifyGeminiError(e: unknown): GeminiErrorInfo {
+export function classifyGeminiError(e: unknown): GeminiErrorInfo {
   const rawMessage = e instanceof Error ? e.message : String(e);
   const msg = rawMessage.toLowerCase();
   const retryAfterSeconds = parseRetryDelaySeconds(rawMessage);

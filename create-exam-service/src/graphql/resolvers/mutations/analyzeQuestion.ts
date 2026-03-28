@@ -1,54 +1,16 @@
 /**
- * `analyzeQuestion` mutation: Cloudflare **Workers AI** (`ctx.env.AI`, `wrangler.jsonc` → `ai.binding`).
- * Модель: `@cf/meta/llama-3-8b-instruct`. **Google Gemini / GEMINI_API_KEY энд ашиглагдахгүй**
- * — зөвхөн `generateExamQuestions` (`src/lib/ai.ts`) нь Gemini API руу явдаг.
+ * `analyzeQuestion` mutation: **Google Gemini** + Google Search grounding
+ * (`@google/generative-ai`, `googleSearchRetrieval`). API түлхүүр: `GOOGLE_AI_API_KEY`
+ * (эсвэл одоогийн `GEMINI_API_KEY`).
  */
 import { GraphQLError } from "graphql";
 
+import { analyzeQuestionWithGemini } from "../../../lib/analyze-question-gemini";
 import type { GraphQLContext } from "../../context";
 import {
   Difficulty,
   QuestionAnalysisSuggestedType,
 } from "../../generated/resolvers-types";
-
-const MODEL = "@cf/meta/llama-3-8b-instruct" as const;
-
-const SYSTEM_MESSAGE = `
-Чи бол боловсролын эксперт. Энэ хүсэлт нь зөвхөн НЭГ төрлийн үр дүн шаардана:
-олон сонголттой асуулт (MCQ) — яг ДӨРВӨН сонголт, НЭГ зөв хариулт.
-
-Дүрмүүд:
-- suggestedType үргэлж "MCQ" байна.
-- options нь яг 4 элементтэй string массив; сонголтууд монгол/тоо/томьёо байж болно, утга нь өөр хоорондоо өөр байна.
-- correctAnswer нь options доторх нэг сонголтын яг тэр тексттэй таарна (хуулж тавь).
-- Асуулт нь математик, физик, ерөнхий мэдлэг — аль ч байсан дээрх MCQ хэлбэрээр зохио.
-
-Монгол хэлээр: explanation, tags, source, skillLevel.
-
-JSON бүтэц (skillLevel: Мэдлэг | Ойлгомж | Хэрэглээ | Шинжилгээ-ийн нэг):
-{
-  "difficulty": "EASY" | "MEDIUM" | "HARD",
-  "points": number,
-  "suggestedType": "MCQ",
-  "options": ["сонголт1", "сонголт2", "сонголт3", "сонголт4"],
-  "correctAnswer": "сонголтуудын нэгтэй яг ижил мөр",
-  "explanation": "Монгол хэлээрх аргачлал",
-  "tags": ["сэдэв"],
-  "source": "Эх сурвалжийн таамаглал",
-  "skillLevel": "Ойлгомж"
-}
-Зөвхөн цэвэр JSON буцаа.
-`.trim();
-
-function extractJsonText(raw: string): string {
-  const t = raw.trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)```$/im.exec(t);
-  if (fence?.[1]) return fence[1].trim();
-  const start = t.indexOf("{");
-  const end = t.lastIndexOf("}");
-  if (start >= 0 && end > start) return t.slice(start, end + 1);
-  return t;
-}
 
 function parseDifficulty(v: unknown): Difficulty {
   const s = String(v ?? "").toUpperCase();
@@ -57,11 +19,22 @@ function parseDifficulty(v: unknown): Difficulty {
   return Difficulty.Medium;
 }
 
+function parseSuggestedType(v: unknown): QuestionAnalysisSuggestedType {
+  const s = String(v ?? "")
+    .toUpperCase()
+    .replace(/-/g, "_");
+  if (s === "MCQ") return QuestionAnalysisSuggestedType.Mcq;
+  if (s === "MATCHING") return QuestionAnalysisSuggestedType.Matching;
+  if (s === "FILL_IN" || s === "FILLIN")
+    return QuestionAnalysisSuggestedType.FillIn;
+  if (s === "MATH") return QuestionAnalysisSuggestedType.Math;
+  if (s === "FREE_TEXT" || s === "FREETEXT")
+    return QuestionAnalysisSuggestedType.FreeText;
+  return QuestionAnalysisSuggestedType.Mcq;
+}
+
 const MCQ_OPTION_LABELS = ["А", "Б", "В", "Г"] as const;
 
-/**
- * Энэ mutation зөвхөн MCQ — үргэлж яг 4 сонголт, зөв хариулт нь тэдний нэг.
- */
 function ensureFourMcqOptions(
   options: string[] | null,
   correctAnswer: string,
@@ -92,6 +65,13 @@ function ensureFourMcqOptions(
   return { options: four, correctAnswer: answer };
 }
 
+function normalizeNonMcqOptions(raw: unknown): string[] | null {
+  if (raw === null || raw === undefined) return null;
+  if (!Array.isArray(raw)) return null;
+  const list = raw.map((x) => String(x).trim()).filter((s) => s.length > 0);
+  return list.length ? list : null;
+}
+
 type Args = { prompt: string };
 
 export const analyzeQuestionMutation = {
@@ -101,28 +81,30 @@ export const analyzeQuestionMutation = {
       throw new GraphQLError("prompt хоосон байж болохгүй.");
     }
 
-    const ai = ctx.env.AI;
-    if (!ai) {
+    const apiKey =
+      ctx.env.GOOGLE_AI_API_KEY?.trim() ||
+      ctx.env.GEMINI_API_KEY?.trim() ||
+      (typeof process !== "undefined"
+        ? process.env.GOOGLE_AI_API_KEY?.trim() ||
+          process.env.GEMINI_API_KEY?.trim()
+        : "") ||
+      "";
+
+    if (!apiKey) {
       throw new GraphQLError(
-        "Workers AI binding (AI) идэвхгүй байна. wrangler.jsonc болон Cloudflare орчинд deploy хийнэ үү.",
+        "Gemini түлхүүр тохируулаагүй. Cloudflare дээр: wrangler secret put GOOGLE_AI_API_KEY (эсвэл одоогийн GEMINI_API_KEY).",
       );
     }
 
+    const analyzeModel =
+      ctx.env.GEMINI_ANALYZE_MODEL?.trim() ||
+      ctx.env.GEMINI_MODEL?.trim() ||
+      undefined;
+
     try {
-      const response = await ai.run(MODEL, {
-        messages: [
-          { role: "system", content: SYSTEM_MESSAGE },
-          { role: "user", content: prompt },
-        ],
+      const parsed = await analyzeQuestionWithGemini(apiKey, prompt, {
+        model: analyzeModel,
       });
-
-      const text = response.response?.trim();
-      if (!text) {
-        throw new Error("AI хариу хоосон байна.");
-      }
-
-      const jsonText = extractJsonText(text);
-      const parsed = JSON.parse(jsonText) as Record<string, unknown>;
 
       const pointsRaw = parsed.points;
       const points =
@@ -133,6 +115,8 @@ export const analyzeQuestionMutation = {
       const tagsRaw = parsed.tags;
       const tags = Array.isArray(tagsRaw) ? tagsRaw.map((x) => String(x)) : [];
 
+      const suggestedType = parseSuggestedType(parsed.suggestedType);
+
       const optionsRaw = parsed.options;
       const optionsFromAi =
         optionsRaw === null || optionsRaw === undefined
@@ -142,22 +126,32 @@ export const analyzeQuestionMutation = {
             : null;
 
       const correctRaw = String(parsed.correctAnswer ?? "");
-      const { options: optionsFour, correctAnswer: correctFixed } =
-        ensureFourMcqOptions(optionsFromAi, correctRaw);
+
+      let optionsOut: string[] | null;
+      let correctOut: string;
+
+      if (suggestedType === QuestionAnalysisSuggestedType.Mcq) {
+        const fixed = ensureFourMcqOptions(optionsFromAi, correctRaw);
+        optionsOut = fixed.options;
+        correctOut = fixed.correctAnswer;
+      } else {
+        optionsOut = normalizeNonMcqOptions(optionsRaw);
+        correctOut = correctRaw.trim();
+      }
 
       return {
         difficulty: parseDifficulty(parsed.difficulty),
         points,
         tags,
         explanation: String(parsed.explanation ?? ""),
-        options: optionsFour,
-        correctAnswer: correctFixed,
-        suggestedType: QuestionAnalysisSuggestedType.Mcq,
+        options: optionsOut,
+        correctAnswer: correctOut,
+        suggestedType,
         source: String(parsed.source ?? "Тодорхойгүй").trim() || "Тодорхойгүй",
         skillLevel: String(parsed.skillLevel ?? "Ойлгомж").trim() || "Ойлгомж",
       };
     } catch (err) {
-      console.error("AI Analysis Error:", err);
+      console.error("analyzeQuestion (Gemini) error:", err);
       const msg = err instanceof Error ? err.message : "Тодорхойгүй алдаа";
       throw new GraphQLError(`AI асуултыг шинжлэхэд алдаа: ${msg}`);
     }

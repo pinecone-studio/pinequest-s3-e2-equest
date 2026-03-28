@@ -144,6 +144,7 @@ export type Mutation = {
   analyzeQuestion: QuestionAnalysisResult;
   createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
+  requestExamSchedule: RequestExamSchedulePayload;
   saveExam: SaveExamPayload;
   saveNewMathExam: SaveNewMathExamPayload;
 };
@@ -161,6 +162,13 @@ export type MutationCreateAiExamTemplateArgs = {
 
 export type MutationGenerateExamQuestionsArgs = {
   input: ExamGenerationInput;
+};
+
+
+export type MutationRequestExamScheduleArgs = {
+  classId: Scalars['String']['input'];
+  preferredDate: Scalars['String']['input'];
+  testId: Scalars['ID']['input'];
 };
 
 
@@ -317,6 +325,13 @@ export enum QuestionFormat {
   SingleChoice = 'SINGLE_CHOICE',
   Written = 'WRITTEN'
 }
+
+export type RequestExamSchedulePayload = {
+  __typename?: 'RequestExamSchedulePayload';
+  examId?: Maybe<Scalars['ID']['output']>;
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+};
 
 export type SaveExamInput = {
   errorLog?: InputMaybe<Scalars['String']['input']>;

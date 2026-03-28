@@ -3,7 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useMutation } from "@apollo/client/react";
-import { ErrorMessage, Field, FieldArray, Form, Formik, type FormikHelpers } from "formik";
+import {
+  ErrorMessage,
+  Field,
+  FieldArray,
+  Form,
+  Formik,
+  type FormikHelpers,
+} from "formik";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
@@ -20,7 +27,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import MathPreviewText from "@/components/math-preview-text";
-import { ANALYZE_QUESTION, CREATE_AI_EXAM_TEMPLATE } from "@/gql/create-exam-documents";
+import {
+  ANALYZE_QUESTION,
+  CREATE_AI_EXAM_TEMPLATE,
+} from "@/gql/create-exam-documents";
 import {
   Difficulty,
   QuestionAnalysisSuggestedType,
@@ -191,7 +201,8 @@ function MathExamFieldsPreview({
 export function CreateAiExamComponent() {
   const [currentPrompt, setCurrentPrompt] = React.useState("");
 
-  const [analyzeQuestion, { loading: analyzing }] = useMutation(ANALYZE_QUESTION);
+  const [analyzeQuestion, { loading: analyzing }] =
+    useMutation(ANALYZE_QUESTION);
   const [createAiExamTemplate, { loading: saving }] = useMutation(
     CREATE_AI_EXAM_TEMPLATE,
   );
@@ -242,8 +253,9 @@ export function CreateAiExamComponent() {
         tags: (result.tags ?? []).join(", "),
         source: result.source ?? "",
         skillLevel: result.skillLevel ?? "Мэдлэг",
-        optionsJson:
-          result.options?.length ? JSON.stringify(result.options, null, 2) : null,
+        optionsJson: result.options?.length
+          ? JSON.stringify(result.options, null, 2)
+          : null,
       };
 
       setFieldValue("questions", [...existingQuestions, newQuestion]);
@@ -258,8 +270,8 @@ export function CreateAiExamComponent() {
 
   const handleSubmit = async (values: CreateAiExamFormValues) => {
     try {
-      const questions: CreateAiExamTemplateInput["questions"] = values.questions.map(
-        (q) => {
+      const questions: CreateAiExamTemplateInput["questions"] =
+        values.questions.map((q) => {
           let optionsJson: string | undefined;
           const raw = q.optionsJson?.trim();
           if (raw) {
@@ -283,8 +295,7 @@ export function CreateAiExamComponent() {
             skillLevel: q.skillLevel?.trim() || undefined,
             optionsJson,
           };
-        },
-      );
+        });
 
       const input: CreateAiExamTemplateInput = {
         title: values.title.trim(),
@@ -297,7 +308,10 @@ export function CreateAiExamComponent() {
 
       const { data } = await createAiExamTemplate({ variables: { input } });
       const payload = (
-        data as { createAiExamTemplate?: { templateId: string } } | null | undefined
+        data as
+          | { createAiExamTemplate?: { templateId: string } }
+          | null
+          | undefined
       )?.createAiExamTemplate;
 
       if (!payload) {
@@ -336,8 +350,12 @@ export function CreateAiExamComponent() {
             <Form className="space-y-6">
               <Card className="border-border/70 shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-lg">Шалгалтын толгой мэдээлэл</CardTitle>
-                  <CardDescription>Гарчиг, хичээл, анги, багш, хугацаа</CardDescription>
+                  <CardTitle className="text-lg">
+                    Шалгалтын толгой мэдээлэл
+                  </CardTitle>
+                  <CardDescription>
+                    Гарчиг, хичээл, анги, багш, хугацаа
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2 sm:col-span-2">
@@ -415,9 +433,9 @@ export function CreateAiExamComponent() {
                     Бодлого / асуултаа бичээд доорх товчоор шинжлүүлнэ. Хариу нь
                     сервер дээрх{" "}
                     <span className="font-medium text-foreground">
-                      Cloudflare Workers AI
+                      Google Gemini
                     </span>{" "}
-                    (Llama) — Google Gemini биш.
+                    (эх сурвалжийг вэбээс татах grounding-тай).
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -548,7 +566,9 @@ export function CreateAiExamComponent() {
                                 className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
                               >
                                 <option value="MCQ">Сонгох (MCQ)</option>
-                                <option value="MATCHING">Холбох (matching)</option>
+                                <option value="MATCHING">
+                                  Холбох (matching)
+                                </option>
                                 <option value="FILL_IN">Нөхөх</option>
                                 <option value="MATH">Математик</option>
                                 <option value="FREE_TEXT">Задгай бичвэр</option>
@@ -568,7 +588,8 @@ export function CreateAiExamComponent() {
                                   Дөрвөн сонголт (А–Г)
                                 </p>
                                 <p className="text-muted-foreground text-xs">
-                                  Оруулсан утгууд автоматаар JSON болж хадгалагдана.
+                                  Оруулсан утгууд автоматаар JSON болж
+                                  хадгалагдана.
                                 </p>
                               </div>
                               <McqOptionsFourFields
@@ -615,8 +636,8 @@ export function CreateAiExamComponent() {
                                 Холбох мөрүүд (AI санал)
                               </p>
                               <p className="text-muted-foreground text-xs">
-                                JSON массив — жишээ: [&quot;А — 1&quot;, &quot;Б —
-                                2&quot;]
+                                JSON массив — жишээ: [&quot;А — 1&quot;, &quot;Б
+                                — 2&quot;]
                               </p>
                               <Field
                                 as={Textarea}
@@ -707,7 +728,10 @@ export function CreateAiExamComponent() {
                           ) : null}
                           <div className="space-y-2">
                             <Label>Түлхүүр үг (таслалаар)</Label>
-                            <Field as={Input} name={`questions.${index}.tags`} />
+                            <Field
+                              as={Input}
+                              name={`questions.${index}.tags`}
+                            />
                           </div>
                           <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2 sm:col-span-2">
