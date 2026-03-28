@@ -89,6 +89,11 @@ export function ExamSessionMetadataForm({
 }: ExamSessionMetadataFormProps) {
   const [topicDraft, setTopicDraft] = React.useState("");
   const [saveHint, setSaveHint] = React.useState<string | null>(null);
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const topicSuggestions = metadata.subject
     ? TOPICS_BY_SUBJECT[metadata.subject] ?? []
@@ -182,6 +187,8 @@ export function ExamSessionMetadataForm({
       examType,
       subject,
       topics,
+      teacherId: `T-${randInt(1000, 9999)}`,
+      roomId: `R-${randInt(101, 305)}`,
       examDate,
       startTime,
       endTime,
@@ -203,7 +210,7 @@ export function ExamSessionMetadataForm({
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={handleFillDemo}>
-            Demo
+            Демо
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={handleReset}>
             Цэвэрлэх
@@ -370,9 +377,32 @@ export function ExamSessionMetadataForm({
         />
       </div>
 
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="meta-teacher-id">Багшийн ID</Label>
+          <Input
+            id="meta-teacher-id"
+            value={metadata.teacherId}
+            onChange={(e) => patch({ teacherId: e.target.value })}
+            placeholder="сонголттой — AI төлөвлөгөөнд ашиглана"
+            autoComplete="off"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="meta-room-id">Өрөөний ID</Label>
+          <Input
+            id="meta-room-id"
+            value={metadata.roomId}
+            onChange={(e) => patch({ roomId: e.target.value })}
+            placeholder="сонголттой — AI төлөвлөгөөнд ашиглана"
+            autoComplete="off"
+          />
+        </div>
+      </div>
+
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-2">
-          <Label htmlFor="meta-date">Огноо</Label>
+          <Label htmlFor="meta-date">Огноо (сонголттой)</Label>
           <Input
             id="meta-date"
             type="date"
@@ -380,12 +410,12 @@ export function ExamSessionMetadataForm({
             value={metadata.examDate}
             onChange={(e) => patch({ examDate: e.target.value })}
           />
-          {examDateMnLabel ? (
+          {isMounted && examDateMnLabel ? (
             <p className="text-xs text-muted-foreground">{examDateMnLabel}</p>
           ) : null}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="meta-start">Эхлэх цаг</Label>
+          <Label htmlFor="meta-start">Эхлэх цаг (сонголттой)</Label>
           <Input
             id="meta-start"
             type="time"

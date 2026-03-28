@@ -9,9 +9,11 @@
 ```
 Frontend (Apollo mutation)
     → POST /api/graphql
-        → Mutation.generateExamQuestions → lib/ai.ts (Gemini)
+        → Mutation.analyzeQuestion → Workers AI (`env.AI`, @cf/meta/llama-3-8b-instruct) — Gemini биш
+        → Mutation.createAiExamTemplate → D1 `ai_exam_*` (Drizzle)
+        → Mutation.generateExamQuestions → lib/ai.ts (Google Gemini API)
         → Mutation.saveExam → D1 `exams` (Drizzle)
-Query.health → шалгалтын текст буцаана (одоогоор UI дээр ашиглаагүй)
+        → Query.listNewMathExams / getNewMathExam → D1 `new_exams`
 ```
 
 ## Хавтасууд
@@ -22,13 +24,14 @@ Query.health → шалгалтын текст буцаана (одоогоор 
 | `src/graphql/schema.graphql` | **Schema-first эх** — frontend codegen эндээс уншина |
 | `src/graphql/typeDefs.ts` | Yoga-д өгөх `typeDefs` string (**`schema.graphql`-тай заавал синхрон**) |
 | `src/graphql/schema.ts` | `createSchema({ typeDefs, resolvers })` |
-| `src/graphql/context.ts` | `GraphQLContext` — D1 (`DB`), `GEMINI_API_KEY` |
+| `src/graphql/context.ts` | `GraphQLContext` — D1 (`DB`), Workers AI (`AI`), Gemini түлхүүр (`GEMINI_*` зөвхөн `generateExamQuestions`-д) |
 | `src/graphql/types.ts` | Resolver/AI-д ашиглах зарим TS төрөл (`ExamGenerationInput`, …) |
-| `src/graphql/resolvers/queries/` | Query resolver-ууд (`health.ts`) |
+| `src/graphql/resolvers/queries/` | Query resolver-ууд (`newMathExams.ts`) |
 | `src/graphql/resolvers/mutations/` | Mutation тус бүр тусдаа файл: `generateExamQuestions.ts`, `saveExam.ts` |
 | `src/graphql/resolvers/index.ts` | `Query` + `Mutation` нэгтгэх |
 | `src/graphql/generated/resolvers-types.ts` | Backend `bun run codegen` — `Resolvers` type |
-| `src/lib/ai.ts` | Gemini — `generateExamQuestions` дотор дуудагдана |
+| `src/lib/ai.ts` | Google Gemini — **зөвхөн** `generateExamQuestions` |
+| `src/graphql/resolvers/mutations/analyzeQuestion.ts` | **Workers AI** (`env.AI`) — асуулт шинжих; Gemini ашиглахгүй |
 | `src/db/schema.ts` | Drizzle: `schema/index` re-export |
 | `src/db/schema/tables/` | Хүснэгт бүр тусдаа (`exams.ts`, …) |
 | `src/db/index.ts` | D1 → Drizzle instance |
@@ -42,6 +45,8 @@ Query.health → шалгалтын текст буцаана (одоогоор 
 
 | Mutation | Resolver файл | Товч утга |
 |----------|----------------|-----------|
+| `analyzeQuestion` | `mutations/analyzeQuestion.ts` | **Cloudflare Workers AI** binding — JSON шинжилгээ; `GEMINI_API_KEY` шаардлагагүй |
+| `createAiExamTemplate` | `mutations/createAiExamTemplate.ts` | AI шинжилгээний үр дүнг D1 `ai_exam_templates` / `ai_exam_question_templates` руу |
 | `generateExamQuestions` | `mutations/generateExamQuestions.ts` | Gemini-ээр асуулт үүсгэх; **AI-аас өмнө** фронтын `input`-ийг логлох: `wrangler.jsonc` → `vars.LOG_GRAPHQL_GENERATION` (`1` идэвхтэй, `0` унтраа), эсвэл локалд `NODE_ENV=development`. Deploy дээр харах: **Workers Logs** эсвэл `npx wrangler tail <worker-нэр>` |
 | `saveExam` | `mutations/saveExam.ts` | `ExamGenerationInput` + асуултууд → `exams` хүснэгт (`DRAFT` / `PUBLISHED`) |
 

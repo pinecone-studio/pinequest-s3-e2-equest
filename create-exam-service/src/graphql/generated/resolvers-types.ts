@@ -17,6 +17,38 @@ export type Scalars = {
   Float: { input: number; output: number; }
 };
 
+export type AiExamTemplatePayload = {
+  __typename?: 'AiExamTemplatePayload';
+  createdAt: Scalars['String']['output'];
+  difficulty: Difficulty;
+  templateId: Scalars['ID']['output'];
+  title: Scalars['String']['output'];
+  totalPoints: Scalars['Int']['output'];
+};
+
+export type AiQuestionTemplateInput = {
+  aiSuggestedType?: InputMaybe<Scalars['String']['input']>;
+  correctAnswer?: InputMaybe<Scalars['String']['input']>;
+  difficulty?: InputMaybe<Difficulty>;
+  explanation?: InputMaybe<Scalars['String']['input']>;
+  optionsJson?: InputMaybe<Scalars['String']['input']>;
+  points?: InputMaybe<Scalars['Int']['input']>;
+  prompt: Scalars['String']['input'];
+  skillLevel?: InputMaybe<Scalars['String']['input']>;
+  source?: InputMaybe<Scalars['String']['input']>;
+  tags?: InputMaybe<Scalars['String']['input']>;
+  type: Scalars['String']['input'];
+};
+
+export type CreateAiExamTemplateInput = {
+  durationMinutes: Scalars['Int']['input'];
+  grade: Scalars['Int']['input'];
+  questions: Array<AiQuestionTemplateInput>;
+  subject: Scalars['String']['input'];
+  teacherId: Scalars['String']['input'];
+  title: Scalars['String']['input'];
+};
+
 export enum Difficulty {
   Easy = 'EASY',
   Hard = 'HARD',
@@ -111,9 +143,21 @@ export enum MathExamQuestionType {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  analyzeQuestion: QuestionAnalysisResult;
+  createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
   saveExam: SaveExamPayload;
   saveNewMathExam: SaveNewMathExamPayload;
+};
+
+
+export type MutationAnalyzeQuestionArgs = {
+  prompt: Scalars['String']['input'];
+};
+
+
+export type MutationCreateAiExamTemplateArgs = {
+  input: CreateAiExamTemplateInput;
 };
 
 
@@ -195,8 +239,10 @@ export type NewMathExamSessionMeta = {
   grade?: Maybe<Scalars['Int']['output']>;
   groupClass?: Maybe<Scalars['String']['output']>;
   mixQuestions?: Maybe<Scalars['Boolean']['output']>;
+  roomId?: Maybe<Scalars['String']['output']>;
   startTime?: Maybe<Scalars['String']['output']>;
   subject?: Maybe<Scalars['String']['output']>;
+  teacherId?: Maybe<Scalars['String']['output']>;
   topics?: Maybe<Array<Scalars['String']['output']>>;
   variantCount?: Maybe<Scalars['Int']['output']>;
   withVariants?: Maybe<Scalars['Boolean']['output']>;
@@ -211,8 +257,10 @@ export type NewMathExamSessionMetaInput = {
   grade?: InputMaybe<Scalars['Int']['input']>;
   groupClass?: InputMaybe<Scalars['String']['input']>;
   mixQuestions?: InputMaybe<Scalars['Boolean']['input']>;
+  roomId?: InputMaybe<Scalars['String']['input']>;
   startTime?: InputMaybe<Scalars['String']['input']>;
   subject?: InputMaybe<Scalars['String']['input']>;
+  teacherId?: InputMaybe<Scalars['String']['input']>;
   topics?: InputMaybe<Array<Scalars['String']['input']>>;
   variantCount?: InputMaybe<Scalars['Int']['input']>;
   withVariants?: InputMaybe<Scalars['Boolean']['input']>;
@@ -228,7 +276,6 @@ export type NewMathExamSummary = {
 export type Query = {
   __typename?: 'Query';
   getNewMathExam?: Maybe<NewMathExam>;
-  health: Scalars['String']['output'];
   listNewMathExams: Array<NewMathExamSummary>;
 };
 
@@ -241,6 +288,29 @@ export type QueryGetNewMathExamArgs = {
 export type QueryListNewMathExamsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
+
+export type QuestionAnalysisResult = {
+  __typename?: 'QuestionAnalysisResult';
+  correctAnswer: Scalars['String']['output'];
+  difficulty: Difficulty;
+  explanation: Scalars['String']['output'];
+  options?: Maybe<Array<Scalars['String']['output']>>;
+  points: Scalars['Int']['output'];
+  /** Bloom-ийн таксономи — Мэдлэг | Ойлгомж | Хэрэглээ | Шинжилгээ. */
+  skillLevel?: Maybe<Scalars['String']['output']>;
+  /** Эх сурвалжийн таамаглал (жишээ нь ЭЕШ, сурах бичиг). */
+  source?: Maybe<Scalars['String']['output']>;
+  suggestedType: QuestionAnalysisSuggestedType;
+  tags: Array<Scalars['String']['output']>;
+};
+
+export enum QuestionAnalysisSuggestedType {
+  FillIn = 'FILL_IN',
+  FreeText = 'FREE_TEXT',
+  Matching = 'MATCHING',
+  Math = 'MATH',
+  Mcq = 'MCQ'
+}
 
 export enum QuestionFormat {
   FillIn = 'FILL_IN',
@@ -360,7 +430,10 @@ export type DirectiveResolverFn<TResult = Record<PropertyKey, never>, TParent = 
 
 /** Mapping between all available schema types and the resolvers types */
 export type ResolversTypes = ResolversObject<{
+  AiExamTemplatePayload: ResolverTypeWrapper<AiExamTemplatePayload>;
+  AiQuestionTemplateInput: AiQuestionTemplateInput;
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
+  CreateAiExamTemplateInput: CreateAiExamTemplateInput;
   Difficulty: Difficulty;
   DifficultyDistributionInput: DifficultyDistributionInput;
   DifficultyPointsInput: DifficultyPointsInput;
@@ -384,6 +457,8 @@ export type ResolversTypes = ResolversObject<{
   NewMathExamSessionMetaInput: NewMathExamSessionMetaInput;
   NewMathExamSummary: ResolverTypeWrapper<NewMathExamSummary>;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  QuestionAnalysisResult: ResolverTypeWrapper<QuestionAnalysisResult>;
+  QuestionAnalysisSuggestedType: QuestionAnalysisSuggestedType;
   QuestionFormat: QuestionFormat;
   SaveExamInput: SaveExamInput;
   SaveExamPayload: ResolverTypeWrapper<SaveExamPayload>;
@@ -394,7 +469,10 @@ export type ResolversTypes = ResolversObject<{
 
 /** Mapping between all available schema types and the resolvers parents */
 export type ResolversParentTypes = ResolversObject<{
+  AiExamTemplatePayload: AiExamTemplatePayload;
+  AiQuestionTemplateInput: AiQuestionTemplateInput;
   Boolean: Scalars['Boolean']['output'];
+  CreateAiExamTemplateInput: CreateAiExamTemplateInput;
   DifficultyDistributionInput: DifficultyDistributionInput;
   DifficultyPointsInput: DifficultyPointsInput;
   EditableQuestionInput: EditableQuestionInput;
@@ -414,11 +492,20 @@ export type ResolversParentTypes = ResolversObject<{
   NewMathExamSessionMetaInput: NewMathExamSessionMetaInput;
   NewMathExamSummary: NewMathExamSummary;
   Query: Record<PropertyKey, never>;
+  QuestionAnalysisResult: QuestionAnalysisResult;
   SaveExamInput: SaveExamInput;
   SaveExamPayload: SaveExamPayload;
   SaveNewMathExamInput: SaveNewMathExamInput;
   SaveNewMathExamPayload: SaveNewMathExamPayload;
   String: Scalars['String']['output'];
+}>;
+
+export type AiExamTemplatePayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['AiExamTemplatePayload'] = ResolversParentTypes['AiExamTemplatePayload']> = ResolversObject<{
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  difficulty?: Resolver<ResolversTypes['Difficulty'], ParentType, ContextType>;
+  templateId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  totalPoints?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
 }>;
 
 export type ExamGenerationResultResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['ExamGenerationResult'] = ResolversParentTypes['ExamGenerationResult']> = ResolversObject<{
@@ -441,6 +528,8 @@ export type GeneratedQuestionResolvers<ContextType = GraphQLContext, ParentType 
 }>;
 
 export type MutationResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = ResolversObject<{
+  analyzeQuestion?: Resolver<ResolversTypes['QuestionAnalysisResult'], ParentType, ContextType, RequireFields<MutationAnalyzeQuestionArgs, 'prompt'>>;
+  createAiExamTemplate?: Resolver<ResolversTypes['AiExamTemplatePayload'], ParentType, ContextType, RequireFields<MutationCreateAiExamTemplateArgs, 'input'>>;
   generateExamQuestions?: Resolver<ResolversTypes['ExamGenerationResult'], ParentType, ContextType, RequireFields<MutationGenerateExamQuestionsArgs, 'input'>>;
   saveExam?: Resolver<ResolversTypes['SaveExamPayload'], ParentType, ContextType, RequireFields<MutationSaveExamArgs, 'input'>>;
   saveNewMathExam?: Resolver<ResolversTypes['SaveNewMathExamPayload'], ParentType, ContextType, RequireFields<MutationSaveNewMathExamArgs, 'input'>>;
@@ -487,8 +576,10 @@ export type NewMathExamSessionMetaResolvers<ContextType = GraphQLContext, Parent
   grade?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   groupClass?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   mixQuestions?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  roomId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   startTime?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   subject?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  teacherId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   topics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   variantCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   withVariants?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
@@ -502,8 +593,19 @@ export type NewMathExamSummaryResolvers<ContextType = GraphQLContext, ParentType
 
 export type QueryResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = ResolversObject<{
   getNewMathExam?: Resolver<Maybe<ResolversTypes['NewMathExam']>, ParentType, ContextType, RequireFields<QueryGetNewMathExamArgs, 'examId'>>;
-  health?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   listNewMathExams?: Resolver<Array<ResolversTypes['NewMathExamSummary']>, ParentType, ContextType, RequireFields<QueryListNewMathExamsArgs, 'limit'>>;
+}>;
+
+export type QuestionAnalysisResultResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['QuestionAnalysisResult'] = ResolversParentTypes['QuestionAnalysisResult']> = ResolversObject<{
+  correctAnswer?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  difficulty?: Resolver<ResolversTypes['Difficulty'], ParentType, ContextType>;
+  explanation?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  options?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
+  points?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  skillLevel?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  source?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  suggestedType?: Resolver<ResolversTypes['QuestionAnalysisSuggestedType'], ParentType, ContextType>;
+  tags?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
 }>;
 
 export type SaveExamPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['SaveExamPayload'] = ResolversParentTypes['SaveExamPayload']> = ResolversObject<{
@@ -522,6 +624,7 @@ export type SaveNewMathExamPayloadResolvers<ContextType = GraphQLContext, Parent
 }>;
 
 export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
+  AiExamTemplatePayload?: AiExamTemplatePayloadResolvers<ContextType>;
   ExamGenerationResult?: ExamGenerationResultResolvers<ContextType>;
   GeneratedQuestion?: GeneratedQuestionResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
@@ -531,6 +634,7 @@ export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   NewMathExamSessionMeta?: NewMathExamSessionMetaResolvers<ContextType>;
   NewMathExamSummary?: NewMathExamSummaryResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
+  QuestionAnalysisResult?: QuestionAnalysisResultResolvers<ContextType>;
   SaveExamPayload?: SaveExamPayloadResolvers<ContextType>;
   SaveNewMathExamPayload?: SaveNewMathExamPayloadResolvers<ContextType>;
 }>;

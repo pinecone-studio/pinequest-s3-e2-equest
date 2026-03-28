@@ -18,6 +18,8 @@ function sessionMetaFromRow(row: {
   examType: string | null;
   sessionSubject: string | null;
   sessionTopicsJson: string | null;
+  teacherId: string | null;
+  roomId: string | null;
   examDate: string | null;
   startTime: string | null;
   endTime: string | null;
@@ -33,6 +35,8 @@ function sessionMetaFromRow(row: {
     (row.examType != null && row.examType !== "") ||
     (row.sessionSubject != null && row.sessionSubject !== "") ||
     (row.sessionTopicsJson != null && row.sessionTopicsJson !== "") ||
+    (row.teacherId != null && row.teacherId !== "") ||
+    (row.roomId != null && row.roomId !== "") ||
     (row.examDate != null && row.examDate !== "") ||
     (row.startTime != null && row.startTime !== "") ||
     (row.endTime != null && row.endTime !== "") ||
@@ -64,6 +68,8 @@ function sessionMetaFromRow(row: {
     examType: row.examType,
     subject: row.sessionSubject,
     topics,
+    teacherId: row.teacherId,
+    roomId: row.roomId,
     examDate: row.examDate,
     startTime: row.startTime,
     endTime: row.endTime,
@@ -134,6 +140,8 @@ export const newMathExamQueries = {
         examType: newExams.examType,
         sessionSubject: newExams.sessionSubject,
         sessionTopicsJson: newExams.sessionTopicsJson,
+        teacherId: newExams.teacherId,
+        roomId: newExams.roomId,
         examDate: newExams.examDate,
         startTime: newExams.startTime,
         endTime: newExams.endTime,
@@ -196,6 +204,8 @@ export const newMathExamQueries = {
       examType: exam.examType,
       sessionSubject: exam.sessionSubject,
       sessionTopicsJson: exam.sessionTopicsJson,
+      teacherId: exam.teacherId,
+      roomId: exam.roomId,
       examDate: exam.examDate,
       startTime: exam.startTime,
       endTime: exam.endTime,

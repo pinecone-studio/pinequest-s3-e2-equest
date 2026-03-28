@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useMemo } from "react";
 import "katex/dist/katex.min.css";
 import katex from "katex";
 
@@ -59,7 +58,6 @@ function containsBlockLatex(value: string) {
   );
 }
 
-
 function stripOuterMathDelimiters(value: string) {
   const trimmed = value.trim();
 
@@ -98,8 +96,9 @@ function looksLikeLatexExpression(value: string) {
     return true;
   }
 
-  return /^[A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]+$/.test(trimmed) &&
-    /[=^_]/.test(trimmed);
+  return (
+    /^[A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]+$/.test(trimmed) && /[=^_]/.test(trimmed)
+  );
 }
 
 function tokenizeLine(
@@ -143,7 +142,9 @@ function tokenizeLine(
     segments.push({
       content: stripOuterMathDelimiters(matchedText),
       displayMode:
-        Boolean(match[1]) || Boolean(match[3]) || containsBlockLatex(matchedText),
+        Boolean(match[1]) ||
+        Boolean(match[3]) ||
+        containsBlockLatex(matchedText),
       raw: matchedText,
       type: "math",
     });
@@ -278,14 +279,12 @@ function tokenizeLine(
 }
 
 export function containsMathPreviewSyntax(value: string) {
-  return value
-    .split(/\r?\n/)
-    .some((line) =>
-      tokenizeLine(line, {
-        displayMode: false,
-        forceMath: false,
-      }).some((segment) => segment.type === "math"),
-    );
+  return value.split(/\r?\n/).some((line) =>
+    tokenizeLine(line, {
+      displayMode: false,
+      forceMath: false,
+    }).some((segment) => segment.type === "math"),
+  );
 }
 
 export function getMathPreviewSegments(
@@ -365,7 +364,10 @@ export default function MathPreviewText({
     // If the caller forces math, treat content as pure LaTeX (ex: answerLatex).
     // In that case we must NOT auto-wrap pieces with $...$, otherwise strings like
     // "x = 3,\\,-1" can be split into "$x = 3,$\\,-1" and render incorrectly.
-    () => (forceMath ? normalizeBackendLatexOnly(content) : normalizeBackendMathText(content)),
+    () =>
+      forceMath
+        ? normalizeBackendLatexOnly(content)
+        : normalizeBackendMathText(content),
     [content, forceMath],
   );
 
@@ -487,31 +489,25 @@ export default function MathPreviewText({
 
               let mathNode: ReactNode;
 
-              if (katexReady && window.katex) {
-                try {
-                  const html = window.katex.renderToString(segment.content, {
-                    displayMode: segment.displayMode,
-                    throwOnError: false,
-                  });
+              try {
+                const html = katex.renderToString(segment.content, {
+                  displayMode: segment.displayMode,
+                  throwOnError: false,
+                });
 
-                  const Wrapper = segment.displayMode ? "div" : "span";
+                const Wrapper = segment.displayMode ? "div" : "span";
 
-                  mathNode = (
-                    <Wrapper
-                      className={
-                        segment.displayMode ? "w-full overflow-x-auto" : undefined
-                      }
-                      dangerouslySetInnerHTML={{ __html: html }}
-                    />
-                  );
-                } catch {
-                  mathNode = (
-                    <span className={segment.displayMode ? "w-full" : undefined}>
-                      {segment.raw}
-                    </span>
-                  );
-                }
-              } else {
+                mathNode = (
+                  <Wrapper
+                    className={
+                      segment.displayMode
+                        ? "w-full overflow-x-auto"
+                        : undefined
+                    }
+                    dangerouslySetInnerHTML={{ __html: html }}
+                  />
+                );
+              } catch {
                 mathNode = (
                   <span className={segment.displayMode ? "w-full" : undefined}>
                     {segment.raw}
@@ -555,31 +551,6 @@ export default function MathPreviewText({
                   {mathNode}
                 </InteractiveWrapper>
               );
-              try {
-                const html = katex.renderToString(segment.content, {
-                  displayMode: segment.displayMode,
-                  throwOnError: false,
-                });
-
-                const Wrapper = segment.displayMode ? "div" : "span";
-
-                return (
-                  <Wrapper
-                    key={`segment-${lineIndex}-${segmentIndex}`}
-                    className={segment.displayMode ? "w-full overflow-x-auto" : undefined}
-                    dangerouslySetInnerHTML={{ __html: html }}
-                  />
-                );
-              } catch {
-                return (
-                  <span
-                    key={`segment-${lineIndex}-${segmentIndex}`}
-                    className={segment.displayMode ? "w-full" : undefined}
-                  >
-                    {segment.raw}
-                  </span>
-                );
-              }
             })}
           </div>
         );

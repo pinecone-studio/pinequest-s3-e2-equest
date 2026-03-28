@@ -15,7 +15,7 @@ type DemoButtonProps = {
 export function DemoButton({ onDemo, ...props }: DemoButtonProps) {
   return (
     <Button type="button" variant="outline" onClick={onDemo} {...props}>
-      Demo
+      Демо
     </Button>
   );
 }

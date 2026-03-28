@@ -382,7 +382,7 @@ export function MathExamControls({
         <div className="flex flex-wrap justify-end gap-2 border-t border-border/70 pt-4">
           <DemoButton onDemo={onDemo} />
           <Button type="button" variant="outline" onClick={onReset}>
-            Reset
+            Цэвэрлэх
           </Button>
         </div>
       </CardContent>
