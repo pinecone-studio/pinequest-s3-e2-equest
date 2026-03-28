@@ -99,10 +99,7 @@ const formatExamResponse = (
 		(question) => ({
 			questionId: getQuestionId(question),
 			type: (question.type as "single-choice" | "math") ?? "single-choice",
-			prompt:
-				question.type === "math" && question.responseGuide
-					? `${question.prompt}\n\n${question.responseGuide}`
-					: question.prompt,
+			prompt: question.prompt,
 			options: getQuestionOptions(question),
 			points: question.points,
 			competency: question.competency,

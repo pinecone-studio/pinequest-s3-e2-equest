@@ -464,6 +464,8 @@ export function StudentPageShell({
                               {latestProgress.status === "approved" &&
                               latestProgress.result
                                 ? `${latestProgress.result.maxScore} онооноос ${latestProgress.result.score} авч, ${latestProgress.result.percentage}% гүйцэтгэл үзүүллээ.`
+                                : latestProgress.feedback?.summary
+                                  ? latestProgress.feedback.summary
                                 : "Таны хариулт амжилттай бүртгэгдсэн. Батлагдсаны дараа дүн хэсэгт харагдана."}
                             </p>
                           </div>

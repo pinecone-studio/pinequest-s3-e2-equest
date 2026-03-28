@@ -258,14 +258,27 @@ export const submitExamAnswers = async (
 		finalize,
 		submittedAt,
 	);
+	const progress = computeProgress(
+		countAnsweredQuestions(nextState.answers),
+		attemptState.totalQuestions,
+	);
+	const feedback = finalize
+		? await generateAttemptFeedback(
+				db,
+				{ attemptId, progress },
+				{
+					ai,
+					geminiApiKey,
+					geminiModel,
+				},
+			)
+		: undefined;
 
 	return {
 		attemptId,
 		status,
-		progress: computeProgress(
-			countAnsweredQuestions(nextState.answers),
-			attemptState.totalQuestions,
-		),
+		progress,
+		feedback,
 	};
 };
 

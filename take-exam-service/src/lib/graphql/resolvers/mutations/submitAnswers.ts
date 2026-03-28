@@ -30,6 +30,9 @@ type ResolverEnv = {
 export const submitAnswers = async (_: unknown, { attemptId, answers, finalize }: SubmitAnswersArgs) => {
     const { env } = getCloudflareContext() as unknown as { env: ResolverEnv };
     const db = createDb(env.DB);
+    const geminiApiKey = env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY;
+    const geminiModel = env.GEMINI_MODEL ?? process.env.GEMINI_MODEL;
+
     return submitExamAnswers(
         db,
         attemptId,
@@ -39,7 +42,7 @@ export const submitAnswers = async (_: unknown, { attemptId, answers, finalize }
         env.EXAM_CACHE,
         env.TEACHER_SUBMISSION_WEBHOOK_URL,
         env.AI,
-        env.GEMINI_API_KEY,
-        env.GEMINI_MODEL,
+        geminiApiKey,
+        geminiModel,
     );
 };

@@ -50,6 +50,12 @@ type AttemptActivityInput = {
 const getResolverEnv = () =>
 	(getCloudflareContext() as unknown as ResolverContext).env;
 
+const getGeminiApiKey = (env: ResolverEnv) =>
+	env.GEMINI_API_KEY ?? process.env.GEMINI_API_KEY;
+
+const getGeminiModel = (env: ResolverEnv) =>
+	env.GEMINI_MODEL ?? process.env.GEMINI_MODEL;
+
 const toGraphqlStartExamPayload = (payload: StartExamResponse) => ({
 	...payload,
 	existingAnswers: Object.entries(payload.existingAnswers ?? {}).map(
@@ -128,8 +134,8 @@ export const mutations = {
 			env.EXAM_CACHE,
 			env.TEACHER_SUBMISSION_WEBHOOK_URL,
 			env.AI,
-			env.GEMINI_API_KEY,
-			env.GEMINI_MODEL,
+			getGeminiApiKey(env),
+			getGeminiModel(env),
 		);
 	},
 	approveAttempt: async (

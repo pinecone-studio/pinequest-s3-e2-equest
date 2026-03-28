@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { AlertCircle, Flag, Loader2, Save, Send } from "lucide-react";
+import { MathText } from "@/components/math-text";
 import type { StartExamResponse } from "@/lib/exam-service/types";
 
 type TakeExamProps = {
@@ -104,9 +105,12 @@ export function TakeExam({
                   className="rounded-[28px] border border-[#dfe7ef] bg-[#f4fbff] px-7 py-8 shadow-[0_8px_20px_rgba(148,163,184,0.12)]"
                 >
                   <div className="mb-8 flex items-start justify-between gap-4">
-                    <h2 className="text-[18px] font-medium leading-8 text-slate-900">
-                      {question.prompt}
-                    </h2>
+                    <MathText
+                      as="h2"
+                      className="text-[18px] font-medium leading-8 text-slate-900"
+                      displayMode={question.type === "math"}
+                      text={question.prompt}
+                    />
                   </div>
 
                   {question.imageUrl && (
@@ -135,9 +139,11 @@ export function TakeExam({
                           className="min-h-32 w-full rounded-2xl border border-[#bfe2f5] bg-white px-4 py-3 text-[16px] text-slate-900 outline-none transition focus:border-[#2a9ee9]"
                         />
                         {question.responseGuide && (
-                          <p className="text-sm text-slate-500">
-                            {question.responseGuide}
-                          </p>
+                          <MathText
+                            as="p"
+                            className="text-sm leading-6 text-slate-500"
+                            text={question.responseGuide}
+                          />
                         )}
                       </div>
                     ) : (
@@ -171,7 +177,11 @@ export function TakeExam({
                               }
                               className="sr-only"
                             />
-                            <span>{option.text}</span>
+                            <MathText
+                              as="span"
+                              className="leading-7"
+                              text={option.text}
+                            />
                           </label>
                         );
                       })
