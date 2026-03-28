@@ -7,6 +7,9 @@ import type { CodegenConfig } from "@graphql-codegen/cli";
 const config: CodegenConfig = {
 	overwrite: true,
 	ignoreNoDocuments: true,
+	hooks: {
+		afterAllFileWrite: ["node scripts/fix-typed-document-imports.cjs"],
+	},
 	generates: {
 		"src/gql/": {
 			schema: "../create-exam-service/src/graphql/schema.graphql",

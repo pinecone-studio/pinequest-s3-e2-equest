@@ -5,21 +5,6 @@ fragment FrontendDashboardAttemptFields on AttemptSummary {
   studentId
   studentName
   status
-  answerKeySource
-  criteria {
-    gradeLevel
-    className
-    subject
-    topic
-    difficulty
-    questionCount
-  }
-  progress {
-    totalQuestions
-    answeredQuestions
-    remainingQuestions
-    completionRate
-  }
   score
   maxScore
   percentage
@@ -27,7 +12,6 @@ fragment FrontendDashboardAttemptFields on AttemptSummary {
   submittedAt
   monitoring {
     totalEvents
-    infoCount
     warningCount
     dangerCount
     lastEventAt
@@ -49,17 +33,12 @@ fragment FrontendDashboardAttemptFields on AttemptSummary {
     unansweredCount
     questionResults {
       questionId
-      prompt
-      competency
-      questionType
       selectedOptionId
       correctOptionId
       isCorrect
       pointsAwarded
       maxPoints
       explanation
-      dwellMs
-      answerChangeCount
     }
   }
   feedback {
@@ -67,24 +46,6 @@ fragment FrontendDashboardAttemptFields on AttemptSummary {
     summary
     strengths
     improvements
-  }
-  teacherSync {
-    status
-    targetService
-    lastError
-    sentAt
-  }
-  answerReview {
-    questionId
-    prompt
-    competency
-    questionType
-    selectedOptionId
-    selectedAnswerText
-    points
-    responseGuide
-    dwellMs
-    answerChangeCount
   }
 }
 
@@ -99,7 +60,6 @@ fragment FrontendDashboardLiveFeedFields on AttemptLiveFeedItem {
   submittedAt
   monitoring {
     totalEvents
-    infoCount
     warningCount
     dangerCount
     lastEventAt
@@ -118,7 +78,6 @@ fragment FrontendDashboardAvailableTestFields on Test {
   id
   title
   description
-  answerKeySource
   updatedAt
   criteria {
     gradeLevel
