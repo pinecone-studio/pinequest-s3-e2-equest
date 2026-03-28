@@ -11,7 +11,7 @@ Frontend (Apollo mutation)
     → POST /api/graphql
         → Mutation.generateExamQuestions → lib/ai.ts (Gemini)
         → Mutation.saveExam → D1 `exams` (Drizzle)
-Query.health → шалгалтын текст буцаана (одоогоор UI дээр ашиглаагүй)
+        → Query.listNewMathExams / getNewMathExam → D1 `new_exams`
 ```
 
 ## Хавтасууд
@@ -24,7 +24,7 @@ Query.health → шалгалтын текст буцаана (одоогоор 
 | `src/graphql/schema.ts` | `createSchema({ typeDefs, resolvers })` |
 | `src/graphql/context.ts` | `GraphQLContext` — D1 (`DB`), `GEMINI_API_KEY` |
 | `src/graphql/types.ts` | Resolver/AI-д ашиглах зарим TS төрөл (`ExamGenerationInput`, …) |
-| `src/graphql/resolvers/queries/` | Query resolver-ууд (`health.ts`) |
+| `src/graphql/resolvers/queries/` | Query resolver-ууд (`newMathExams.ts`) |
 | `src/graphql/resolvers/mutations/` | Mutation тус бүр тусдаа файл: `generateExamQuestions.ts`, `saveExam.ts` |
 | `src/graphql/resolvers/index.ts` | `Query` + `Mutation` нэгтгэх |
 | `src/graphql/generated/resolvers-types.ts` | Backend `bun run codegen` — `Resolvers` type |

@@ -187,6 +187,8 @@ export function ExamSessionMetadataForm({
       examType,
       subject,
       topics,
+      teacherId: `T-${randInt(1000, 9999)}`,
+      roomId: `R-${randInt(101, 305)}`,
       examDate,
       startTime,
       endTime,
@@ -375,9 +377,32 @@ export function ExamSessionMetadataForm({
         />
       </div>
 
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="meta-teacher-id">Багшийн ID</Label>
+          <Input
+            id="meta-teacher-id"
+            value={metadata.teacherId}
+            onChange={(e) => patch({ teacherId: e.target.value })}
+            placeholder="сонголттой — AI төлөвлөгөөнд ашиглана"
+            autoComplete="off"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="meta-room-id">Өрөөний ID</Label>
+          <Input
+            id="meta-room-id"
+            value={metadata.roomId}
+            onChange={(e) => patch({ roomId: e.target.value })}
+            placeholder="сонголттой — AI төлөвлөгөөнд ашиглана"
+            autoComplete="off"
+          />
+        </div>
+      </div>
+
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-2">
-          <Label htmlFor="meta-date">Огноо</Label>
+          <Label htmlFor="meta-date">Огноо (сонголттой)</Label>
           <Input
             id="meta-date"
             type="date"
@@ -390,7 +415,7 @@ export function ExamSessionMetadataForm({
           ) : null}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="meta-start">Эхлэх цаг</Label>
+          <Label htmlFor="meta-start">Эхлэх цаг (сонголттой)</Label>
           <Input
             id="meta-start"
             type="time"

@@ -24,6 +24,10 @@ export const newExams = sqliteTable("new_exams", {
 	examType: text("exam_type"),
 	sessionSubject: text("session_subject"),
 	sessionTopicsJson: text("session_topics_json"),
+	/** AI scheduler / багш — сонголттой */
+	teacherId: text("teacher_id"),
+	/** Өрөө — сонголттой */
+	roomId: text("room_id"),
 	examDate: text("exam_date"),
 	startTime: text("start_time"),
 	endTime: text("end_time"),

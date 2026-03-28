@@ -2,7 +2,7 @@
 
 ## Үүрэг
 
-**Шалгалт үүсгэх UI** (`/generate`) → **Apollo Client**-ээр `create-exam-service`-ийн GraphQL (`/api/graphql`) руу зөвхөн **mutation/query** (одоогоор mutation; `health` query нэмж болно). Шууд `fetch`-ээр GraphQL дуудахгүй.
+**Шалгалт үүсгэх UI** (`/generate`) → **Apollo Client**-ээр `create-exam-service`-ийн GraphQL (`/api/graphql`) руу **mutation/query** дууддаг. Шууд `fetch`-ээр GraphQL дуудахгүй.
 
 ## Хавтасууд
 

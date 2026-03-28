@@ -126,6 +126,8 @@ export const typeDefs = /* GraphQL */ `
     examType: String
     subject: String
     topics: [String!]
+    teacherId: String
+    roomId: String
     examDate: String
     startTime: String
     endTime: String
@@ -168,7 +170,6 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Query {
-    health: String!
     listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
     getNewMathExam(examId: ID!): NewMathExam
   }
@@ -197,6 +198,8 @@ export const typeDefs = /* GraphQL */ `
     examType: String
     subject: String
     topics: [String!]
+    teacherId: String
+    roomId: String
     examDate: String
     startTime: String
     endTime: String

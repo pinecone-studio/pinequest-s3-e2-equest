@@ -66,6 +66,8 @@ export const GetNewMathExamDocument = gql(`
 				examType
 				subject
 				topics
+				teacherId
+				roomId
 				examDate
 				startTime
 				endTime

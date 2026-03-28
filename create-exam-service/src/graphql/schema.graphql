@@ -124,6 +124,8 @@ input NewMathExamSessionMetaInput {
   examType: String
   subject: String
   topics: [String!]
+  teacherId: String
+  roomId: String
   examDate: String
   startTime: String
   endTime: String
@@ -166,7 +168,6 @@ type SaveNewMathExamPayload {
 }
 
 type Query {
-  health: String!
   listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
   getNewMathExam(examId: ID!): NewMathExam
 }
@@ -195,6 +196,8 @@ type NewMathExamSessionMeta {
   examType: String
   subject: String
   topics: [String!]
+  teacherId: String
+  roomId: String
   examDate: String
   startTime: String
   endTime: String

@@ -68,8 +68,10 @@ function sessionMetadataToGqlInput(
     examType: meta.examType ?? undefined,
     subject: meta.subject ?? undefined,
     topics: meta.topics.length ? meta.topics : undefined,
-    examDate: meta.examDate || undefined,
-    startTime: meta.startTime || undefined,
+    teacherId: meta.teacherId.trim() || undefined,
+    roomId: meta.roomId.trim() || undefined,
+    examDate: meta.examDate.trim() || undefined,
+    startTime: meta.startTime.trim() || undefined,
     endTime: meta.endTime || undefined,
     durationMinutes: meta.durationMinutes ?? undefined,
     mixQuestions: meta.mixQuestions,
@@ -231,6 +233,8 @@ export default function MathExam() {
                   examType?: string | null;
                   subject?: string | null;
                   topics?: string[] | null;
+                  teacherId?: string | null;
+                  roomId?: string | null;
                   examDate?: string | null;
                   startTime?: string | null;
                   endTime?: string | null;
@@ -260,6 +264,8 @@ export default function MathExam() {
           examType: parseStoredExamType(sm.examType ?? undefined),
           subject: parseStoredSubject(sm.subject ?? undefined),
           topics: sm.topics ?? [],
+          teacherId: sm.teacherId ?? "",
+          roomId: sm.roomId ?? "",
           examDate: sm.examDate ?? "",
           startTime: sm.startTime ?? "",
           endTime: sm.endTime ?? "",

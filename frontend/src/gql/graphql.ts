@@ -193,8 +193,10 @@ export type NewMathExamSessionMeta = {
   grade?: Maybe<Scalars['Int']['output']>;
   groupClass?: Maybe<Scalars['String']['output']>;
   mixQuestions?: Maybe<Scalars['Boolean']['output']>;
+  roomId?: Maybe<Scalars['String']['output']>;
   startTime?: Maybe<Scalars['String']['output']>;
   subject?: Maybe<Scalars['String']['output']>;
+  teacherId?: Maybe<Scalars['String']['output']>;
   topics?: Maybe<Array<Scalars['String']['output']>>;
   variantCount?: Maybe<Scalars['Int']['output']>;
   withVariants?: Maybe<Scalars['Boolean']['output']>;
@@ -209,8 +211,10 @@ export type NewMathExamSessionMetaInput = {
   grade?: InputMaybe<Scalars['Int']['input']>;
   groupClass?: InputMaybe<Scalars['String']['input']>;
   mixQuestions?: InputMaybe<Scalars['Boolean']['input']>;
+  roomId?: InputMaybe<Scalars['String']['input']>;
   startTime?: InputMaybe<Scalars['String']['input']>;
   subject?: InputMaybe<Scalars['String']['input']>;
+  teacherId?: InputMaybe<Scalars['String']['input']>;
   topics?: InputMaybe<Array<Scalars['String']['input']>>;
   variantCount?: InputMaybe<Scalars['Int']['input']>;
   withVariants?: InputMaybe<Scalars['Boolean']['input']>;
@@ -226,7 +230,6 @@ export type NewMathExamSummary = {
 export type Query = {
   __typename?: 'Query';
   getNewMathExam?: Maybe<NewMathExam>;
-  health: Scalars['String']['output'];
   listNewMathExams: Array<NewMathExamSummary>;
 };
 

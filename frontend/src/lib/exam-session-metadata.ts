@@ -13,9 +13,13 @@ export type ExamSessionMetadata = {
   subject: ExamSessionSubject | null;
   /** Сонгосон сэдвүүд (харуулах текст) */
   topics: string[];
-  /** Шалгалтын эхлэх огноо YYYY-MM-DD */
+  /** Багшийн ID (сонголттой; AI scheduler) */
+  teacherId: string;
+  /** Өрөөний ID (сонголттой; AI scheduler) */
+  roomId: string;
+  /** Шалгалтын эхлэх огноо YYYY-MM-DD (сонголттой; AI scheduler дараа бөглөгдөнө) */
   examDate: string;
-  /** HH:mm */
+  /** HH:mm (сонголттой) */
   startTime: string;
   /** HH:mm */
   endTime: string;
@@ -83,18 +87,15 @@ export function groupOptionsForGrade(grade: number): string[] {
 }
 
 export function createDefaultExamSessionMetadata(): ExamSessionMetadata {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-
   return {
     grade: null,
     groupClass: "",
     examType: null,
     subject: null,
     topics: [],
-    examDate: `${year}-${month}-${day}`,
+    teacherId: "",
+    roomId: "",
+    examDate: "",
     startTime: "",
     endTime: "",
     durationMinutes: null,
@@ -114,13 +115,19 @@ type StoredV2 = {
   metadata: ExamSessionMetadata;
 };
 
-function isExamSessionMetadataShape(x: unknown): x is ExamSessionMetadata {
-  return (
-    typeof x === "object" &&
-    x !== null &&
-    "examDate" in x &&
-    typeof (x as ExamSessionMetadata).examDate === "string"
-  );
+function mergeStoredMetadata(
+  partial: Partial<ExamSessionMetadata>,
+): ExamSessionMetadata {
+  const d = createDefaultExamSessionMetadata();
+  return {
+    ...d,
+    ...partial,
+    topics: Array.isArray(partial.topics) ? partial.topics : d.topics,
+  };
+}
+
+function isExamSessionMetadataShape(x: unknown): x is Partial<ExamSessionMetadata> {
+  return typeof x === "object" && x !== null;
 }
 
 export function loadExamSessionSnapshot(): {
@@ -135,11 +142,16 @@ export function loadExamSessionSnapshot(): {
     if (parsed && typeof parsed === "object" && "v" in parsed) {
       const v2 = parsed as Partial<StoredV2>;
       if (v2.v === 2 && v2.metadata && typeof v2.examTitle === "string") {
-        return { metadata: v2.metadata, examTitle: v2.examTitle };
+        return {
+          metadata: mergeStoredMetadata(
+            v2.metadata as Partial<ExamSessionMetadata>,
+          ),
+          examTitle: v2.examTitle,
+        };
       }
     }
     if (isExamSessionMetadataShape(parsed)) {
-      return { metadata: parsed, examTitle: "" };
+      return { metadata: mergeStoredMetadata(parsed), examTitle: "" };
     }
     return null;
   } catch {
