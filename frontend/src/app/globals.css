@@ -128,3 +128,50 @@
     @apply font-sans;
 	}
 }
+
+/* AI хуваарь тооцоолж байх үед хуанлийн багана дээрх нил ягаан урсгал */
+@keyframes ai-calendar-shimmer-sweep {
+	0% {
+		transform: translateX(-130%) skewX(-12deg);
+	}
+	100% {
+		transform: translateX(230%) skewX(-12deg);
+	}
+}
+
+.ai-calendar-shimmer-layer {
+	pointer-events: none;
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	border-radius: inherit;
+	z-index: 3;
+}
+
+.ai-calendar-shimmer-layer__beam {
+	position: absolute;
+	top: -8%;
+	bottom: -8%;
+	left: 0;
+	width: 65%;
+	background: linear-gradient(
+		90deg,
+		transparent 0%,
+		rgb(167 139 250 / 0.05) 18%,
+		rgb(196 181 253 / 0.2) 42%,
+		rgb(221 214 254 / 0.32) 50%,
+		rgb(196 181 253 / 0.2) 58%,
+		rgb(167 139 250 / 0.05) 82%,
+		transparent 100%
+	);
+	animation: ai-calendar-shimmer-sweep 2.45s ease-in-out infinite;
+	will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ai-calendar-shimmer-layer__beam {
+		animation: none;
+		transform: none;
+		opacity: 0.35;
+	}
+}

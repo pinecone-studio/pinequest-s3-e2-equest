@@ -4,7 +4,7 @@ import { SchoolEventScheduler } from "./_components/SchoolEventScheduler";
 export const metadata: Metadata = {
 	title: "Сургуулийн хуваарь ба үйл явдал",
 	description:
-		"Багшдын товлосон шалгалт болон сургуулийн том арга хэмжээг нэг хуанлиар харах.",
+		"Сургуулийн эвент болон багшаас оруулсан шалгалтын хуваарийг даваа–нямын тороор харах.",
 };
 
 export default function AiSchedulerSchoolEventPage() {

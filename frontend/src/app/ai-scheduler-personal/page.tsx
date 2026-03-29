@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { AiPersonalExamScheduler } from "./_components/AiPersonalExamScheduler";
 
 export const metadata: Metadata = {
-	title: "Багшийн хувийн AI хуваарь",
+	title: "Багшийн AI хуваарь",
 	description:
-		"Багш өөрийн товлосон шалгалтын цагийг AI-аар санал болгуулж батална.",
+		"Хичээл, нийтийн эвент, Busy болон AI-ийн шалгалтын санал — actionable insights, мэдээллийн далай биш.",
 };
 
 export default function AiSchedulerPersonalPage() {
