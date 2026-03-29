@@ -32,13 +32,12 @@ import { cn } from "@/lib/utils";
 import {
   ArrowRight,
   CalendarClock,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
-  CalendarDays,
   Loader2,
   Menu,
   PanelRight,
-  FileQuestion,
   Play,
   Target,
   Square,
@@ -107,8 +106,11 @@ function parseStart(iso: string | null | undefined) {
   }
 }
 
-/** Reclaim-тай адил олон давхарга: хольж биш давхарлан харуулна. */
-type CalendarLayerId = "primary" | "exam" | "school";
+/**
+ * Дөрвөн давхаргын стратеги (Pro): үндсэн → эвент → хувийн (нууц) → шалгалт (AI).
+ * Blocker төрөл + нууцлал AI-ийн scheduling-д ойлголтын загвар болно.
+ */
+type CalendarLayerId = "primary" | "school" | "personal" | "exam";
 
 const CALENDAR_LAYERS: {
   id: CalendarLayerId;
@@ -119,20 +121,26 @@ const CALENDAR_LAYERS: {
   {
     id: "primary",
     label: "Үндсэн хуваарь",
-    role: "Хязгаарлалт",
+    role: "Static Blocker — тойрч гарна · бүх хүнд харагдана",
     swatch: "bg-emerald-500",
-  },
-  {
-    id: "exam",
-    label: "Шалгалтын хуанли",
-    role: "AI үр дүн",
-    swatch: "bg-blue-500",
   },
   {
     id: "school",
     label: "Сургуулийн эвент",
-    role: "Цаг хаагч",
+    role: "Global Blocker — цаг хаана · бүх хүнд харагдана",
     swatch: "bg-rose-500",
+  },
+  {
+    id: "personal",
+    label: "Хувийн хуанли",
+    role: "Invisible Blocker — зөвхөн багш өөрөө харна",
+    swatch: "bg-slate-500",
+  },
+  {
+    id: "exam",
+    label: "Шалгалтын хуанли",
+    role: "AI идэвхтэй — багш + сурагч харна, засварлана",
+    swatch: "bg-blue-500",
   },
 ];
 
@@ -164,18 +172,13 @@ export function AiPersonalExamScheduler({
   const [rightTab, setRightTab] = useState<"ai" | "form">("ai");
   const [layerOn, setLayerOn] = useState<Record<CalendarLayerId, boolean>>({
     primary: true,
-    exam: true,
     school: true,
+    personal: true,
+    exam: true,
   });
   /** Хуанли + давхаргын зүүн панел нээгдсэн эсэх (rail-аас сэлгэнэ). */
   const [calendarSidebarOpen, setCalendarSidebarOpen] = useState(true);
-  const [nowTick, setNowTick] = useState(() => new Date());
   const toastKeyRef = useRef<string>("");
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNowTick(new Date()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
 
   function toggleLayer(id: CalendarLayerId) {
     setLayerOn((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -327,17 +330,6 @@ export function AiPersonalExamScheduler({
   const weekEnd = addDays(weekStart, 6);
   const weekRangeLabel = `${format(weekStart, "MMM d", { locale: mn })} – ${format(weekEnd, "MMM d, yyyy", { locale: mn })}`;
 
-  const nowHourFrac =
-    nowTick.getHours() +
-    nowTick.getMinutes() / 60 +
-    nowTick.getSeconds() / 3600;
-  const nowInScheduleWindow =
-    nowHourFrac >= SCHEDULE_DAY_START && nowHourFrac <= SCHEDULE_DAY_END;
-  const todayInVisibleWeek = weekDays.some((d) => isSameDay(d, nowTick));
-  const showNowLine = todayInVisibleWeek && nowInScheduleWindow;
-  const nowLineTopPx =
-    ((nowHourFrac - SCHEDULE_DAY_START) / HOUR_COUNT) * GRID_BODY_MIN_H;
-
   function shiftWeek(deltaWeeks: number) {
     setDate((d) => addDays(d ?? new Date(), deltaWeeks * 7));
   }
@@ -423,16 +415,6 @@ export function AiPersonalExamScheduler({
                 Синк…
               </span>
             ) : null}
-            <Link
-              href={
-                shellMode
-                  ? "/ai-scheduler?view=school"
-                  : "/ai-scheduler-school-event"
-              }
-              className="cursor-pointer rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900"
-            >
-              Сургуулийн хуанли
-            </Link>
           </div>
         </header>
 
@@ -451,8 +433,12 @@ export function AiPersonalExamScheduler({
               </div>
               <div className="flex flex-1 flex-col gap-1 px-2 py-3">
                 <Link
-                  href="/ai-scheduler-school-event"
-                  title="Сургуулийн хуанли (нийтлэг)"
+                  href={
+                    shellMode
+                      ? "/ai-scheduler?view=school"
+                      : "/ai-scheduler-school-event"
+                  }
+                  title="Сургуулийн хуанли"
                   aria-label="Сургуулийн хуанли руу очих"
                   className="flex size-11 cursor-pointer items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-blue-200"
                 >
@@ -464,7 +450,7 @@ export function AiPersonalExamScheduler({
                 </Link>
                 <button
                   type="button"
-                  title="Багшийн хувийн хуваарь (цагийн тор)"
+                  title="Багшийн хувийн хуваарь"
                   aria-current="page"
                   aria-label="Багшийн хувийн хуваарь"
                   className="flex size-11 items-center justify-center rounded-xl bg-white/14 text-white shadow-sm ring-1 ring-white/12"
@@ -475,18 +461,6 @@ export function AiPersonalExamScheduler({
                     aria-hidden
                   />
                 </button>
-                <Link
-                  href="/ai-exam"
-                  title="Шалгалт үүсгэх (асуулт, сорил)"
-                  aria-label="Шалгалт үүсгэх хуудас"
-                  className="flex size-11 items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-amber-200"
-                >
-                  <FileQuestion
-                    className="size-5"
-                    strokeWidth={1.75}
-                    aria-hidden
-                  />
-                </Link>
               </div>
               <div className="border-t border-zinc-500/20 p-2">
                 <button
@@ -530,40 +504,6 @@ export function AiPersonalExamScheduler({
                   : "min-w-[min(100vw-68px,272px)]",
               )}
             >
-              <Link
-                href={
-                  shellMode
-                    ? "/ai-scheduler?view=school"
-                    : "/ai-scheduler-school-event"
-                }
-                className={cn(
-                  panelLight,
-                  "flex cursor-pointer items-center gap-3 p-3 no-underline transition-colors",
-                  "border-blue-200/80 bg-linear-to-r from-blue-50/95 to-white",
-                  "hover:border-blue-300 hover:from-blue-50 hover:shadow-md hover:shadow-blue-500/10",
-                )}
-              >
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/25">
-                  <CalendarDays
-                    className="size-5"
-                    strokeWidth={2}
-                    aria-hidden
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-zinc-900">
-                    Сургуулийн хуанли
-                  </p>
-                  <p className="text-[10px] leading-snug text-zinc-500">
-                    Нийтлэг эвент, бүх ангийн харагдац
-                  </p>
-                </div>
-                <ArrowRight
-                  className="size-4 shrink-0 text-blue-600"
-                  aria-hidden
-                />
-              </Link>
-
               <div className={cn(panelLight, "p-3")}>
                 <div className="mb-2 space-y-0.5 px-1">
                   <p className="text-xs font-semibold text-zinc-900">
@@ -602,40 +542,15 @@ export function AiPersonalExamScheduler({
                 </div>
               </div>
 
-              <Link
-                href="/ai-exam"
-                className={cn(
-                  panelLight,
-                  "flex items-center gap-3 p-3 no-underline transition-colors",
-                  "border-amber-200/80 bg-linear-to-r from-amber-50/90 to-white",
-                  "hover:border-amber-300 hover:from-amber-50 hover:shadow-md hover:shadow-amber-500/10",
-                )}
-              >
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white shadow-sm shadow-amber-600/25">
-                  <FileQuestion
-                    className="size-5"
-                    strokeWidth={2}
-                    aria-hidden
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-zinc-900">
-                    Шалгалт үүсгэх
-                  </p>
-                  <p className="text-[10px] leading-snug text-zinc-500">
-                    Асуулт, сорил — AI-аар загвар бэлдэж хуваарьтай холбоно
-                  </p>
-                </div>
-                <ArrowRight
-                  className="size-4 shrink-0 text-amber-700"
-                  aria-hidden
-                />
-              </Link>
-
               <div className={cn(panelLight, "divide-y divide-zinc-100")}>
-                <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                  Давхарга
-                </p>
+                <div className="px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Давхарга · Pro (4)
+                  </p>
+                  <p className="mt-1 text-[9px] leading-snug text-zinc-400">
+                    Үндсэн, эвент, хувийн (нууц), шалгалт — blocker + нууцлал өөр
+                  </p>
+                </div>
                 {CALENDAR_LAYERS.map((layer) => {
                   const on = layerOn[layer.id];
                   return (
@@ -662,7 +577,7 @@ export function AiPersonalExamScheduler({
                         <span className="block truncate text-sm font-medium">
                           {layer.label}
                         </span>
-                        <span className="block truncate text-[10px] text-zinc-500">
+                        <span className="line-clamp-2 text-[10px] text-zinc-500">
                           {layer.role}
                         </span>
                       </span>
@@ -836,7 +751,7 @@ export function AiPersonalExamScheduler({
                             >
                               Сургуулийн арга хэмжээ
                               <span className="mt-1 block font-normal text-rose-700">
-                                Бүх анги · цаг хаагч
+                                Global Blocker · бүх анги · цаг хаагч
                               </span>
                             </div>
                           ) : null}
@@ -848,7 +763,7 @@ export function AiPersonalExamScheduler({
                             >
                               Математик · 10А
                               <span className="mt-0.5 block font-normal text-emerald-700">
-                                Үндсэн хуваарь
+                                Static Blocker · үндсэн хичээл
                               </span>
                             </div>
                           ) : null}
@@ -868,12 +783,16 @@ export function AiPersonalExamScheduler({
                               Түүх · 10А
                             </div>
                           ) : null}
-                          {layerOn.primary && colIdx === 6 ? (
+                          {layerOn.personal && colIdx === 6 ? (
                             <div
-                              className="absolute left-1 right-1 top-[48%] rounded-xl border border-zinc-200 bg-zinc-100/90 px-2 py-1.5 text-[10px] text-zinc-600"
-                              style={{ height: "36px" }}
+                              className="absolute left-1 right-1 top-[48%] z-[1] rounded-xl border border-slate-300/80 bg-slate-100/95 px-2 py-1.5 text-[10px] text-slate-800 shadow-sm ring-1 ring-slate-200/70"
+                              style={{ minHeight: "40px" }}
+                              title="Зөвхөн багшид харагдана"
                             >
-                              Бэлтгэл цаг
+                              <span className="font-medium">Хувийн · бэлтгэл</span>
+                              <span className="mt-0.5 block text-[9px] font-normal text-slate-500">
+                                Invisible Blocker
+                              </span>
                             </div>
                           ) : null}
 
@@ -885,7 +804,7 @@ export function AiPersonalExamScheduler({
                               >
                                 AI санал
                                 <span className="mt-0.5 block font-normal opacity-90">
-                                  Шалгалт
+                                  Шалгалт · идэвхтэй засвар
                                 </span>
                               </div>
                               <svg
@@ -959,17 +878,6 @@ export function AiPersonalExamScheduler({
                       );
                     })}
                   </div>
-
-                  {showNowLine ? (
-                    <div
-                      className="pointer-events-none absolute right-0 left-12 z-20 flex -translate-y-1/2 items-center sm:left-14"
-                      style={{ top: nowLineTopPx }}
-                      aria-hidden
-                    >
-                      <span className="mr-0.5 size-2 shrink-0 rounded-full bg-red-500 shadow-sm ring-2 ring-white" />
-                      <div className="h-0.5 min-w-0 flex-1 rounded-full bg-red-500 opacity-90 shadow-sm" />
-                    </div>
-                  ) : null}
                 </div>
 
                 <p
@@ -978,10 +886,9 @@ export function AiPersonalExamScheduler({
                     textDim,
                   )}
                 >
-                  Цаг {SCHEDULE_DAY_START}:00–{SCHEDULE_DAY_END}:00. Улаан шугам
-                  — одоогийн цаг (энэ 7 хоногт өнөөдөр харагдвал). Гурван
-                  давхарга: ногоон үндсэн, улаан эвент, цэнхэр AI. Жишээ + job;
-                  бүрэн sync биш.
+                  Цаг {SCHEDULE_DAY_START}:00–{SCHEDULE_DAY_END}:00. Дөрвөн давхарга:
+                  ногоон үндсэн (static), улаан эвент (global), саарал хувийн
+                  (invisible), цэнхэр шалгалт (AI). Жишээ + job; бүрэн sync биш.
                 </p>
               </div>
             </main>
