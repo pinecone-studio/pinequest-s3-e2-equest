@@ -1,17 +1,17 @@
 import { GraphQLError } from "graphql";
-import type { GraphQLContext } from "../../context";
-import { examSchedules } from "../../../db/schema";
+import type { GraphQLContext } from "../../../context";
+import { examSchedules } from "../../../../db/schema";
 
-type RequestExamScheduleArgs = {
+type RequestAiExamScheduleArgs = {
 	testId: string;
 	classId: string;
 	preferredDate: string;
 };
 
-export const requestExamScheduleMutation = {
-	requestExamSchedule: async (
+export const requestAiExamScheduleMutation = {
+	requestAiExamSchedule: async (
 		_: unknown,
-		args: RequestExamScheduleArgs,
+		args: RequestAiExamScheduleArgs,
 		ctx: GraphQLContext,
 	) => {
 		if (!ctx.db) {

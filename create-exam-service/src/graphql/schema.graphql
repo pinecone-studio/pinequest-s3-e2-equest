@@ -220,9 +220,35 @@ type SaveNewMathExamPayload {
   updatedAt: String!
 }
 
+type ExamScheduleVariant {
+  id: String!
+  label: String!
+  startTime: String!
+  roomId: String!
+  reason: String
+}
+
+type ExamSchedule {
+  id: ID!
+  testId: ID!
+  classId: String!
+  """Багшийн сонгосон өдөр (эхлэл) — санал гармагц хувилбарын цаг тусдаа"""
+  startTime: String!
+  endTime: String
+  roomId: String
+  status: String!
+  """pending | suggested | confirmed | failed"""
+  aiVariants: [ExamScheduleVariant!]!
+  aiReasoning: String
+  createdAt: String!
+  updatedAt: String!
+}
+
 type Query {
   listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
   getNewMathExam(examId: ID!): NewMathExam
+  """AI scheduler: нэг мөрийн төлөв (polling-д ашиглана)"""
+  getAiExamSchedule(examId: ID!): ExamSchedule
 }
 
 type RequestExamSchedulePayload {
@@ -240,11 +266,13 @@ type Mutation {
   # AI-аар үүсгэсэн загварыг хадгалах
   createAiExamTemplate(input: CreateAiExamTemplateInput!): AiExamTemplatePayload!
   # Шалгалтын хуваарь: D1-д pending үүсгээд Queue руу — AI consumer дараа нь батална
-  requestExamSchedule(
+  requestAiExamSchedule(
     testId: ID!
     classId: String!
     preferredDate: String!
   ): RequestExamSchedulePayload!
+  """Багш AI-ийн саналуудаас нэгийг сонгож батална (human-in-the-loop)"""
+  approveAiExamSchedule(examId: ID!, variantId: String!): ExamSchedule!
 }
 
 type NewMathExamSummary {

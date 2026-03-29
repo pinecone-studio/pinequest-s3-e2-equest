@@ -100,6 +100,32 @@ export type ExamGenerationResult = {
   updatedAt: Scalars['String']['output'];
 };
 
+export type ExamSchedule = {
+  __typename?: 'ExamSchedule';
+  aiReasoning?: Maybe<Scalars['String']['output']>;
+  /** pending | suggested | confirmed | failed */
+  aiVariants: Array<ExamScheduleVariant>;
+  classId: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  endTime?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  roomId?: Maybe<Scalars['String']['output']>;
+  /** Багшийн сонгосон өдөр (эхлэл) — санал гармагц хувилбарын цаг тусдаа */
+  startTime: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  testId: Scalars['ID']['output'];
+  updatedAt: Scalars['String']['output'];
+};
+
+export type ExamScheduleVariant = {
+  __typename?: 'ExamScheduleVariant';
+  id: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  reason?: Maybe<Scalars['String']['output']>;
+  roomId: Scalars['String']['output'];
+  startTime: Scalars['String']['output'];
+};
+
 export enum ExamStatus {
   Draft = 'DRAFT',
   Failed = 'FAILED',
@@ -142,9 +168,11 @@ export enum MathExamQuestionType {
 export type Mutation = {
   __typename?: 'Mutation';
   analyzeQuestion: QuestionAnalysisResult;
+  /** Багш AI-ийн саналуудаас нэгийг сонгож батална (human-in-the-loop) */
+  approveAiExamSchedule: ExamSchedule;
   createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
-  requestExamSchedule: RequestExamSchedulePayload;
+  requestAiExamSchedule: RequestExamSchedulePayload;
   saveExam: SaveExamPayload;
   saveNewMathExam: SaveNewMathExamPayload;
 };
@@ -152,6 +180,12 @@ export type Mutation = {
 
 export type MutationAnalyzeQuestionArgs = {
   prompt: Scalars['String']['input'];
+};
+
+
+export type MutationApproveAiExamScheduleArgs = {
+  examId: Scalars['ID']['input'];
+  variantId: Scalars['String']['input'];
 };
 
 
@@ -165,7 +199,7 @@ export type MutationGenerateExamQuestionsArgs = {
 };
 
 
-export type MutationRequestExamScheduleArgs = {
+export type MutationRequestAiExamScheduleArgs = {
   classId: Scalars['String']['input'];
   preferredDate: Scalars['String']['input'];
   testId: Scalars['ID']['input'];
@@ -281,8 +315,15 @@ export type NewMathExamSummary = {
 
 export type Query = {
   __typename?: 'Query';
+  /** AI scheduler: нэг мөрийн төлөв (polling-д ашиглана) */
+  getAiExamSchedule?: Maybe<ExamSchedule>;
   getNewMathExam?: Maybe<NewMathExam>;
   listNewMathExams: Array<NewMathExamSummary>;
+};
+
+
+export type QueryGetAiExamScheduleArgs = {
+  examId: Scalars['ID']['input'];
 };
 
 

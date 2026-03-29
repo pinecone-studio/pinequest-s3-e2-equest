@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation } from "@apollo/client/react";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@apollo/client/react";
 import { format, startOfDay } from "date-fns";
 import { mn } from "date-fns/locale";
 import { toast } from "sonner";
@@ -17,50 +17,93 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { RequestExamScheduleDocument } from "@/gql/create-exam-documents";
-import type { RequestExamSchedulePayload } from "@/gql/graphql";
+import {
+	ApproveAiExamScheduleDocument,
+	GetAiExamScheduleDocument,
+	RequestAiExamScheduleDocument,
+} from "@/gql/create-exam-documents";
+import type {
+	ExamSchedule,
+	ExamScheduleVariant,
+	RequestExamSchedulePayload,
+} from "@/gql/graphql";
 import { cn } from "@/lib/utils";
 import {
 	ArrowRight,
 	Bot,
 	CalendarDays,
-	CheckCircle2,
-	Clock,
 	Layers,
 	Loader2,
 	Sparkles,
-	Zap,
 } from "lucide-react";
-
-const quickPrompts = [
-	"10А · Математик · 90 мин",
-	"11Б · Физик · сул өдөр",
-	"12А · Монгол хэл · өглөөний цаг",
-];
-
-const upcomingMock = [
-	{ title: "Математик · 10А", time: "10:00", room: "302", tone: "confirmed" },
-	{ title: "Физик · 11Б", time: "14:00", room: "105", tone: "pending" },
-];
 
 /** Seed `ai_exam_templates` / `scheduler_digital_twin_seed`-тай тааруулсан анхны утгууд */
 const DEFAULT_TEST_ID = "a1000000-0000-4000-8000-000000000001";
 const DEFAULT_CLASS_ID = "10A";
 
-type RequestExamScheduleData = {
-	requestExamSchedule: RequestExamSchedulePayload;
+type RequestAiExamScheduleData = {
+	requestAiExamSchedule: RequestExamSchedulePayload;
 };
 
-type RequestExamScheduleVars = {
+type RequestAiExamScheduleVars = {
 	testId: string;
 	classId: string;
 	preferredDate: string;
 };
 
+type GetAiExamScheduleData = {
+	getAiExamSchedule?: ExamSchedule | null;
+};
+
+type GetAiExamScheduleVars = {
+	examId: string;
+};
+
+type ApproveAiExamScheduleData = {
+	approveAiExamSchedule: ExamSchedule;
+};
+
+type ApproveAiExamScheduleVars = {
+	examId: string;
+	variantId: string;
+};
+
+function formatVariantWhen(iso: string) {
+	try {
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) return iso;
+		return format(d, "yyyy-MM-dd HH:mm", { locale: mn });
+	} catch {
+		return iso;
+	}
+}
+
 /** Цайвар + шилэн bento — AI продуктуудын одоогийн хэв маяг */
 const bentoSurface =
 	"rounded-3xl border border-white/80 bg-white/65 shadow-[0_1px_0_0_rgba(255,255,255,0.9)_inset,0_20px_50px_-20px_rgba(15,23,42,0.14)] ring-0 backdrop-blur-2xl";
+
+function HeroStatusLine({
+	pollExamId,
+}: {
+	pollExamId: string | null;
+}) {
+	if (pollExamId) {
+		return (
+			<p className="text-right text-xs font-medium text-violet-700">
+				<span className="inline-flex items-center gap-2">
+					<Loader2 className="size-3.5 animate-spin shrink-0" />
+					Төлөвийг серверээс шалгаж байна…
+				</span>
+			</p>
+		);
+	}
+	return (
+		<p className="max-w-xs text-right text-xs leading-relaxed text-zinc-500">
+			Хүсэлт илгээсний дараа үр дүн зүүн талын «Дарааллын төлөв» хэсэгт
+			харагдана.
+		</p>
+	);
+}
 
 function AmbientBackdrop() {
 	return (
@@ -83,57 +126,99 @@ function AmbientBackdrop() {
 	);
 }
 
-function StatCard({
-	icon: Icon,
-	label,
-	value,
-	hint,
-}: {
-	icon: React.ElementType;
-	label: string;
-	value: string;
-	hint: string;
-}) {
-	return (
-		<div
-			className={cn(
-				bentoSurface,
-				"group relative overflow-hidden p-5 transition-all duration-300",
-				"hover:-translate-y-0.5 hover:border-violet-200/90 hover:shadow-[0_1px_0_0_rgba(255,255,255,0.95)_inset,0_28px_56px_-16px_rgba(109,40,217,0.18)]",
-			)}
-		>
-			<div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-violet-400/25 to-cyan-400/10 blur-3xl transition-opacity duration-500 group-hover:opacity-100 opacity-70" />
-			<div className="relative flex items-start justify-between gap-3">
-				<div>
-					<p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-						{label}
-					</p>
-					<p className="mt-2 font-mono text-2xl font-semibold tracking-tight text-zinc-900 tabular-nums sm:text-[1.75rem]">
-						{value}
-					</p>
-					<p className="mt-1.5 text-xs text-zinc-500">{hint}</p>
-				</div>
-				<div className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/10 to-cyan-500/10 ring-1 ring-violet-200/50 text-violet-600">
-					<Icon className="size-5" strokeWidth={1.5} />
-				</div>
-			</div>
-		</div>
-	);
-}
-
 export function AiExamScheduler() {
 	const [date, setDate] = useState<Date | undefined>(new Date());
-	const [prompt, setPrompt] = useState("");
 	const [testId, setTestId] = useState(DEFAULT_TEST_ID);
 	const [classId, setClassId] = useState(DEFAULT_CLASS_ID);
 	const [lastQueuedExamId, setLastQueuedExamId] = useState<string | null>(
 		null,
 	);
+	/** null биш үед 2.5с тутамд getAiExamSchedule poll хийнэ */
+	const [pollExamId, setPollExamId] = useState<string | null>(null);
+	const [liveSchedule, setLiveSchedule] = useState<ExamSchedule | null>(null);
+	const terminalToastKeyRef = useRef<string>("");
 
 	const [requestSchedule, { loading: queueLoading }] = useMutation<
-		RequestExamScheduleData,
-		RequestExamScheduleVars
-	>(RequestExamScheduleDocument);
+		RequestAiExamScheduleData,
+		RequestAiExamScheduleVars
+	>(RequestAiExamScheduleDocument);
+
+	const [approveSchedule, { loading: approveLoading }] = useMutation<
+		ApproveAiExamScheduleData,
+		ApproveAiExamScheduleVars
+	>(ApproveAiExamScheduleDocument);
+
+	const { data: pollData } = useQuery<
+		GetAiExamScheduleData,
+		GetAiExamScheduleVars
+	>(
+		GetAiExamScheduleDocument,
+		{
+			variables: { examId: pollExamId ?? "" },
+			skip: !pollExamId,
+			pollInterval: pollExamId ? 2500 : 0,
+			fetchPolicy: "network-only",
+			notifyOnNetworkStatusChange: true,
+		},
+	);
+
+	useEffect(() => {
+		const row = pollData?.getAiExamSchedule;
+		if (row) {
+			setLiveSchedule(row);
+		}
+	}, [pollData]);
+
+	useEffect(() => {
+		const row = pollData?.getAiExamSchedule;
+		if (!row || !pollExamId) return;
+		const st = row.status;
+		if (st === "suggested") {
+			setPollExamId(null);
+			const key = `${row.id}:suggested`;
+			if (terminalToastKeyRef.current === key) return;
+			terminalToastKeyRef.current = key;
+			toast.message("AI хувилбарууд бэлэн", {
+				description: "Доорх картуудаас нэгийг сонгож «Баталах» дарна уу.",
+			});
+			return;
+		}
+		if (st !== "confirmed" && st !== "failed") return;
+		const key = `${row.id}:${st}`;
+		if (terminalToastKeyRef.current === key) return;
+		terminalToastKeyRef.current = key;
+		if (st === "confirmed") {
+			toast.success("Хуваарь баталгаажлаа.");
+		} else {
+			toast.error(row.aiReasoning ?? "AI scheduler алдаатай дууслаа.");
+		}
+		setPollExamId(null);
+	}, [pollData?.getAiExamSchedule, pollExamId]);
+
+	async function handleApproveVariant(v: ExamScheduleVariant) {
+		const examId = liveSchedule?.id ?? lastQueuedExamId;
+		if (!examId) {
+			toast.error("examId олдсонгүй.");
+			return;
+		}
+		try {
+			const { data } = await approveSchedule({
+				variables: { examId, variantId: v.id },
+			});
+			const next = data?.approveAiExamSchedule;
+			if (next) {
+				setLiveSchedule(next);
+				terminalToastKeyRef.current = `${next.id}:confirmed`;
+				toast.success("Сонгосон хувилбар баталгаажлаа.");
+			}
+		} catch (e: unknown) {
+			const msg =
+				e && typeof e === "object" && "message" in e
+					? String((e as { message: string }).message)
+					: "Батлахад алдаа гарлаа.";
+			toast.error(msg);
+		}
+	}
 
 	async function handleQueueSchedule() {
 		const tid = testId.trim();
@@ -153,12 +238,17 @@ export function AiExamScheduler() {
 					preferredDate,
 				},
 			});
-			const payload = data?.requestExamSchedule;
+			const payload = data?.requestAiExamSchedule;
 			if (payload?.success) {
-				if (payload.examId) setLastQueuedExamId(payload.examId);
+				terminalToastKeyRef.current = "";
+				if (payload.examId) {
+					setLiveSchedule(null);
+					setLastQueuedExamId(payload.examId);
+					setPollExamId(payload.examId);
+				}
 				toast.success(payload.message, {
 					description: payload.examId
-						? `examId: ${payload.examId} — consumer дараа нь D1-д батална.`
+						? `examId: ${payload.examId} — төлөвийг доор шинэчилнэ (polling).`
 						: undefined,
 				});
 			} else {
@@ -203,45 +293,22 @@ export function AiExamScheduler() {
 									</span>
 								</h1>
 								<p className="max-w-xl text-pretty text-[15px] leading-relaxed text-zinc-600">
-									Хүсэлтээ бичээд дараалалд оруулна — AI танхим, цаг, давхцлыг
-									тооцоолж, хуанли дээр баталгаажсан цэгүүдээр харуулна.
+									Доорх талбаруудаар{" "}
+									<code className="rounded bg-zinc-100 px-1 font-mono text-[13px]">
+										requestAiExamSchedule
+									</code>{" "}
+									илгээнэ — consumer AI хувилбарууд гаргасны дараа эндхээс{" "}
+									<code className="rounded bg-zinc-100 px-1 font-mono text-[13px]">
+										getAiExamSchedule
+									</code>
+									-аар төлөв харагдана.
 								</p>
 							</div>
 							<div className="flex shrink-0 flex-col items-start gap-3 sm:items-end">
-								<div className="flex items-center gap-2.5 rounded-full border border-emerald-200/80 bg-emerald-50/90 px-4 py-2 text-xs font-semibold text-emerald-900 shadow-sm backdrop-blur-sm">
-									<span className="relative flex h-2 w-2">
-										<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-40" />
-										<span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.7)]" />
-									</span>
-									Queue идэвхтэй
-								</div>
-								<p className="text-right text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-									Сүүлийн синк · одоо
-								</p>
+								<HeroStatusLine pollExamId={pollExamId} />
 							</div>
 						</div>
 					</div>
-				</div>
-
-				<div className="mb-8 grid gap-4 sm:grid-cols-3">
-					<StatCard
-						icon={Zap}
-						label="Дараалалд"
-						value="3"
-						hint="энэ 7 хоногт"
-					/>
-					<StatCard
-						icon={CheckCircle2}
-						label="Батлагдсан"
-						value="12"
-						hint="AI + дүрмийн шалгалт"
-					/>
-					<StatCard
-						icon={Clock}
-						label="Дундаж хариу"
-						value="~2.4с"
-						hint="үлээлт + тооцоолол"
-					/>
 				</div>
 
 				<div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-7">
@@ -262,8 +329,14 @@ export function AiExamScheduler() {
 								Багшийн туслах
 							</CardTitle>
 							<CardDescription className="text-sm text-zinc-500">
-								Товч эсвэл дэлгэрэнгүй — хоёуланд нь ойлгоно. Одоогоор
-								илгээлтэд доорх ID + хуанлид сонгосон өдөр ашиглагдана.
+								Зөвхөн{" "}
+								<strong className="font-medium text-zinc-700">testId</strong>,{" "}
+								<strong className="font-medium text-zinc-700">classId</strong>,{" "}
+								<strong className="font-medium text-zinc-700">
+									хүссэн өдөр
+								</strong>{" "}
+								сервер руу явна. Үр дүн доорх ногоон/шар/нууран хайрцагт
+								гарна.
 							</CardDescription>
 						</CardHeader>
 						<CardContent className="space-y-5">
@@ -313,46 +386,6 @@ export function AiExamScheduler() {
 									</p>
 								</div>
 							</div>
-							<div className="space-y-2">
-								<Label
-									htmlFor="scheduler-prompt"
-									className="text-xs font-semibold uppercase tracking-wide text-zinc-500"
-								>
-									Тэмдэглэл (дараа нь AI-д ашиглана)
-								</Label>
-								<Textarea
-									id="scheduler-prompt"
-									placeholder="Жишээ: 12А ангийн Математикийн шалгалтыг ирэх долоо хоногийн сул цагт, 90 минутаар тавьж өгнө үү…"
-									value={prompt}
-									onChange={(e) => setPrompt(e.target.value)}
-									className="min-h-[128px] resize-none rounded-2xl border-zinc-200/80 bg-white/80 text-[15px] shadow-inner shadow-zinc-900/5 transition-shadow focus-visible:ring-violet-500/30"
-								/>
-							</div>
-							<div className="space-y-2">
-								<p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-									Түргэн сонголт
-								</p>
-								<div className="flex flex-wrap gap-2">
-									{quickPrompts.map((q) => (
-										<button
-											key={q}
-											type="button"
-											onClick={() => {
-												setPrompt(q);
-												if (q.startsWith("10А")) setClassId("10A");
-												if (q.startsWith("11Б")) setClassId("11B");
-												if (q.startsWith("12А")) setClassId("12A");
-											}}
-											className={cn(
-												"rounded-full border border-zinc-200/90 bg-white/70 px-3.5 py-1.5 text-xs font-medium text-zinc-600 shadow-sm backdrop-blur-sm",
-												"transition-all duration-200 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900 hover:shadow-md",
-											)}
-										>
-											{q}
-										</button>
-									))}
-								</div>
-							</div>
 							<Button
 								type="button"
 								disabled={queueLoading}
@@ -380,10 +413,119 @@ export function AiExamScheduler() {
 									Сүүлийн дараалал: {lastQueuedExamId}
 								</p>
 							) : null}
+							{liveSchedule &&
+							liveSchedule.id === lastQueuedExamId ? (
+								<div
+									className={cn(
+										"rounded-2xl border p-4 text-sm",
+										liveSchedule.status === "pending" &&
+											"border-amber-200 bg-amber-50/80 text-amber-950",
+										liveSchedule.status === "suggested" &&
+											"border-violet-200 bg-violet-50/80 text-violet-950",
+										liveSchedule.status === "confirmed" &&
+											"border-emerald-200 bg-emerald-50/80 text-emerald-950",
+										liveSchedule.status === "failed" &&
+											"border-red-200 bg-red-50/80 text-red-950",
+										!["pending", "suggested", "confirmed", "failed"].includes(
+											liveSchedule.status,
+										) && "border-zinc-200 bg-zinc-50/80",
+									)}
+								>
+									<div className="mb-2 flex items-center justify-between gap-2">
+										<span className="font-semibold">Дарааллын төлөв</span>
+										<Badge
+											variant="outline"
+											className="font-mono text-[10px] uppercase"
+										>
+											{pollExamId ? "polling…" : liveSchedule.status}
+										</Badge>
+									</div>
+									<ul className="space-y-1.5 text-xs text-zinc-700">
+										<li>
+											<span className="text-zinc-500">
+												{liveSchedule.status === "pending"
+													? "Хүссэн өдөр (суури): "
+													: "Эхлэх: "}
+											</span>
+											<span className="font-mono">
+												{liveSchedule.startTime}
+											</span>
+										</li>
+										{liveSchedule.endTime ? (
+											<li>
+												<span className="text-zinc-500">Дуусах: </span>
+												<span className="font-mono">
+													{liveSchedule.endTime}
+												</span>
+											</li>
+										) : null}
+										{liveSchedule.roomId ? (
+											<li>
+												<span className="text-zinc-500">Танхим: </span>
+												<span className="font-mono">
+													{liveSchedule.roomId}
+												</span>
+											</li>
+										) : null}
+										{liveSchedule.aiReasoning ? (
+											<li className="border-t border-black/5 pt-2 text-[13px] leading-snug">
+												{liveSchedule.aiReasoning}
+											</li>
+										) : null}
+									</ul>
+									{liveSchedule.status === "suggested" &&
+									liveSchedule.aiVariants?.length ? (
+										<div className="mt-4 space-y-3 border-t border-violet-200/60 pt-4">
+											<p className="text-[11px] font-semibold uppercase tracking-wide text-violet-800">
+												Санал болгож буй хувилбарууд
+											</p>
+											<div className="grid gap-3 sm:grid-cols-1">
+												{liveSchedule.aiVariants.map((v) => (
+													<div
+														key={v.id}
+														className="flex flex-col gap-2 rounded-xl border border-violet-200/80 bg-white/70 p-3 shadow-sm"
+													>
+														<div className="flex flex-wrap items-start justify-between gap-2">
+															<p className="text-sm font-semibold text-zinc-900">
+																{v.label}
+															</p>
+															<Button
+																type="button"
+																size="sm"
+																disabled={approveLoading}
+																onClick={() =>
+																	void handleApproveVariant(v)
+																}
+																className="shrink-0 rounded-lg bg-violet-600 text-white hover:bg-violet-700"
+															>
+																{approveLoading ? (
+																	<Loader2 className="size-4 animate-spin" />
+																) : (
+																	"Энийг батлах"
+																)}
+															</Button>
+														</div>
+														<p className="font-mono text-[11px] text-zinc-600">
+															{formatVariantWhen(v.startTime)} · {v.roomId}
+														</p>
+														{v.reason ? (
+															<p className="text-xs leading-snug text-zinc-600">
+																{v.reason}
+															</p>
+														) : null}
+													</div>
+												))}
+											</div>
+										</div>
+									) : null}
+								</div>
+							) : null}
 							<p className="text-center text-[11px] leading-relaxed text-zinc-500">
-								Илгээсний дараа шууд батлахгүй — мессеж дараалалд орж, AI
-								тооцоолол дуусмагц D1 дээр баталгаажина (consumer deploy + queue
-								шаардлагатай).
+								Дараалалд орсны дараа AI 2–3 хувилбар санал болгоно (
+								<code className="rounded bg-zinc-100 px-1">suggested</code>
+								). Та нэгийг сонгож батлах хүртэл{" "}
+								<code className="rounded bg-zinc-100 px-1">confirmed</code>{" "}
+								болохгүй. Хүлээгдэж буй үед 2.5 сек тутамд төлөв шалгана.
 							</p>
 						</CardContent>
 					</Card>
@@ -399,23 +541,17 @@ export function AiExamScheduler() {
 										Хуанли
 									</CardTitle>
 									<CardDescription className="mt-1.5 text-sm">
-										Сонгосон өдөр:{" "}
+										Энэ өдөр нь хүсэлтийн{" "}
+										<code className="rounded bg-zinc-100 px-1 font-mono text-[13px]">
+											preferredDate
+										</code>{" "}
+										болно:{" "}
 										<span className="font-mono font-medium text-zinc-800">
 											{date
 												? format(date, "yyyy-MM-dd", { locale: mn })
 												: "—"}
 										</span>
 									</CardDescription>
-								</div>
-								<div className="flex flex-wrap gap-3 text-xs font-medium text-zinc-500">
-									<span className="flex items-center gap-2 rounded-full bg-amber-50 px-2.5 py-1 ring-1 ring-amber-200/60">
-										<span className="size-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
-										Хүлээгдэж буй
-									</span>
-									<span className="flex items-center gap-2 rounded-full bg-emerald-50 px-2.5 py-1 ring-1 ring-emerald-200/60">
-										<span className="size-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.55)]" />
-										Баталгаажсан
-									</span>
 								</div>
 							</CardHeader>
 							<CardContent className="flex flex-col gap-6 p-4 pt-0 sm:p-6">
@@ -434,130 +570,14 @@ export function AiExamScheduler() {
 										}}
 									/>
 								</div>
-								<div>
-									<p className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">
-										Удахгүй болох шалгалт
-									</p>
-									<div className="grid gap-3 sm:grid-cols-2">
-										{upcomingMock.map((u) => (
-											<div
-												key={u.title + u.time}
-												className={cn(
-													"group flex items-center justify-between gap-3 rounded-2xl border border-zinc-200/70 bg-white/60 px-4 py-3 shadow-sm backdrop-blur-sm",
-													"transition-all duration-200 hover:border-violet-200 hover:bg-white hover:shadow-md",
-												)}
-											>
-												<div className="min-w-0 border-l-2 border-l-violet-400 pl-3">
-													<p className="truncate text-sm font-semibold text-zinc-900">
-														{u.title}
-													</p>
-													<p className="text-xs text-zinc-500">
-														Өрөө {u.room}
-													</p>
-												</div>
-												<div className="flex shrink-0 flex-col items-end gap-1">
-													<span className="font-mono text-xs font-medium text-zinc-600">
-														{u.time}
-													</span>
-													<Badge
-														variant="outline"
-														className={cn(
-															"rounded-md border-0 px-2 py-0 text-[10px] font-semibold",
-															u.tone === "confirmed"
-																? "bg-emerald-100 text-emerald-800"
-																: "bg-amber-100 text-amber-900",
-														)}
-													>
-														{u.tone === "confirmed"
-															? "Баталсан"
-															: "Дараалалд"}
-													</Badge>
-												</div>
-											</div>
-										))}
-									</div>
-								</div>
+								<p className="text-center text-xs leading-relaxed text-zinc-500">
+									Бусад шалгалтын жагсаалт одоогоор энд харагдахгүй — зөвхөн
+									дээрх товчоор илгээсэн хүсэлтийн төлөв зүүн талд гарна.
+								</p>
 							</CardContent>
 						</Card>
 					</div>
 				</div>
-
-				<Card
-					className={cn(
-						bentoSurface,
-						"mt-8 border-violet-200/60 bg-gradient-to-br from-violet-50/95 via-white/80 to-cyan-50/90",
-					)}
-				>
-					<CardContent className="flex flex-col gap-6 p-6 sm:flex-row sm:items-start sm:gap-10 sm:p-8">
-						<div className="flex shrink-0 items-center gap-4 sm:flex-col sm:items-start">
-							<div className="relative flex size-16 items-center justify-center rounded-[1.15rem] bg-gradient-to-br from-violet-600 via-fuchsia-600 to-cyan-600 p-px shadow-xl shadow-violet-500/25">
-								<div className="flex size-full items-center justify-center rounded-[1.1rem] bg-white">
-									<Sparkles className="size-7 text-violet-600" />
-								</div>
-							</div>
-							<div className="sm:hidden">
-								<p className="text-sm font-semibold text-zinc-900">
-									AI шийдвэр гаргалт
-								</p>
-								<p className="text-xs text-zinc-500">Сүүлийн санал</p>
-							</div>
-						</div>
-						<div className="min-w-0 flex-1 space-y-4">
-							<div className="hidden sm:block">
-								<p className="text-sm font-semibold text-zinc-900">
-									AI шийдвэр гаргалт
-								</p>
-								<p className="text-xs text-zinc-500">
-									Сүүлийн санал · жишээ өгөгдөл
-								</p>
-							</div>
-							<ul className="space-y-3 text-sm leading-relaxed text-zinc-600">
-								<li className="flex gap-3">
-									<span className="mt-2 size-1.5 shrink-0 rounded-full bg-violet-500 ring-4 ring-violet-500/15" />
-									<span>
-										<strong className="font-semibold text-zinc-900">
-											12А
-										</strong>{" "}
-										ангийн хуваарьт Даваа 1–2 цаг давхцахгүй цонх сонгосон.
-									</span>
-								</li>
-								<li className="flex gap-3">
-									<span className="mt-2 size-1.5 shrink-0 rounded-full bg-cyan-500 ring-4 ring-cyan-500/15" />
-									<span>
-										<strong className="font-semibold text-zinc-900">
-											302 тоот
-										</strong>{" "}
-										танхим багтаамж, сургалтын өрөөтэй нийцсэн.
-									</span>
-								</li>
-								<li className="flex gap-3">
-									<span className="mt-2 size-1.5 shrink-0 rounded-full bg-fuchsia-500 ring-4 ring-fuchsia-500/15" />
-									<span>
-										90 минутын үргэлжлэлтэй, өмнөх шалгалтаас 30+ минутын
-										зайг хадгалсан.
-									</span>
-								</li>
-							</ul>
-							<div className="flex flex-wrap items-center gap-2 border-t border-zinc-200/80 pt-5">
-								<Badge
-									variant="outline"
-									className="rounded-lg border-zinc-200 bg-white/80 font-mono text-[10px] font-medium text-zinc-600"
-								>
-									confidence ~94%
-								</Badge>
-								<Badge
-									variant="outline"
-									className="rounded-lg border-zinc-200 bg-white/80 font-mono text-[10px] font-medium text-zinc-600"
-								>
-									gemini-flash
-								</Badge>
-								<span className="text-xs text-zinc-500">
-									Баталгаажуулах товч (дараагийн алхам)
-								</span>
-							</div>
-						</div>
-					</CardContent>
-				</Card>
 			</div>
 		</div>
 	);

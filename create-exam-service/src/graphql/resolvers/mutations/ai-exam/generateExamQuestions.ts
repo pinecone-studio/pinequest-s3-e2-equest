@@ -1,15 +1,13 @@
-import type { GraphQLContext } from "../../context";
-import {
-	ExamStatus,
-} from "../../generated/resolvers-types";
+import type { GraphQLContext } from "../../../context";
+import { ExamStatus } from "../../../generated/resolvers-types";
 import type {
 	Difficulty,
 	EditableQuestionInput,
 	ExamGenerationInput,
 	QuestionFormat,
-} from "../../generated/resolvers-types";
-import { generateExamQuestionsWithAI, type AiGenerationInput } from "../../../lib/ai";
-import { saveExamMutation } from "./saveExam";
+} from "../../../generated/resolvers-types";
+import { generateExamQuestionsWithAI, type AiGenerationInput } from "../../../../lib/ai";
+import { saveExamMutation } from "../saveExam";
 
 /** AI руу явуулахаас өмнө ирсэн GraphQL `input`-ийг харах (терминал / `wrangler tail`) */
 function logGenerationInputIfEnabled(

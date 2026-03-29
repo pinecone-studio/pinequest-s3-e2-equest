@@ -1,14 +1,14 @@
 import { GraphQLError } from "graphql";
 import { v4 as uuidv4 } from "uuid";
 
-import { aiExamQuestionTemplates } from "../../../db/schema/tables/aiExamQuestionTemplates";
-import { aiExamTemplates } from "../../../db/schema/tables/aiExamTemplates";
-import type { GraphQLContext } from "../../context";
+import { aiExamQuestionTemplates } from "../../../../db/schema/tables/aiExamQuestionTemplates";
+import { aiExamTemplates } from "../../../../db/schema/tables/aiExamTemplates";
+import type { GraphQLContext } from "../../../context";
 import {
 	Difficulty,
 	type AiQuestionTemplateInput,
 	type CreateAiExamTemplateInput,
-} from "../../generated/resolvers-types";
+} from "../../../generated/resolvers-types";
 
 type Args = { input: CreateAiExamTemplateInput };
 
@@ -37,9 +37,7 @@ function resolvePoints(q: AiQuestionTemplateInput): number {
 	return 1;
 }
 
-function resolveDifficultyForDb(
-	d: Difficulty | null | undefined,
-): string {
+function resolveDifficultyForDb(d: Difficulty | null | undefined): string {
 	const v = d ?? Difficulty.Medium;
 	return typeof v === "string" ? v : String(v);
 }
@@ -172,11 +170,8 @@ export const createAiExamTemplateMutation = {
 		} catch (error) {
 			console.error("createAiExamTemplate Error:", error);
 			if (error instanceof GraphQLError) throw error;
-			const detail =
-				error instanceof Error ? error.message : String(error);
-			throw new GraphQLError(
-				`AI Загварыг хадгалахад алдаа: ${detail}`,
-			);
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new GraphQLError(`AI Загварыг хадгалахад алдаа: ${detail}`);
 		}
 	},
 };

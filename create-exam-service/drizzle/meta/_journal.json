@@ -57,6 +57,13 @@
       "when": 1774502186000,
       "tag": "0007_exam_schedules_pending_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1774502187000,
+      "tag": "0008_exam_schedules_ai_variants",
+      "breakpoints": true
     }
   ]
 }

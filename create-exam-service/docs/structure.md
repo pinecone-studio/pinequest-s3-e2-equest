@@ -26,13 +26,13 @@ Frontend (Apollo mutation)
 | `src/graphql/schema.ts` | `createSchema({ typeDefs, resolvers })` |
 | `src/graphql/context.ts` | `GraphQLContext` — D1 (`DB`), Workers AI (`AI`), Gemini түлхүүр (`GOOGLE_AI_API_KEY` / `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_ANALYZE_MODEL`) |
 | `src/graphql/types.ts` | Resolver/AI-д ашиглах зарим TS төрөл (`ExamGenerationInput`, …) |
-| `src/graphql/resolvers/queries/` | Query resolver-ууд (`newMathExams.ts`) |
-| `src/graphql/resolvers/mutations/` | Mutation тус бүр тусдаа файл: `generateExamQuestions.ts`, `saveExam.ts` |
+| `src/graphql/resolvers/queries/` | Query-ууд: `newMathExams.ts`, `ai-scheduler/` (жишээ нь `getAiExamSchedule`) |
+| `src/graphql/resolvers/mutations/` | `saveExam.ts`, `saveNewMathExam.ts` + дэд хавтас: `ai-exam/`, `ai-scheduler/` (feature-т нэгтгэсэн) |
 | `src/graphql/resolvers/index.ts` | `Query` + `Mutation` нэгтгэх |
 | `src/graphql/generated/resolvers-types.ts` | Backend `bun run codegen` — `Resolvers` type |
 | `src/lib/ai.ts` | Google Gemini — `generateExamQuestions` |
 | `src/lib/analyze-question-gemini.ts` | `analyzeQuestion` — Gemini + grounding; JSON-ийг системийн заавраар + `extractJsonText`; эхлээд `googleSearch`, дараа нь `googleSearchRetrieval` |
-| `src/graphql/resolvers/mutations/analyzeQuestion.ts` | GraphQL `analyzeQuestion` — дээрх lib-ийг дуудаж JSON → `QuestionAnalysisResult` |
+| `src/graphql/resolvers/mutations/ai-exam/analyzeQuestion.ts` | GraphQL `analyzeQuestion` — `lib/analyze-question-gemini.ts` |
 | `src/db/schema.ts` | Drizzle: `schema/index` re-export |
 | `src/db/schema/tables/` | Хүснэгт бүр тусдаа (`exams.ts`, …) |
 | `src/db/index.ts` | D1 → Drizzle instance |
@@ -53,9 +53,10 @@ Frontend (Apollo mutation)
 
 | Mutation | Resolver файл | Товч утга |
 |----------|----------------|-----------|
-| `analyzeQuestion` | `mutations/analyzeQuestion.ts` | **Gemini API** + grounding; secret: `GOOGLE_AI_API_KEY` эсвэл `GEMINI_API_KEY`; model: `GEMINI_ANALYZE_MODEL` эсвэл `GEMINI_MODEL` |
-| `createAiExamTemplate` | `mutations/createAiExamTemplate.ts` | AI шинжилгээний үр дүнг D1 `ai_exam_templates` / `ai_exam_question_templates` руу |
-| `generateExamQuestions` | `mutations/generateExamQuestions.ts` | Gemini-ээр асуулт үүсгэх; **AI-аас өмнө** фронтын `input`-ийг логлох: `wrangler.jsonc` → `vars.LOG_GRAPHQL_GENERATION` (`1` идэвхтэй, `0` унтраа), эсвэл локалд `NODE_ENV=development`. Deploy дээр харах: **Workers Logs** эсвэл `npx wrangler tail <worker-нэр>` |
+| `analyzeQuestion` | `mutations/ai-exam/analyzeQuestion.ts` | **Gemini API** + grounding; secret: `GOOGLE_AI_API_KEY` эсвэл `GEMINI_API_KEY`; model: `GEMINI_ANALYZE_MODEL` эсвэл `GEMINI_MODEL` |
+| `createAiExamTemplate` | `mutations/ai-exam/createAiExamTemplate.ts` | AI шинжилгээний үр дүнг D1 `ai_exam_templates` / `ai_exam_question_templates` руу |
+| `generateExamQuestions` | `mutations/ai-exam/generateExamQuestions.ts` | Gemini-ээр асуулт үүсгэх; **AI-аас өмнө** фронтын `input`-ийг логлох: `wrangler.jsonc` → `vars.LOG_GRAPHQL_GENERATION` (`1` идэвхтэй, `0` унтраа), эсвэл локалд `NODE_ENV=development`. Deploy дээр харах: **Workers Logs** эсвэл `npx wrangler tail <worker-нэр>` |
+| `requestAiExamSchedule` / `approveAiExamSchedule` | `mutations/ai-scheduler/` | D1 `exam_schedules` + Queue / багшийн баталгаа |
 | `saveExam` | `mutations/saveExam.ts` | `ExamGenerationInput` + асуултууд → `exams` хүснэгт (`DRAFT` / `PUBLISHED`) |
 
 ## Deploy дээр лог харах (`generateExamQuestions` input)
@@ -129,7 +130,7 @@ bun run db:migrate:local   # эсвэл db:migrate:remote
 ## Шинэ mutation/query нэмэх
 
 1. `schema.graphql` + `typeDefs.ts` дээр ижил өөрчлөлт хийнэ.
-2. `resolvers/mutations/<нэр>.ts` эсвэл `resolvers/queries/<нэр>.ts` үүсгэж, тухайн `index.ts`-д нэгтгэнэ.
+2. Холбогдох feature дэд хавтас (`mutations/ai-exam/`, `queries/ai-scheduler/` гэх мэт) эсвэл шууд `mutations/` / `queries/` дотор файл нэмж, тухайн `index.ts` (эсвэл дэд хавтасын `index.ts`) дээр spread хийнэ.
 3. `bun run codegen` (backend).
 4. Frontend: `frontend/src/gql/create-exam-documents.ts` дотор `gql` operation нэмж, `frontend`-д `bun run codegen`.
 

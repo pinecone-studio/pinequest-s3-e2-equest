@@ -24,6 +24,8 @@ export const examSchedules = sqliteTable("exam_schedules", {
 		onDelete: "restrict",
 	}),
 	status: text("status").notNull().default("pending"),
+	/** AI-ийн 2–3 хувилбар (JSON array) — `suggested` үед; баталгаажсны дараа хоосон болно */
+	aiVariantsJson: text("ai_variants_json"),
 	aiReasoning: text("ai_reasoning"),
 	createdAt: text("created_at").notNull(),
 	updatedAt: text("updated_at").notNull(),
