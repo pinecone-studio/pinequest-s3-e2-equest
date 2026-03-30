@@ -64,6 +64,20 @@
       "when": 1774502187000,
       "tag": "0008_exam_schedules_ai_variants",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1774502188000,
+      "tag": "0009_school_calendar_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1774502189000,
+      "tag": "0010_school_calendar_layer_kind",
+      "breakpoints": true
     }
   ]
 }

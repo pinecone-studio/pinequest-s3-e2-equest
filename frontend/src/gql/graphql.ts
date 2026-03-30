@@ -409,3 +409,4 @@ export type SaveNewMathExamPayload = {
   title: Scalars['String']['output'];
   updatedAt: Scalars['String']['output'];
 };
+

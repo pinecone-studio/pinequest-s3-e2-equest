@@ -338,6 +338,7 @@ export type QueryListNewMathExamsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
+
 export type QuestionAnalysisResult = {
   __typename?: 'QuestionAnalysisResult';
   correctAnswer: Scalars['String']['output'];

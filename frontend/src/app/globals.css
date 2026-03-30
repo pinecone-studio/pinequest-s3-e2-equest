@@ -83,6 +83,14 @@
 	--sidebar-ring: oklch(0.708 0 0);
 }
 
+@media (prefers-contrast: more) {
+	.dark {
+		--border: oklch(0.72 0 0 / 45%);
+		--ring: oklch(0.78 0 0);
+		--muted-foreground: oklch(0.82 0 0);
+	}
+}
+
 .dark {
 	--background: oklch(0.145 0 0);
 	--foreground: oklch(0.985 0 0);
@@ -127,4 +135,149 @@
   html {
     @apply font-sans;
 	}
+}
+
+/* AI хуваарь тооцоолж байх үед хуанлийн багана дээрх нил ягаан урсгал */
+@keyframes ai-calendar-shimmer-sweep {
+	0% {
+		transform: translateX(-130%) skewX(-12deg);
+	}
+	100% {
+		transform: translateX(230%) skewX(-12deg);
+	}
+}
+
+.ai-calendar-shimmer-layer {
+	pointer-events: none;
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	border-radius: inherit;
+	z-index: 3;
+}
+
+.ai-calendar-shimmer-layer__beam {
+	position: absolute;
+	top: -8%;
+	bottom: -8%;
+	left: 0;
+	width: 65%;
+	background: linear-gradient(
+		90deg,
+		transparent 0%,
+		rgb(167 139 250 / 0.05) 18%,
+		rgb(196 181 253 / 0.2) 42%,
+		rgb(221 214 254 / 0.32) 50%,
+		rgb(196 181 253 / 0.2) 58%,
+		rgb(167 139 250 / 0.05) 82%,
+		transparent 100%
+	);
+	animation: ai-calendar-shimmer-sweep 2.45s ease-in-out infinite;
+	will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ai-calendar-shimmer-layer__beam {
+		animation: none;
+		transform: none;
+		opacity: 0.35;
+	}
+}
+
+/* AiPersonalExamScheduler: цагийн торын хэвтээ шугам (light / dark) */
+.scheduler-hour-grid-bg {
+	--sched-grid-line: rgb(228 228 231 / 0.9);
+	background-image: repeating-linear-gradient(
+		to bottom,
+		transparent 0,
+		transparent 39px,
+		var(--sched-grid-line) 39px,
+		var(--sched-grid-line) 40px
+	);
+}
+.dark .scheduler-hour-grid-bg {
+	--sched-grid-line: rgb(63 63 70 / 0.88);
+}
+@media (prefers-contrast: more) {
+	.dark .scheduler-hour-grid-bg {
+		--sched-grid-line: rgb(82 82 91 / 0.95);
+	}
+}
+
+/* Ирээдүй: Intelligent Buffer — сул цагт давтлага тааруулах урьдчилсан hint (dashed) */
+.calendar-smart-slot-hint {
+	border: 1px dashed rgb(59 130 246 / 0.35);
+	border-radius: 0.75rem;
+	background: rgb(239 246 255 / 0.35);
+	pointer-events: none;
+}
+.dark .calendar-smart-slot-hint {
+	border-color: rgb(96 165 250 / 0.28);
+	background: rgb(30 58 138 / 0.12);
+}
+
+/* AiPersonalExamScheduler: 30 минутын слот — өндөр = constants/calendar.ts HOUR_PX */
+.scheduler-slot-grid-bg {
+	--sched-grid-line: rgb(228 228 231 / 0.88);
+	--sched-slot-px: 32px;
+	--sched-slot-inner: calc(var(--sched-slot-px) - 1px);
+	background-image: repeating-linear-gradient(
+		to bottom,
+		transparent 0,
+		transparent var(--sched-slot-inner),
+		var(--sched-grid-line) var(--sched-slot-inner),
+		var(--sched-grid-line) var(--sched-slot-px)
+	);
+}
+.dark .scheduler-slot-grid-bg {
+	--sched-grid-line: rgb(63 63 70 / 0.78);
+}
+@media (prefers-contrast: more) {
+	.dark .scheduler-slot-grid-bg {
+		--sched-grid-line: rgb(82 82 91 / 0.92);
+	}
+}
+
+/* Ээлж солих түгжрэл — ташуу зураас (blocked) */
+.calendar-red-zone-stripes {
+	background-color: rgb(254 242 242 / 0.55);
+	background-image: repeating-linear-gradient(
+		-45deg,
+		transparent,
+		transparent 5px,
+		rgb(248 113 113 / 0.18) 5px,
+		rgb(248 113 113 / 0.18) 7px
+	);
+}
+.dark .calendar-red-zone-stripes {
+	background-color: rgb(127 29 29 / 0.22);
+	background-image: repeating-linear-gradient(
+		-45deg,
+		transparent,
+		transparent 5px,
+		rgb(252 165 165 / 0.12) 5px,
+		rgb(252 165 165 / 0.12) 7px
+	);
+}
+
+/* I / II ээлж эхлэх тэмдэг — ташуу зураас, түгжрэлийн бүснээс бүдүүн улаан */
+.calendar-shift-marker-stripes {
+	background-color: rgb(255 241 242 / 0.65);
+	background-image: repeating-linear-gradient(
+		-45deg,
+		transparent,
+		transparent 6px,
+		rgb(251 113 133 / 0.11) 6px,
+		rgb(251 113 133 / 0.11) 8px
+	);
+}
+.dark .calendar-shift-marker-stripes {
+	background-color: rgb(76 5 25 / 0.2);
+	background-image: repeating-linear-gradient(
+		-45deg,
+		transparent,
+		transparent 6px,
+		rgb(254 205 211 / 0.09) 6px,
+		rgb(254 205 211 / 0.09) 8px
+	);
 }

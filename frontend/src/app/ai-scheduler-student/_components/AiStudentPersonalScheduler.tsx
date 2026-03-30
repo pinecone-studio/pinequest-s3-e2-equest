@@ -1,0 +1,895 @@
+"use client";
+
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "next-themes";
+import {
+  addDays,
+  format,
+  getISODay,
+  isSameDay,
+  startOfDay,
+  startOfWeek,
+} from "date-fns";
+import { mn } from "date-fns/locale";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import {
+  CALENDAR_BUFFER_BANDS,
+  CALENDAR_OVERLAY_LAYOUTS,
+  CALENDAR_VIEW_CONFIG,
+  GRID_BODY_MIN_H,
+  HOUR_PX,
+  TIME_SLOT_LABELS,
+  TEACHER_SHIFT_INITIAL_FOCUS,
+  blockHeightPercent,
+  slotTopPercent,
+  type TeacherShiftId,
+} from "@/constants/calendar";
+import {
+  CalendarClock,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Menu,
+  Monitor,
+  Moon,
+  Sparkles,
+  Sun,
+  Target,
+} from "lucide-react";
+
+const panelLight =
+  "rounded-2xl border border-zinc-200/90 bg-white shadow-sm shadow-zinc-200/40 dark:border-zinc-600/80 dark:bg-zinc-900/95 dark:shadow-black/40";
+const textDim = "text-zinc-500 dark:text-zinc-400";
+
+/** getISODay: 1=Даваа … 7=Ням */
+const WEEKDAY_LETTER_MN: Record<number, string> = {
+  1: "Д",
+  2: "М",
+  3: "Л",
+  4: "П",
+  5: "Б",
+  6: "Б",
+  7: "Н",
+};
+
+type StudentLayerId = "repetition_confirmed" | "section" | "personal_plan";
+
+type StudentBlock = {
+  id: string;
+  layer: StudentLayerId;
+  title: string;
+  subtitle?: string;
+  colIdx: number; // 0=Mon ... 6=Sun
+  startH: number;
+  startM: number;
+  endH: number;
+  endM: number;
+  /** Баталгаажсан эсэх (секц/давтлага дээр badge) */
+  confirmed?: boolean;
+};
+
+function formatBlockDuration(
+  startHour: number,
+  startMinute: number,
+  endHour: number,
+  endMinute: number,
+) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const s = startHour * 60 + startMinute;
+  const e = endHour * 60 + endMinute;
+  const mins = Math.max(0, e - s);
+  return `${pad(startHour)}:${pad(startMinute)}–${pad(endHour)}:${pad(
+    endMinute,
+  )} · ${mins} мин`;
+}
+
+function SchedulerAppearanceMenu() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-9 w-9 shrink-0 rounded-xl border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          aria-label="Дүрсийн горим: цайвар, харанхуй, систем"
+        >
+          {!mounted ? (
+            <Sun className="size-4 opacity-70" aria-hidden />
+          ) : resolvedTheme === "dark" ? (
+            <Moon className="size-4" aria-hidden />
+          ) : (
+            <Sun className="size-4" aria-hidden />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44">
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+          {""}
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
+          <DropdownMenuRadioItem value="light" className="text-sm">
+            <Sun className="size-4" aria-hidden />
+            Цайвар
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="dark" className="text-sm">
+            <Moon className="size-4" aria-hidden />
+            Харанхуй
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="system" className="text-sm">
+            <Monitor className="size-4" aria-hidden />
+            Систем
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ReclaimLightBackdrop() {
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 -z-10 bg-[#f4f5f7] dark:bg-zinc-950"
+      aria-hidden
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_100%_65%_at_50%_-15%,rgba(59,130,246,0.12),transparent_50%)] dark:bg-[radial-gradient(ellipse_100%_65%_at_50%_-15%,rgba(59,130,246,0.22),transparent_55%)]" />
+    </div>
+  );
+}
+
+const LAYER_META: Record<
+  StudentLayerId,
+  { label: string; swatch: string; cardClass: string; hint: string }
+> = {
+  repetition_confirmed: {
+    label: "Батлагдсан давтлага",
+    swatch: "bg-emerald-500",
+    cardClass:
+      "border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-950/45 dark:text-emerald-50",
+    hint: "Тогтмол давтамжтай, баталгаажсан (locked) давтлага",
+  },
+  section: {
+    label: "Секц",
+    swatch: "bg-indigo-500",
+    cardClass:
+      "border-indigo-200 bg-indigo-50 text-indigo-950 dark:border-indigo-700 dark:bg-indigo-950/45 dark:text-indigo-50",
+    hint: "Дугуйлан/секцийн цагууд",
+  },
+  personal_plan: {
+    label: "Personal төлөвлөгөө",
+    swatch: "bg-slate-400",
+    cardClass:
+      "border-slate-300/80 bg-slate-100/95 text-slate-900 dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-100",
+    hint: "Сурагчийн өөрийн зорилго, давтлага, даалгаврын блок (private)",
+  },
+};
+
+function defaultLayerVisibility(): Record<StudentLayerId, boolean> {
+  return { repetition_confirmed: true, section: true, personal_plan: true };
+}
+
+function mockStudentBlocks(): StudentBlock[] {
+  return [
+    {
+      id: "rep-math",
+      layer: "repetition_confirmed",
+      title: "Математик давтлага",
+      subtitle: "Батлагдсан · 10А",
+      colIdx: 1,
+      startH: 16,
+      startM: 5,
+      endH: 16,
+      endM: 45,
+      confirmed: true,
+    },
+    {
+      id: "rep-eng",
+      layer: "repetition_confirmed",
+      title: "Англи давтлага",
+      subtitle: "Батлагдсан · 10А",
+      colIdx: 3,
+      startH: 15,
+      startM: 50,
+      endH: 16,
+      endM: 30,
+      confirmed: true,
+    },
+    {
+      id: "sec-robot",
+      layer: "section",
+      title: "Роботик секц",
+      subtitle: "Секц · Лаб 2",
+      colIdx: 4,
+      startH: 17,
+      startM: 25,
+      endH: 18,
+      endM: 5,
+      confirmed: true,
+    },
+    {
+      id: "plan-focus",
+      layer: "personal_plan",
+      title: "Фокус: Алгебр",
+      subtitle: "Pomodoro 2×25 (жишээ)",
+      colIdx: 0,
+      startH: 19,
+      startM: 0,
+      endH: 19,
+      endM: 50,
+    },
+    {
+      id: "plan-reading",
+      layer: "personal_plan",
+      title: "Уншлага",
+      subtitle: "Ном · 20 хуудас",
+      colIdx: 2,
+      startH: 18,
+      startM: 10,
+      endH: 18,
+      endM: 40,
+    },
+  ];
+}
+
+export type AiStudentPersonalSchedulerProps = {
+  /** Үнэн бол гаднах hub rail нуугдана (future: /ai-scheduler?view=student) */
+  shellMode?: boolean;
+  /** Хуанлийн анхны scroll — student профайлаас ирж болно. */
+  defaultShift?: TeacherShiftId;
+};
+
+export function AiStudentPersonalScheduler({
+  shellMode = false,
+  defaultShift = "II",
+}: AiStudentPersonalSchedulerProps) {
+  const [date, setDate] = useState<Date | undefined>(new Date());
+  const [calendarSidebarOpen, setCalendarSidebarOpen] = useState(true);
+  const [layerOn, setLayerOn] = useState<Record<StudentLayerId, boolean>>(
+    defaultLayerVisibility,
+  );
+  const [rightTab, setRightTab] = useState<"plan" | "about">("plan");
+  const [shift, setShift] = useState<TeacherShiftId>(defaultShift);
+
+  const calendarMainRef = useRef<HTMLElement>(null);
+  const calendarFocusAnchorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setShift(defaultShift), [defaultShift]);
+
+  useLayoutEffect(() => {
+    const main = calendarMainRef.current;
+    const anchor = calendarFocusAnchorRef.current;
+    if (!main || !anchor) return;
+    const st =
+      anchor.getBoundingClientRect().top -
+      main.getBoundingClientRect().top +
+      main.scrollTop;
+    main.scrollTo({ top: Math.max(0, st - 12), behavior: "auto" });
+  }, [shift]);
+
+  const anchor = date ?? new Date();
+  const weekStart = useMemo(
+    () => startOfWeek(anchor, { weekStartsOn: 1 }),
+    [anchor],
+  );
+  const weekDays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  );
+  const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
+  const weekRangeLabel = `${format(weekStart, "MMM d", { locale: mn })} – ${format(
+    weekEnd,
+    "MMM d",
+    { locale: mn },
+  )}`;
+
+  const blocks = useMemo(() => mockStudentBlocks(), []);
+
+  function toggleLayer(id: StudentLayerId) {
+    setLayerOn((p) => ({ ...p, [id]: !p[id] }));
+  }
+
+  function shiftWeek(deltaWeeks: number) {
+    setDate((d) => addDays(d ?? new Date(), deltaWeeks * 7));
+  }
+
+  const visibleBlocks = useMemo(
+    () => blocks.filter((b) => layerOn[b.layer]),
+    [blocks, layerOn],
+  );
+
+  const planSummary = useMemo(() => {
+    const rep = blocks.filter((b) => b.layer === "repetition_confirmed");
+    const sec = blocks.filter((b) => b.layer === "section");
+    const pln = blocks.filter((b) => b.layer === "personal_plan");
+    return { rep, sec, pln };
+  }, [blocks]);
+
+  const selectedLabel = date
+    ? format(date, "EEEE, MMMM d", { locale: mn })
+    : "—";
+
+  return (
+    <div
+      className={cn(
+        "relative min-h-screen overflow-x-hidden bg-[#f4f5f7] font-sans text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100",
+        "selection:bg-blue-500/20 selection:text-zinc-900 dark:selection:bg-blue-400/25 dark:selection:text-zinc-100",
+      )}
+    >
+      <ReclaimLightBackdrop />
+
+      <div className="relative z-10 flex min-h-screen flex-col">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:hidden"
+              aria-expanded={calendarSidebarOpen}
+              aria-controls="student-scheduler-sidebar"
+              onClick={() => setCalendarSidebarOpen((o) => !o)}
+            >
+              <span className="sr-only">Хуанлын панел нээх, хаах</span>
+              <Menu className="size-5" strokeWidth={1.5} aria-hidden />
+            </button>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200/80 dark:bg-emerald-950/80 dark:text-emerald-200 dark:ring-emerald-700/60">
+                <CalendarClock className="size-4" strokeWidth={2} aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
+                  Сурагчийн хуанли
+                </h1>
+                <p className={cn("truncate text-xs", textDim)}>
+                  Батлагдсан давтлага · Секц · Personal төлөвлөгөө
+                </p>
+                <p className={cn("truncate text-[11px]", textDim)}>
+                  {format(anchor, "yyyy MMMM", { locale: mn })}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <SchedulerAppearanceMenu />
+            <Badge
+              variant="outline"
+              className="rounded-full border-zinc-200 bg-white text-[11px] text-zinc-600 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+            >
+              {selectedLabel}
+            </Badge>
+          </div>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+          <aside
+            id="student-scheduler-sidebar"
+            className={cn(
+              "shrink-0 overflow-hidden border-zinc-200/90 bg-white/50 transition-[width] duration-200 ease-out xl:bg-white/40 dark:border-zinc-700/90 dark:bg-zinc-950/60 xl:dark:bg-zinc-950/50",
+              calendarSidebarOpen
+                ? shellMode
+                  ? "w-full max-w-[min(100vw,280px)] border-r sm:max-w-[272px]"
+                  : "w-full max-w-[min(100vw,280px)] border-r sm:max-w-[272px]"
+                : "w-0 border-r-0",
+            )}
+          >
+            <div
+              className={cn(
+                "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4",
+                shellMode ? "min-w-[min(100vw,272px)]" : "min-w-[min(100vw,272px)]",
+              )}
+            >
+              <div className={cn(panelLight, "p-3")}>
+                <div className="mb-2 space-y-0.5 px-1">
+                  <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                    Календарь
+                  </p>
+                  <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+                    Өдөр сонгох
+                  </p>
+                </div>
+                <p className="mb-2 px-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                  {selectedLabel}
+                </p>
+                <div className="flex justify-center">
+                  <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={setDate}
+                    locale={mn}
+                    className="w-fit"
+                  />
+                </div>
+              </div>
+
+              <div
+                className={cn(
+                  panelLight,
+                  "divide-y divide-zinc-100 dark:divide-zinc-800",
+                )}
+              >
+                <div className="px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Давхарга ({Object.keys(LAYER_META).length})
+                  </p>
+                </div>
+                {(Object.keys(LAYER_META) as StudentLayerId[]).map((id) => {
+                  const meta = LAYER_META[id];
+                  const on = layerOn[id];
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggleLayer(id)}
+                      className={cn(
+                        "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
+                        on
+                          ? "bg-blue-50/80 text-zinc-900 dark:bg-blue-950/50 dark:text-zinc-100"
+                          : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/60",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "size-2.5 shrink-0 rounded-sm",
+                          meta.swatch,
+                          !on && "opacity-35",
+                        )}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">
+                          {meta.label}
+                        </span>
+                        <span className="line-clamp-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+                          {meta.hint}
+                        </span>
+                      </span>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                          on
+                            ? "bg-blue-100 text-blue-800 dark:bg-blue-900/70 dark:text-blue-200"
+                            : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
+                        )}
+                      >
+                        {on ? "Идэвхтэй" : "Нуугдсан"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </aside>
+
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
+            <main
+              ref={calendarMainRef}
+              className="min-h-[480px] min-w-0 flex-1 overflow-auto border-zinc-200/90 p-3 sm:p-4 xl:rounded-l-3xl xl:border-r xl:bg-zinc-50/30 dark:border-zinc-700/90 dark:xl:bg-zinc-950/40"
+            >
+              <div
+                className={cn(
+                  panelLight,
+                  "flex h-full min-h-[440px] flex-col overflow-hidden p-3 xl:rounded-l-3xl xl:shadow-md",
+                )}
+              >
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                      Энэ 7 хоног
+                    </p>
+                    <p className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                      {weekRangeLabel}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-zinc-200 bg-zinc-50/90 p-0.5 dark:border-zinc-600 dark:bg-zinc-900/80">
+                    <button
+                      type="button"
+                      onClick={() => shiftWeek(-1)}
+                      className="rounded-lg p-1.5 text-zinc-600 transition-colors hover:bg-white hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                      aria-label="Өмнөх долоо хоног"
+                    >
+                      <ChevronLeft className="size-4" strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDate(startOfDay(new Date()))}
+                      className="rounded-lg px-2 py-1.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-white hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    >
+                      Өнөөдөр
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => shiftWeek(1)}
+                      className="rounded-lg p-1.5 text-zinc-600 transition-colors hover:bg-white hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                      aria-label="Дараагийн долоо хоног"
+                    >
+                      <ChevronRight className="size-4" strokeWidth={2} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mb-3 rounded-xl border border-blue-100/90 bg-linear-to-r from-blue-50/90 to-white px-3 py-2.5 dark:border-blue-900/50 dark:from-blue-950/50 dark:to-zinc-900/80">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                        <Target className="size-4" strokeWidth={2} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                          Student view (mock)
+                        </p>
+                        <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
+                          Одоогоор зөвхөн demo өгөгдөл: батлагдсан давтлага + секц
+                          + personal төлөвлөгөө.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 tabular-nums text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+                      {visibleBlocks.length} блок
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-col gap-1.5 border-t border-zinc-200/80 pt-2 dark:border-zinc-700/80 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[9px] text-zinc-500 dark:text-zinc-500">
+                      Тор: {CALENDAR_VIEW_CONFIG.dayVisible.start}–
+                      {CALENDAR_VIEW_CONFIG.dayVisible.end}. Улаан бүсүүд нь
+                      “төлөвлөхөд тохиромжгүй” үе (shared constants).
+                    </p>
+                    <div
+                      className="flex shrink-0 rounded-lg border border-zinc-200 bg-white p-0.5 dark:border-zinc-600 dark:bg-zinc-900"
+                      role="group"
+                      aria-label="Хуанлийн анхны төвлөрөл"
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={shift === "I"}
+                        onClick={() => setShift("I")}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-[9px] font-semibold transition-colors",
+                          shift === "I"
+                            ? "bg-emerald-600 text-white shadow-sm dark:bg-emerald-500"
+                            : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800",
+                        )}
+                      >
+                        I · Өглөө
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={shift === "II"}
+                        onClick={() => setShift("II")}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-[9px] font-semibold transition-colors",
+                          shift === "II"
+                            ? "bg-amber-600 text-white shadow-sm dark:bg-amber-600"
+                            : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800",
+                        )}
+                      >
+                        II · Өдөр
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-2 grid grid-cols-[2.75rem_repeat(7,minmax(0,1fr))] gap-x-1 border-b border-zinc-200 pb-2 dark:border-zinc-700 sm:grid-cols-[3.25rem_repeat(7,minmax(0,1fr))]">
+                  <div
+                    className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500"
+                    aria-hidden
+                  >
+                    Цаг
+                  </div>
+                  {weekDays.map((d) => {
+                    const isSel = isSameDay(d, anchor);
+                    return (
+                      <div key={format(d, "yyyy-MM-dd")} className="text-center">
+                        <div
+                          className={cn(
+                            "mx-auto flex size-8 items-center justify-center rounded-full text-[11px] font-medium sm:size-9 sm:text-xs",
+                            isSel
+                              ? "bg-blue-600 text-white shadow-md shadow-blue-600/25 dark:bg-blue-500 dark:shadow-blue-500/30"
+                              : "border border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+                          )}
+                          aria-label={format(d, "EEEE", { locale: mn })}
+                        >
+                          {WEEKDAY_LETTER_MN[getISODay(d)] ?? "?"}
+                        </div>
+                        <p className="mt-0.5 text-xs font-semibold text-zinc-800 dark:text-zinc-200 sm:text-sm">
+                          {format(d, "d")}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="relative min-h-0 flex-1">
+                  <div className="grid min-h-0 flex-1 grid-cols-[2.75rem_repeat(7,minmax(0,1fr))] gap-x-1 sm:grid-cols-[3.25rem_repeat(7,minmax(0,1fr))]">
+                    <div
+                      className="relative shrink-0 text-right"
+                      style={{ minHeight: GRID_BODY_MIN_H }}
+                    >
+                      <div
+                        ref={calendarFocusAnchorRef}
+                        className="pointer-events-none absolute left-0 right-0 h-px opacity-0"
+                        style={{
+                          top: `${slotTopPercent(
+                            TEACHER_SHIFT_INITIAL_FOCUS[shift].hour,
+                            TEACHER_SHIFT_INITIAL_FOCUS[shift].minute,
+                          )}%`,
+                        }}
+                        aria-hidden
+                      />
+                      {TIME_SLOT_LABELS.map((row) => (
+                        <div
+                          key={row.key}
+                          className={cn(
+                            "flex items-start justify-end border-t pr-1 pt-0.5 text-[10px] tabular-nums first:border-t-0 first:pt-0 sm:pr-1.5",
+                            row.isHourMark
+                              ? "border-zinc-200 font-medium text-zinc-500 dark:border-zinc-700 dark:text-zinc-400 sm:text-[11px]"
+                              : "border-zinc-100 text-[9px] text-zinc-400/85 dark:border-zinc-800 dark:text-zinc-500/90",
+                          )}
+                          style={{ height: HOUR_PX }}
+                        >
+                          {row.label}
+                        </div>
+                      ))}
+                    </div>
+
+                    {weekDays.map((d, colIdx) => (
+                      <div
+                        key={`col-${colIdx}`}
+                        className="relative rounded-xl border border-zinc-200/90 bg-zinc-50/80 dark:border-zinc-600/90 dark:bg-zinc-900/50"
+                        style={{ minHeight: GRID_BODY_MIN_H }}
+                        aria-label={format(d, "EEEE", { locale: mn })}
+                      >
+                        <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit]">
+                          <div
+                            className="absolute inset-x-0 bg-zinc-400/11 dark:bg-zinc-500/20"
+                            style={{
+                              top: `${CALENDAR_BUFFER_BANDS.beforeTopPct}%`,
+                              height: `${CALENDAR_BUFFER_BANDS.beforeHeightPct}%`,
+                            }}
+                          />
+                          <div
+                            className="absolute inset-x-0 bg-zinc-400/11 dark:bg-zinc-500/20"
+                            style={{
+                              top: `${CALENDAR_BUFFER_BANDS.afterTopPct}%`,
+                              height: `${CALENDAR_BUFFER_BANDS.afterHeightPct}%`,
+                            }}
+                          />
+                          {CALENDAR_OVERLAY_LAYOUTS.map((z) => (
+                            <div
+                              key={z.id}
+                              className="calendar-red-zone-stripes pointer-events-auto absolute inset-x-0 z-1 cursor-help border-y border-rose-300/35 dark:border-rose-800/45"
+                              style={{
+                                top: `${z.topPct}%`,
+                                height: `${z.heightPct}%`,
+                              }}
+                              title={z.tooltip ?? z.label}
+                              aria-label={z.tooltip}
+                              role="img"
+                            />
+                          ))}
+                        </div>
+                        <div
+                          className="scheduler-slot-grid-bg pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
+                          aria-hidden
+                        />
+
+                        {visibleBlocks
+                          .filter((b) => b.colIdx === colIdx)
+                          .map((b) => {
+                            const meta = LAYER_META[b.layer];
+                            return (
+                              <div
+                                key={b.id}
+                                className={cn(
+                                  "absolute left-1 right-1 z-5 overflow-hidden rounded-xl border px-2 py-1.5 text-[10px] font-semibold leading-tight shadow-sm",
+                                  meta.cardClass,
+                                )}
+                                style={{
+                                  top: `${slotTopPercent(b.startH, b.startM)}%`,
+                                  height: `${blockHeightPercent(
+                                    b.startH,
+                                    b.startM,
+                                    b.endH,
+                                    b.endM,
+                                  )}%`,
+                                  minHeight: "44px",
+                                }}
+                                title={`${b.title} · ${formatBlockDuration(
+                                  b.startH,
+                                  b.startM,
+                                  b.endH,
+                                  b.endM,
+                                )}`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {b.title}
+                                  </span>
+                                  {b.confirmed ? (
+                                    <CheckCircle2
+                                      className="size-3.5 shrink-0 opacity-80"
+                                      aria-hidden
+                                    />
+                                  ) : null}
+                                </div>
+                                <span className="mt-0.5 block truncate text-[9px] font-normal opacity-90">
+                                  {formatBlockDuration(
+                                    b.startH,
+                                    b.startM,
+                                    b.endH,
+                                    b.endM,
+                                  )}
+                                </span>
+                                {b.subtitle ? (
+                                  <span className="mt-0.5 block truncate text-[9px] font-normal opacity-90">
+                                    {b.subtitle}
+                                  </span>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <p className={cn("mt-2 text-center text-[10px] leading-relaxed", textDim)}>
+                  Demo: батлагдсан давтлага/секц/personal төлөвлөгөө давхарга.
+                  Дараа нь student-ийн баталгаажсан давтлага (recurrence), секцийн
+                  бүртгэл, personal төлөвлөгөө DB/GraphQL-оор орж ирэхээр солино.
+                </p>
+              </div>
+            </main>
+
+            <aside className="flex w-full shrink-0 flex-col border-zinc-200/90 bg-white shadow-[inset_1px_0_0_0_rgba(228,228,231,0.6)] dark:border-zinc-700/90 dark:bg-zinc-950 dark:shadow-[inset_1px_0_0_0_rgba(39,39,42,0.8)] xl:w-[320px] xl:border-l">
+              <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/90">
+                <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                  <Sparkles className="size-4" strokeWidth={2} aria-hidden />
+                </div>
+                <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+                  Сурагчийн төв
+                </span>
+              </div>
+
+              <div className="flex gap-1 border-b border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+                <button
+                  type="button"
+                  onClick={() => setRightTab("plan")}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                    rightTab === "plan"
+                      ? "bg-emerald-600 text-white shadow-sm dark:bg-emerald-500"
+                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+                  )}
+                >
+                  Төлөвлөгөө
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRightTab("about")}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                    rightTab === "about"
+                      ? "bg-emerald-600 text-white shadow-sm dark:bg-emerald-500"
+                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+                  )}
+                >
+                  Тайлбар
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto bg-zinc-50/40 p-4 dark:bg-zinc-950/80">
+                {rightTab === "plan" ? (
+                  <div className="space-y-4">
+                    <div className={cn(panelLight, "overflow-hidden p-0")}>
+                      <div className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
+                        <ClipboardList className="size-4 text-emerald-600 dark:text-emerald-400" />
+                        <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                          Энэ 7 хоног (mock)
+                        </span>
+                      </div>
+                      <div className="space-y-3 px-3 py-3">
+                        {(
+                          [
+                            ["Батлагдсан давтлага", planSummary.rep],
+                            ["Секц", planSummary.sec],
+                            ["Personal төлөвлөгөө", planSummary.pln],
+                          ] as const
+                        ).map(([label, items]) => (
+                          <div key={label} className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                              {label} · {items.length}
+                            </p>
+                            {items.length === 0 ? (
+                              <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                                Одоогоор хоосон
+                              </p>
+                            ) : (
+                              <ul className="mt-2 space-y-2">
+                                {items.map((b) => (
+                                  <li key={b.id} className="flex items-start gap-2">
+                                    <span
+                                      className={cn(
+                                        "mt-0.5 inline-flex size-2.5 shrink-0 rounded-sm",
+                                        LAYER_META[b.layer].swatch,
+                                      )}
+                                      aria-hidden
+                                    />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                                        {b.title}
+                                      </span>
+                                      <span className="block truncate text-[10px] text-zinc-500 dark:text-zinc-400">
+                                        {formatBlockDuration(
+                                          b.startH,
+                                          b.startM,
+                                          b.endH,
+                                          b.endM,
+                                        )}
+                                        {b.subtitle ? ` · ${b.subtitle}` : ""}
+                                      </span>
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={cn(panelLight, "p-4 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300")}>
+                    <p>
+                      Энэ дэлгэц нь багшийн “Operations Center” хэв маягийг
+                      сурагчийн хэрэгцээнд тааруулж хувиргасан хувилбар.
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-4">
+                      <li>
+                        <strong className="font-semibold text-zinc-800 dark:text-zinc-100">
+                          Батлагдсан давтлага
+                        </strong>{" "}
+                        — давтамжтай, баталгаажсан нэмэлт сургалт.
+                      </li>
+                      <li>
+                        <strong className="font-semibold text-zinc-800 dark:text-zinc-100">
+                          Секц
+                        </strong>{" "}
+                        — дугуйлан/клубийн цаг.
+                      </li>
+                      <li>
+                        <strong className="font-semibold text-zinc-800 dark:text-zinc-100">
+                          Personal төлөвлөгөө
+                        </strong>{" "}
+                        — сурагч өөрөө оруулсан фокус/даалгавар/давтлагын блок.
+                      </li>
+                    </ul>
+                    <p className="mt-3">
+                      Одоо mock. Дараагийн алхам: student-ийн “баталгаажсан
+                      давтлага (recurrence)”, “секцийн бүртгэл”, “personal plan”
+                      өгөгдлүүдийг API/GraphQL-оос авч календарийн блок болгоно.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
