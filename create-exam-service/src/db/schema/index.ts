@@ -12,6 +12,7 @@ export * from "./tables/schoolEventTargets";
 export * from "./tables/schoolEventTeacherTargets";
 export * from "./tables/ancillaryActivities";
 export * from "./tables/teacherAvailability";
+export * from "./tables/teacherSubjects";
 export * from "./tables/users";
 export * from "./tables/groups";
 export * from "./tables/periods";

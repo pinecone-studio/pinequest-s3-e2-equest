@@ -25,7 +25,15 @@
 		"db:seed:scheduler-twin:local": "wrangler d1 execute create-exams --local --file=./drizzle/seed/scheduler_digital_twin_seed.sql",
 		"db:seed:scheduler-twin:remote": "wrangler d1 execute create-exams --remote --file=./drizzle/seed/scheduler_digital_twin_seed.sql",
 		"db:seed:periods:local": "wrangler d1 execute create-exams --local --file=./drizzle/seed/periods_seed.sql",
-		"db:seed:periods:remote": "wrangler d1 execute create-exams --remote --file=./drizzle/seed/periods_seed.sql"
+		"db:seed:periods:remote": "wrangler d1 execute create-exams --remote --file=./drizzle/seed/periods_seed.sql",
+		"db:seed:classrooms:local": "wrangler d1 execute create-exams --local --file=./drizzle/seed/classrooms_seed.sql",
+		"db:seed:classrooms:remote": "wrangler d1 execute create-exams --remote --file=./drizzle/seed/classrooms_seed.sql",
+		"db:seed:subjects:local": "wrangler d1 execute create-exams --local --file=./drizzle/seed/subjects_seed.sql",
+		"db:seed:subjects:remote": "wrangler d1 execute create-exams --remote --file=./drizzle/seed/subjects_seed.sql",
+		"db:seed:users:local": "wrangler d1 execute create-exams --local --file=./drizzle/seed/users_seed.sql",
+		"db:seed:users:remote": "wrangler d1 execute create-exams --remote --file=./drizzle/seed/users_seed.sql",
+		"db:seed:teacher-subjects:local": "wrangler d1 execute create-exams --local --file=./drizzle/seed/teacher_subjects_seed.sql",
+		"db:seed:teacher-subjects:remote": "wrangler d1 execute create-exams --remote --file=./drizzle/seed/teacher_subjects_seed.sql"
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.1017.0",

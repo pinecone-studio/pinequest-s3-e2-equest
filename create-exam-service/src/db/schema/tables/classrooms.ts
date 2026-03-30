@@ -30,6 +30,7 @@ export const classrooms = sqliteTable("classrooms", {
    */
   hasProjector: integer("has_projector").notNull().default(0),
   hasSmartBoard: integer("has_smart_board").notNull().default(0),
+  // Дундаа ашиглах боломжтой эсвэл олон зорилгоор ашиглагддаг
   isShared: integer("is_shared").notNull().default(0),
 
   /**

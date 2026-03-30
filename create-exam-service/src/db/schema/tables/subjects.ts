@@ -16,6 +16,12 @@ export const subjects = sqliteTable("subjects", {
 	/** 'STEM' | 'LANGUAGE' | 'HUMANITY' | 'ART_SPORT' */
 	category: text("category").notNull(),
 
+	/**
+	 * Ангийн түвшин:
+	 * 'ELEMENTARY' | 'MIDDLE' | 'HIGH' | 'ALL'
+	 */
+	level: text("level").notNull().default("MIDDLE"),
+
 	status: text("status").notNull().default("ACTIVE"),
 });
 

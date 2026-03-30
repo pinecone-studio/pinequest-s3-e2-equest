@@ -1,0 +1,2 @@
+ALTER TABLE `subjects` ADD COLUMN `level` text NOT NULL DEFAULT 'MIDDLE';
+

@@ -20,6 +20,16 @@ export const users = sqliteTable("users", {
   email: text("email").unique(),
 
   department: text("department").notNull(), // 'MATH', 'PHYSICS'
+
+  /**
+   * Түвшнийг хадгалах хэлбэр:
+   * 1. "ELEMENTARY" (Зөвхөн бага)
+   * 2. "MIDDLE,HIGH" (Дунд болон ахлах)
+   * 3. "MIDDLE" (Зөвхөн дунд)
+   * 4. "ALL" (Бүх ангид)
+   */
+  teachingLevel: text("teaching_level").notNull().default("MIDDLE"),
+
   role: text("role").notNull().default("TEACHER"), // 'TEACHER', 'ADMIN'
 
   /** Өдөрт орох дээд ачааллын хязгаар (AI давж төлөвлөхгүй). */
