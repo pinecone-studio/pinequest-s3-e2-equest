@@ -23,7 +23,11 @@ function dayRangeUtc(
   };
 }
 
-function singleDayUtc(y: number, m: number, d: number): { startAt: string; endAt: string } {
+function singleDayUtc(
+  y: number,
+  m: number,
+  d: number,
+): { startAt: string; endAt: string } {
   return dayRangeUtc(y, m, d, d);
 }
 
@@ -122,7 +126,10 @@ export const REAL_WORLD_SCHOOL_CALENDAR_MOCK: SchoolCalendarEvent[] = [
     ...dayRangeUtc(2026, 2, 17, 18),
     allDay: true,
     visibility: SchoolCalendarEventVisibility.SchoolWide,
-    metadataJson: JSON.stringify({ aiConstraint: "SCHOOL_CLOSED", daysApprox: 2 }),
+    metadataJson: JSON.stringify({
+      aiConstraint: "SCHOOL_CLOSED",
+      daysApprox: 2,
+    }),
   },
   {
     id: "mock-real-2026-03-sports-golden-bell",

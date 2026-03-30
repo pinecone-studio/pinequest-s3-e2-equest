@@ -1,6 +1,9 @@
 /**
  * «Intelligent Buffer» — AI ачаалал + давхаргын дараагийн түвшний бодлого.
  * Шалгалтаас цааш: давтлага/секц товлоход багш + сурагч хоёул сул байх шаардлагатай.
+ *
+ * **Нэг Scheduling Engine, хоёр Intent** (шалгалт vs давтлага/секц) — яагаад нэг AI байх ёстой:
+ * @see ./schedulingEngineIntent.ts
  */
 
 import type { AncillaryActivityGroup } from "./calendarLayerTaxonomy";

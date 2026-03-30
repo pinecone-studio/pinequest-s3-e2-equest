@@ -45,6 +45,10 @@ import type {
 } from "@/gql/graphql";
 import { cn } from "@/lib/utils";
 import {
+  buildSchoolCalendarSegmentsForWeek,
+  percentIntervalsOverlap,
+} from "@/lib/schoolCalendarWeekSegments";
+import {
   CALENDAR_BUFFER_BANDS,
   CALENDAR_OVERLAY_LAYOUTS,
   CALENDAR_VIEW_CONFIG,
@@ -71,6 +75,7 @@ import {
   getMockTeacherById,
   roomBadgeForPrimaryLesson,
 } from "@/constants/teacherScheduleMock";
+import { REAL_WORLD_SCHOOL_CALENDAR_MOCK } from "@/constants/schoolCalendarRealWorldMock";
 import {
   ArrowRight,
   CalendarClock,
@@ -95,14 +100,6 @@ import {
 /** I/II ээлж: хичээл 40 мин, завсар 5–15 мин (давхаргын тайлбарт дундаж). */
 const LESSON_MINUTES = 40;
 const BREAK_MINUTES = 10;
-
-/** Жишээ: нийтийн эвентийн эхлэл / дуусах (торын байрлалтай нийцнэ). */
-const SCHOOL_EVENT_DEMO = {
-  startH: 10,
-  startM: 0,
-  endH: 14,
-  endM: 30,
-} as const;
 
 /** Жишээ: баталгаажсан шалгалт (Пүрэв — багана 3, I ээлжийн 7-р цагийн цонх). */
 const CONFIRMED_EXAM_DEMO = {
@@ -360,7 +357,8 @@ const CALENDAR_LAYERS: {
   {
     id: "school_event",
     label: "Сургуулийн эвент",
-    role: "Нийтийн хурал, баяр ёслол, заалны засвар",
+    role:
+      "Дэвсгэр давхарга (read-only) — нийтийн хуанлиас; зөөх боломжгүй. Sky = таны хичээл",
     swatch: "bg-amber-100 ring-1 ring-amber-400/30",
   },
   {
@@ -577,8 +575,47 @@ export function AiPersonalExamScheduler({
   }
 
   const anchor = date ?? new Date();
-  const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const weekStart = useMemo(
+    () => startOfWeek(anchor, { weekStartsOn: 1 }),
+    [anchor],
+  );
+  const weekDays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  );
+
+  /** Сургуулийн нэгдсэн календарийн mock — багшийн тор дээр дэвсгэр давхарга (GraphQL ирэхэд солино). */
+  const teacherSchoolEventSegments = useMemo(
+    () =>
+      buildSchoolCalendarSegmentsForWeek(
+        REAL_WORLD_SCHOOL_CALENDAR_MOCK,
+        weekDays,
+      ),
+    [weekDays],
+  );
+
+  /** Үндсэн хичээлийн цаг сургуулийн эвенттой давхцвал conflict (drag ирэхэд ижил шалгуур). */
+  const teacherSchoolConflictColumns = useMemo(() => {
+    const cols = new Set<number>();
+    for (const lesson of activePrimaryLessons) {
+      if (lesson.slotVariant === "free") continue;
+      const lt = slotTopPercent(lesson.startH, lesson.startM);
+      const lh = blockHeightPercent(
+        lesson.startH,
+        lesson.startM,
+        lesson.endH,
+        lesson.endM,
+      );
+      for (const seg of teacherSchoolEventSegments) {
+        if (seg.colIdx !== lesson.colIdx) continue;
+        if (percentIntervalsOverlap(seg.topPct, seg.heightPct, lt, lh)) {
+          cols.add(lesson.colIdx);
+          break;
+        }
+      }
+    }
+    return cols;
+  }, [activePrimaryLessons, teacherSchoolEventSegments]);
 
   const scheduleStart = liveSchedule
     ? parseStart(liveSchedule.startTime)
@@ -1212,26 +1249,30 @@ export function AiPersonalExamScheduler({
                             className="scheduler-slot-grid-bg pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
                             aria-hidden
                           />
-                          {layerOn.school_event && colIdx === 5 ? (
-                            <div
-                              className="absolute left-1 right-1 z-1 rounded-xl border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-medium leading-tight text-amber-950 shadow-sm dark:border-amber-700 dark:bg-amber-950/45 dark:text-amber-50"
-                              style={{
-                                top: `${slotTopPercent(SCHOOL_EVENT_DEMO.startH, SCHOOL_EVENT_DEMO.startM)}%`,
-                                height: `${blockHeightPercent(SCHOOL_EVENT_DEMO.startH, SCHOOL_EVENT_DEMO.startM, SCHOOL_EVENT_DEMO.endH, SCHOOL_EVENT_DEMO.endM)}%`,
-                                minHeight: "52px",
-                              }}
-                            >
-                              Сургуулийн эвент
-                              <span className="mt-0.5 block font-normal text-amber-700 dark:text-amber-300">
-                                {formatBlockDuration(
-                                  SCHOOL_EVENT_DEMO.startH,
-                                  SCHOOL_EVENT_DEMO.startM,
-                                  SCHOOL_EVENT_DEMO.endH,
-                                  SCHOOL_EVENT_DEMO.endM,
-                                )}
-                              </span>
-                            </div>
-                          ) : null}
+                          {layerOn.school_event
+                            ? teacherSchoolEventSegments
+                                .filter((seg) => seg.colIdx === colIdx)
+                                .map((seg) => (
+                                  <div
+                                    key={`school-bg-${seg.eventId}-${colIdx}-${seg.topPct}`}
+                                    className="pointer-events-none absolute left-0.5 right-0.5 z-[1] select-none rounded-xl border border-amber-200/75 bg-amber-100/70 px-2 py-1.5 text-[10px] font-medium leading-tight text-amber-950/95 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35)] dark:border-amber-800/55 dark:bg-amber-950/45 dark:text-amber-50"
+                                    style={{
+                                      top: `${seg.topPct}%`,
+                                      height: `${seg.heightPct}%`,
+                                      minHeight: seg.allDay ? "48px" : "40px",
+                                    }}
+                                    title="Сургуулийн нийтийн эвент (read-only) — зөөх боломжгүй"
+                                    aria-readonly
+                                  >
+                                    <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-900/85 dark:text-amber-200/90">
+                                      Сургууль
+                                    </span>
+                                    <span className="mt-0.5 block line-clamp-4 font-semibold">
+                                      {seg.title}
+                                    </span>
+                                  </div>
+                                ))
+                            : null}
 
                           {activePrimaryLessons
                             .filter(
@@ -1250,14 +1291,13 @@ export function AiPersonalExamScheduler({
                                   key={`${selectedTeacherId}-${lesson.colIdx}-${lesson.periodLabel}-${lesson.startH}-${lesson.startM}`}
                                   title={card.tooltip}
                                   className={cn(
-                                    "absolute left-1 right-1 overflow-hidden rounded-xl border shadow-sm",
+                                    "absolute left-1 right-1 z-[3] overflow-hidden rounded-xl border shadow-sm",
                                     v === "default" &&
                                       "border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-700 dark:bg-sky-950/45 dark:text-sky-50",
                                     v === "free" &&
                                       "border-dashed border-slate-300/80 bg-slate-50/90 text-slate-700 dark:border-slate-600 dark:bg-slate-900/35 dark:text-slate-200",
                                     v === "duty" &&
                                       "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-50",
-                                    lesson.colIdx === 3 && "z-[1]",
                                     "px-2 py-1.5",
                                   )}
                                   style={{
@@ -1354,14 +1394,15 @@ export function AiPersonalExamScheduler({
                             </div>
                           ) : null}
 
-                          {layerOn.conflict && colIdx === 3 ? (
+                          {layerOn.conflict &&
+                          teacherSchoolConflictColumns.has(colIdx) ? (
                             <div
-                              className="absolute left-1 right-1 top-[32%] z-[2] rounded-xl border border-rose-200 bg-rose-50 px-2 py-1.5 text-[10px] font-medium leading-tight text-rose-950 shadow-sm ring-1 ring-rose-100"
+                              className="absolute left-1 right-1 top-[28%] z-[4] rounded-xl border border-rose-300 bg-rose-50 px-2 py-1.5 text-[10px] font-medium leading-tight text-rose-950 shadow-md ring-1 ring-rose-200/80 dark:border-rose-700 dark:bg-rose-950/50 dark:text-rose-50"
                               style={{ minHeight: "48px" }}
                             >
                               Зөрчилтэй
-                              <span className="mt-0.5 block font-normal text-rose-700">
-                                Conflict · жишээ (хоёр цаг давхцсан)
+                              <span className="mt-0.5 block font-normal text-rose-800 dark:text-rose-200">
+                                Үндсэн хичээл + сургуулийн эвент давхцсан
                               </span>
                             </div>
                           ) : null}
@@ -1520,9 +1561,10 @@ export function AiPersonalExamScheduler({
                   {CALENDAR_VIEW_CONFIG.dayVisible.end}, critical{" "}
                   {CALENDAR_VIEW_CONFIG.criticalFocus.start}–
                   {CALENDAR_VIEW_CONFIG.criticalFocus.end}, улаан түгжрэлийн
-                  overlay constants/calendar.ts-аас. Усан цэнхэр үндсэн хичээл
+                  overlay constants/calendar.ts-аас.                   Усан цэнхэр үндсэн хичээл
                   (I/II ээлж · {LESSON_MINUTES} мин/цаг, завсар 5–15 мин),
-                  баталгаажсан шалгалт, AI Draft, хувийн синк, сургуулийн эвент,
+                  баталгаажсан шалгалт, AI Draft, хувийн синк. Сургуулийн эвент —
+                  amber дэвсгэр (mock жилийн хуанли), read-only; хичээлтэй давхцвал
                   зөрчил. Жишээ + job; бүрэн sync биш.
                 </p>
               </div>

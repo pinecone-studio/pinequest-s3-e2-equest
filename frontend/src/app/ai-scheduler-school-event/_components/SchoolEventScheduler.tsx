@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   addDays,
-  addMinutes,
   endOfDay,
   format,
   getISODay,
@@ -15,7 +14,6 @@ import {
   startOfWeek,
 } from "date-fns";
 import { mn } from "date-fns/locale";
-import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -39,9 +37,6 @@ import {
   CALENDAR_BUFFER_BANDS,
   CALENDAR_OVERLAY_LAYOUTS,
   CALENDAR_VIEW_CONFIG,
-  DAY_VISIBLE_END_MIN,
-  DAY_VISIBLE_SPAN_MIN,
-  DAY_VISIBLE_START_MIN,
   GRID_BODY_MIN_H,
   HOUR_PX,
   SHIFT_MARKER_LAYOUTS,
@@ -66,26 +61,6 @@ import {
   Triangle,
   Sun,
 } from "lucide-react";
-
-const DRAG_SNAP_MINUTES = 15;
-const MIN_DRAG_PX = 10;
-
-function clamp(n: number, lo: number, hi: number) {
-  return Math.min(Math.max(n, lo), hi);
-}
-
-function yPxToScheduleMinutes(yPx: number): number {
-  const y = clamp(yPx, 0, GRID_BODY_MIN_H);
-  const frac = y / GRID_BODY_MIN_H;
-  const minsFloat = DAY_VISIBLE_START_MIN + frac * DAY_VISIBLE_SPAN_MIN;
-  const snapped =
-    Math.round(minsFloat / DRAG_SNAP_MINUTES) * DRAG_SNAP_MINUTES;
-  return clamp(snapped, DAY_VISIBLE_START_MIN, DAY_VISIBLE_END_MIN);
-}
-
-function dayWithMinutes(day: Date, minutesFromMidnight: number): Date {
-  return addMinutes(startOfDay(day), minutesFromMidnight);
-}
 
 const panelLight =
   "rounded-2xl border border-zinc-200/90 bg-white shadow-sm shadow-zinc-200/40 dark:border-zinc-600/80 dark:bg-zinc-900/95 dark:shadow-black/40";
@@ -214,22 +189,6 @@ export function SchoolEventScheduler({
     defaultSchoolLayerVisibility,
   );
   const [rightTab, setRightTab] = useState<"list" | "about">("list");
-  const [dragPreview, setDragPreview] = useState<{
-    colIdx: number;
-    topPx: number;
-    heightPx: number;
-  } | null>(null);
-  const [preferredSlotRange, setPreferredSlotRange] = useState<{
-    start: Date;
-    end: Date;
-  } | null>(null);
-  const dragSessionRef = useRef<{
-    day: Date;
-    colIdx: number;
-    layer: HTMLDivElement;
-    startY: number;
-    pointerId: number;
-  } | null>(null);
 
   const anchor = date ?? new Date();
   const weekStart = useMemo(
@@ -307,121 +266,12 @@ export function SchoolEventScheduler({
     return out;
   }, [mergedSchoolCalendarEvents, weekDays]);
 
-  useEffect(() => {
-    if (!date) return;
-    setPreferredSlotRange((prev) => {
-      if (!prev) return null;
-      if (!isSameDay(prev.start, date)) return null;
-      return prev;
-    });
-  }, [date]);
-
   function toggleLayer(id: SchoolSidebarLayerKey) {
     setLayerOn((p) => ({ ...p, [id]: !p[id] }));
   }
 
   function shiftWeek(deltaWeeks: number) {
     setDate((d) => addDays(d ?? new Date(), deltaWeeks * 7));
-  }
-
-  function handleSlotQuickPick(slotDay: Date, slotHour: number) {
-    const startMin = slotHour * 60;
-    const endMin = startMin + 60;
-    if (startMin < DAY_VISIBLE_START_MIN || endMin > DAY_VISIBLE_END_MIN) {
-      toast.message("Энэ цагийн мужнаас гадуур байна", {
-        description: `${CALENDAR_VIEW_CONFIG.dayVisible.start}–${CALENDAR_VIEW_CONFIG.dayVisible.end} хооронд сонгоно уу.`,
-      });
-      return;
-    }
-    setDate(slotDay);
-    setRightTab("list");
-    setPreferredSlotRange({
-      start: dayWithMinutes(slotDay, startMin),
-      end: dayWithMinutes(slotDay, endMin),
-    });
-    toast.message("Цаг сонгогдлоо", {
-      description: `${format(slotDay, "EEEE, MMM d", { locale: mn })} · ${String(slotHour).padStart(2, "0")}:00–${String(slotHour + 1).padStart(2, "0")}:00`,
-    });
-  }
-
-  function commitDragOrTap(
-    slotDay: Date,
-    startY: number,
-    endY: number,
-    wasDrag: boolean,
-  ) {
-    if (wasDrag) {
-      let lo = yPxToScheduleMinutes(startY);
-      let hi = yPxToScheduleMinutes(endY);
-      if (hi < lo) [lo, hi] = [hi, lo];
-      if (hi - lo < DRAG_SNAP_MINUTES) hi = lo + DRAG_SNAP_MINUTES;
-      hi = Math.min(hi, DAY_VISIBLE_END_MIN);
-      setDate(slotDay);
-      setRightTab("list");
-      const a = dayWithMinutes(slotDay, lo);
-      const b = dayWithMinutes(slotDay, hi);
-      setPreferredSlotRange({ start: a, end: b });
-      toast.message("Завсар сонгогдлоо", {
-        description: `${format(slotDay, "MMM d", { locale: mn })} · ${format(a, "HH:mm")}–${format(b, "HH:mm")}`,
-      });
-      return;
-    }
-    const frac = clamp(endY, 0, GRID_BODY_MIN_H) / GRID_BODY_MIN_H;
-    const minsFloat = DAY_VISIBLE_START_MIN + frac * DAY_VISIBLE_SPAN_MIN;
-    const hour = clamp(
-      Math.floor(minsFloat / 60),
-      Math.floor(DAY_VISIBLE_START_MIN / 60),
-      Math.ceil(DAY_VISIBLE_END_MIN / 60) - 1,
-    );
-    handleSlotQuickPick(slotDay, hour);
-  }
-
-  function onDragLayerPointerDown(
-    e: PointerEvent<HTMLDivElement>,
-    slotDay: Date,
-    colIdx: number,
-  ) {
-    if (e.button !== 0) return;
-    const el = e.target as HTMLElement | null;
-    if (el?.closest("[data-school-skip-drag]")) return;
-    const layer = e.currentTarget;
-    const rect = layer.getBoundingClientRect();
-    const y = clamp(e.clientY - rect.top, 0, GRID_BODY_MIN_H);
-    dragSessionRef.current = {
-      day: slotDay,
-      colIdx,
-      layer,
-      startY: y,
-      pointerId: e.pointerId,
-    };
-    setDragPreview({ colIdx, topPx: y, heightPx: 0 });
-    layer.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  }
-
-  function onDragLayerPointerMove(e: PointerEvent<HTMLDivElement>) {
-    const s = dragSessionRef.current;
-    if (!s || e.pointerId !== s.pointerId) return;
-    const rect = s.layer.getBoundingClientRect();
-    const y = clamp(e.clientY - rect.top, 0, GRID_BODY_MIN_H);
-    const topPx = Math.min(s.startY, y);
-    const heightPx = Math.max(Math.abs(y - s.startY), 1);
-    setDragPreview({ colIdx: s.colIdx, topPx, heightPx });
-  }
-
-  function onDragLayerPointerUp(e: PointerEvent<HTMLDivElement>) {
-    const s = dragSessionRef.current;
-    if (!s || e.pointerId !== s.pointerId) return;
-    const rect = s.layer.getBoundingClientRect();
-    const endY = clamp(e.clientY - rect.top, 0, GRID_BODY_MIN_H);
-    if (s.layer.hasPointerCapture(e.pointerId)) {
-      s.layer.releasePointerCapture(e.pointerId);
-    }
-    dragSessionRef.current = null;
-    setDragPreview(null);
-    const delta = Math.abs(endY - s.startY);
-    const wasDrag = delta >= MIN_DRAG_PX;
-    commitDragOrTap(s.day, s.startY, endY, wasDrag);
   }
 
   const selectedLabel = date
@@ -978,27 +828,6 @@ export function SchoolEventScheduler({
                             Багшийн шалгалт — ирээдүйд GraphQL
                           </div>
                         ) : null}
-                        {dragPreview?.colIdx === colIdx ? (
-                          <div
-                            className="pointer-events-none absolute right-1 left-1 z-[7] rounded-md border border-sky-600/45 bg-sky-400/25 shadow-sm ring-1 ring-sky-400/30 dark:border-sky-500/50 dark:bg-sky-500/20"
-                            style={{
-                              top: dragPreview.topPx,
-                              height: Math.max(dragPreview.heightPx, 4),
-                            }}
-                            aria-hidden
-                          />
-                        ) : null}
-                        <div
-                          className="absolute inset-0 z-[6] cursor-crosshair touch-none rounded-[inherit] select-none"
-                          style={{ touchAction: "none" }}
-                          onPointerDown={(e) =>
-                            onDragLayerPointerDown(e, d, colIdx)
-                          }
-                          onPointerMove={onDragLayerPointerMove}
-                          onPointerUp={onDragLayerPointerUp}
-                          onPointerCancel={onDragLayerPointerUp}
-                          aria-label={`${format(d, "EEEE", { locale: mn })} — чирж эсвэл дарж цаг сонгоно`}
-                        />
                       </div>
                     ))}
                   </div>
@@ -1056,22 +885,6 @@ export function SchoolEventScheduler({
               <div className="flex-1 overflow-y-auto bg-zinc-50/40 p-4 dark:bg-zinc-950/60">
                 {rightTab === "list" ? (
                   <div className="space-y-4">
-                    {preferredSlotRange &&
-                    date &&
-                    isSameDay(preferredSlotRange.start, date) ? (
-                      <div className="rounded-xl border border-sky-200/90 bg-sky-50/80 px-3 py-2.5 text-xs text-sky-950 shadow-sm dark:border-sky-800/80 dark:bg-sky-950/40 dark:text-sky-50">
-                        <p className="font-semibold text-sky-900 dark:text-sky-100">
-                          Сонгосон завсар
-                        </p>
-                        <p className="mt-1 font-medium">
-                          {format(date, "EEEE, MMM d", { locale: mn })}
-                        </p>
-                        <p className="mt-0.5 tabular-nums text-sky-900/90 dark:text-sky-200/90">
-                          {format(preferredSlotRange.start, "HH:mm")} –{" "}
-                          {format(preferredSlotRange.end, "HH:mm")}
-                        </p>
-                      </div>
-                    ) : null}
                     <div className={cn(panelLight, "overflow-hidden p-0")}>
                       <div className="flex flex-col gap-0.5 border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
                         <div className="flex items-center gap-2">
