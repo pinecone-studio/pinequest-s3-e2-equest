@@ -13,7 +13,6 @@ export const users = sqliteTable("users", {
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
 
-  // Хуанли дээр харагдах товч нэр (ж: "Г.Бат-Эрдэнэ")
   shortName: text("short_name"),
 
   // Одоохондоо заавал биш (нэг имэйл давтагдахгүй байхад unique)

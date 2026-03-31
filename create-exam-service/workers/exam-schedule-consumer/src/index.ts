@@ -30,12 +30,50 @@ type SchedulerMessageBody = {
 function extractJsonObject(text: string): Record<string, unknown> {
   const trimmed = text.trim();
   const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
+  if (start === -1) {
     throw new Error("JSON объект олдсонгүй");
   }
-  const raw = trimmed.slice(start, end + 1);
-  return JSON.parse(raw) as Record<string, unknown>;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < trimmed.length; i += 1) {
+    const ch = trimmed[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      depth += 1;
+      continue;
+    }
+    if (ch !== "}") continue;
+
+    depth -= 1;
+    if (depth === 0) {
+      const raw = trimmed.slice(start, i + 1);
+      return JSON.parse(raw) as Record<string, unknown>;
+    }
+  }
+
+  throw new Error("JSON объект бүрэн хаагдсангүй");
 }
 
 async function runScheduler(

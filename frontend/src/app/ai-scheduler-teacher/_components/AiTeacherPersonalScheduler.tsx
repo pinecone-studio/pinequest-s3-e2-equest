@@ -98,6 +98,7 @@ import {
   Moon,
   PanelRight,
   Play,
+  CheckCircle2,
   Sun,
   Target,
   Square,
@@ -116,14 +117,6 @@ const CONFIRMED_EXAM_DEMO = {
   startM: 35,
   endH: 13,
   endM: 15,
-} as const;
-
-/** Жишээ: AI draft (Лхагва — багана 2, II ээлжийн 6-р цаг). */
-const AI_DRAFT_DEMO = {
-  startH: 17,
-  startM: 25,
-  endH: 18,
-  endM: 5,
 } as const;
 
 function formatPeriodClockRange(
@@ -225,6 +218,24 @@ const WEEKDAY_LETTER_MN: Record<number, string> = {
 const DEFAULT_TEST_ID = "a1000000-0000-4000-8000-000000000001";
 const DEFAULT_CLASS_ID = "10A";
 const DEFAULT_SEMESTER_ID = "2026-SPRING";
+const TEACHER_SELECTION_STORAGE_KEY = "ai-scheduler-teacher:selectedTeacherId";
+const AI_SCHEDULING_PROGRESS_MN = [
+  "Хүсэлтийг хүлээн авлаа",
+  "Анги, багш, танхимын мэдээллийг шалгаж байна",
+  "Тохиромжтой цагийн хувилбаруудыг тооцоолж байна",
+] as const;
+
+const AI_TOAST_STEPS = [
+  {
+    title: "🗓️ Сургуулийн арга хэмжээг тулгаж байна...",
+  },
+  {
+    title: "👨‍🏫 Багш нарын сул цагийг хайж байна...",
+  },
+  {
+    title: "✅ Шалгалтын 3 хувилбарыг багцалж байна...",
+  },
+] as const;
 
 const panelLight =
   "rounded-2xl border border-zinc-200/90 bg-white shadow-sm shadow-zinc-200/40 dark:border-zinc-600/80 dark:bg-zinc-900/95 dark:shadow-black/40";
@@ -466,8 +477,8 @@ const CALENDAR_LAYERS: {
   },
   {
     id: "personal",
-    label: "Хувийн (Sync)",
-    role: "Google Calendar-аас синк хийсэн хувийн завгүй цагууд (Private).",
+    label: "Хувийн завгүй цаг",
+    role: "Google Calendar-аас татсан хувийн завгүй цагууд (Private).",
     swatch: "bg-slate-100",
     style: "ring-1 ring-slate-300/80 dark:bg-slate-800 dark:ring-slate-600/80",
   },
@@ -572,15 +583,120 @@ export function AiTeacherPersonalScheduler({
   /** I = өглөөний ээлж (ахлах), II = өдрийн ээлж (бага анги) — анхны scroll төвлөрөлт. */
   const [teacherShift, setTeacherShift] =
     useState<TeacherShiftId>(defaultTeacherShift);
-  const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(TEACHER_SELECTION_STORAGE_KEY) ?? "";
+  });
   const [teacherPickerOpen, setTeacherPickerOpen] = useState(false);
   const calendarMainRef = useRef<HTMLElement>(null);
   const calendarFocusAnchorRef = useRef<HTMLDivElement>(null);
   const toastKeyRef = useRef<string>("");
+  const aiProgressToastIdRef = useRef<string | number | null>(null);
+  const aiProgressStepRef = useRef(0);
 
   useEffect(() => {
     setTeacherShift(defaultTeacherShift);
   }, [defaultTeacherShift]);
+
+  useEffect(() => {
+    if (!pollExamId) {
+      aiProgressToastIdRef.current = null;
+      aiProgressStepRef.current = 0;
+      return;
+    }
+
+    // Step-by-step toast while polling (simulated progress).
+    const toastId =
+      aiProgressToastIdRef.current ??
+      toast.custom(() => <div />, { duration: Infinity });
+    aiProgressToastIdRef.current = toastId;
+
+    const render = () => {
+      const stepIdx = Math.max(0, Math.min(2, aiProgressStepRef.current));
+      toast.custom(
+        (id) => (
+          <div className="w-[min(92vw,26rem)] rounded-2xl border border-blue-100 bg-white px-4 py-3 shadow-lg shadow-blue-100/40 dark:border-blue-500/20 dark:bg-zinc-900 dark:shadow-black/30">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  AI Тооцоолол: [Step {stepIdx + 1}/3]
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                  {AI_TOAST_STEPS[stepIdx]?.title ?? "Тооцоолж байна..."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => toast.dismiss(id)}
+                className="text-xs text-zinc-400 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+                aria-label="Мэдэгдэл хаах"
+              >
+                Хаах
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {AI_TOAST_STEPS.map((s, i) => {
+                const done = i < stepIdx;
+                const active = i === stepIdx;
+                return (
+                  <div key={s.title} className="flex items-center gap-2">
+                    {done ? (
+                      <CheckCircle2
+                        className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                        aria-hidden
+                      />
+                    ) : active ? (
+                      <span className="inline-flex size-4 shrink-0 items-center justify-center">
+                        <span className="inline-block size-2.5 rounded-full bg-blue-500 animate-pulse dark:bg-blue-400" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex size-4 shrink-0 items-center justify-center">
+                        <span className="inline-block size-2.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        "text-[11px] leading-snug",
+                        done
+                          ? "text-emerald-700 dark:text-emerald-300"
+                          : active
+                            ? "text-zinc-800 dark:text-zinc-100"
+                            : "text-zinc-500 dark:text-zinc-400",
+                      )}
+                    >
+                      {s.title}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ),
+        { id: toastId, duration: Infinity },
+      );
+    };
+
+    render();
+    const t = setInterval(() => {
+      aiProgressStepRef.current = (aiProgressStepRef.current + 1) % 3;
+      render();
+    }, 2200);
+
+    return () => clearInterval(t);
+  }, [pollExamId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (selectedTeacherId) {
+      window.localStorage.setItem(
+        TEACHER_SELECTION_STORAGE_KEY,
+        selectedTeacherId,
+      );
+      return;
+    }
+    window.localStorage.removeItem(TEACHER_SELECTION_STORAGE_KEY);
+  }, [selectedTeacherId]);
 
   type GetTeachersListData = { getTeachersList: Teacher[] };
   type GetTeachersListVars = { grades?: number[] };
@@ -605,7 +721,10 @@ export function AiTeacherPersonalScheduler({
 
     const first = teacherOptions[0]?.id ?? "";
     if (first) {
-      // Хэрэв өмнө нь fallback mock ID тавигдсан бол real жагсаалтын 1-р багш руу шилжүүлнэ.
+      if (teacherOptions.some((t) => t.id === selectedTeacherId)) {
+        return;
+      }
+      // Хэрэв өмнө нь fallback mock ID эсвэл хоосон байсан бол real жагсаалтын 1-р багш руу шилжүүлнэ.
       if (!selectedTeacherId || selectedTeacherId === DEFAULT_MOCK_TEACHER_ID) {
         setSelectedTeacherId(first);
       }
@@ -699,16 +818,18 @@ export function AiTeacherPersonalScheduler({
   const selectedTeacher = useMemo(() => {
     const mock =
       getMockTeacherById(DEFAULT_MOCK_TEACHER_ID) ?? MOCK_I_SHIFT_TEACHERS[0];
-    const displayName = selectedTeacherRow?.shortName?.trim()
-      ? selectedTeacherRow.shortName
-      : selectedTeacherRow
-        ? `${selectedTeacherRow.lastName} ${selectedTeacherRow.firstName}`
+    const fallbackRealTeacher = teacherOptions[0] ?? null;
+    const baseTeacher = selectedTeacherRow ?? fallbackRealTeacher;
+    const displayName = baseTeacher?.shortName?.trim()
+      ? baseTeacher.shortName
+      : baseTeacher
+        ? `${baseTeacher.lastName} ${baseTeacher.firstName}`
         : mock.displayName;
-    const roleNote = selectedTeacherRow
-      ? `${teacherDepartmentLabel(selectedTeacherRow.department)} · ${teacherTeachingLevelLabel(selectedTeacherRow.teachingLevel)} · ${selectedTeacherRow.workLoadLimit}/өдөр`
+    const roleNote = baseTeacher
+      ? `${teacherDepartmentLabel(baseTeacher.department)} · ${teacherTeachingLevelLabel(baseTeacher.teachingLevel)} · ${baseTeacher.workLoadLimit}/өдөр`
       : mock.roleNote;
     return { ...mock, displayName, roleNote };
-  }, [selectedTeacherRow, selectedTeacherId]);
+  }, [selectedTeacherRow, teacherOptions]);
 
   type PrimaryLesson = MockPrimaryLesson & { roomNumber?: string | null };
 
@@ -797,6 +918,10 @@ export function AiTeacherPersonalScheduler({
     const st = row.status;
     if (st === "suggested") {
       setPollExamId(null);
+      if (aiProgressToastIdRef.current != null) {
+        toast.dismiss(aiProgressToastIdRef.current);
+        aiProgressToastIdRef.current = null;
+      }
       const key = `${row.id}:suggested`;
       if (toastKeyRef.current === key) return;
       toastKeyRef.current = key;
@@ -809,6 +934,10 @@ export function AiTeacherPersonalScheduler({
     const key = `${row.id}:${st}`;
     if (toastKeyRef.current === key) return;
     toastKeyRef.current = key;
+    if (aiProgressToastIdRef.current != null) {
+      toast.dismiss(aiProgressToastIdRef.current);
+      aiProgressToastIdRef.current = null;
+    }
     if (st === "confirmed") {
       toast.success("Хуваарь баталгаажлаа.");
     } else if (st === "rejected") {
@@ -902,9 +1031,7 @@ export function AiTeacherPersonalScheduler({
           setPollExamId(payload.examId);
           setRightTab("ai");
         }
-        toast.success(payload.message, {
-          description: payload.examId ? `examId: ${payload.examId}` : undefined,
-        });
+        // Step-by-step toast will be shown while pollExamId is active.
       } else {
         toast.error(payload?.message ?? "Дараалалд оруулахад алдаа гарлаа.");
       }
@@ -1285,7 +1412,7 @@ export function AiTeacherPersonalScheduler({
             {pollExamId ? (
               <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
                 <Loader2 className="size-3.5 animate-spin text-blue-600 dark:text-blue-400" />
-                Синк…
+                AI туслах ажиллаж байна
               </span>
             ) : null}
           </div>
@@ -1829,41 +1956,6 @@ export function AiTeacherPersonalScheduler({
                             </div>
                           ) : null}
 
-                          {layerOn.ai_draft && colIdx === 2 && !suggested ? (
-                            <div
-                              className="absolute left-1 right-1 z-1 rounded-xl border-2 border-dashed border-violet-400/90 bg-violet-50/95 px-2 py-1.5 text-[10px] font-semibold leading-tight text-violet-950 opacity-90 shadow-sm ring-1 ring-violet-200/70 dark:border-violet-500 dark:bg-violet-950/40 dark:text-violet-100 dark:ring-violet-800/50"
-                              style={{
-                                top: `${slotTopPercent(
-                                  AI_DRAFT_DEMO.startH,
-                                  AI_DRAFT_DEMO.startM,
-                                )}%`,
-                                height: `${blockHeightPercent(
-                                  AI_DRAFT_DEMO.startH,
-                                  AI_DRAFT_DEMO.startM,
-                                  AI_DRAFT_DEMO.endH,
-                                  AI_DRAFT_DEMO.endM,
-                                )}%`,
-                                minHeight: "52px",
-                              }}
-                            >
-                              {AI_DRAFT_INTENT_META[aiDraftIntent].draftTitle}
-                              <span className="mt-0.5 block font-normal text-violet-700 dark:text-violet-300">
-                                {formatBlockDuration(
-                                  AI_DRAFT_DEMO.startH,
-                                  AI_DRAFT_DEMO.startM,
-                                  AI_DRAFT_DEMO.endH,
-                                  AI_DRAFT_DEMO.endM,
-                                )}
-                              </span>
-                              <span className="mt-0.5 block text-[9px] font-normal text-violet-600/90 dark:text-violet-400/90">
-                                {
-                                  AI_DRAFT_INTENT_META[aiDraftIntent]
-                                    .draftSubtitle
-                                }
-                              </span>
-                            </div>
-                          ) : null}
-
                           {layerOn.ai_draft && suggested ? (
                             <>
                               {showJob?.aiVariants?.map((v) => {
@@ -2161,9 +2253,23 @@ export function AiTeacherPersonalScheduler({
                       </ul>
                     </div>
                     {pollExamId ? (
-                      <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                        <Loader2 className="size-3.5 animate-spin text-blue-600 dark:text-blue-400" />
-                        getAiExamSchedule…
+                      <div className="rounded-xl border border-zinc-200 bg-white px-3 py-3 text-xs text-zinc-600 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="size-3.5 animate-spin text-blue-600 dark:text-blue-400" />
+                          <span className="font-medium text-zinc-800 dark:text-zinc-100">
+                            AI туслах цаг товлож байна
+                          </span>
+                        </div>
+                        <ul className="mt-2 space-y-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          {AI_SCHEDULING_PROGRESS_MN.map((line, i) => (
+                            <li key={line} className="flex gap-2">
+                              <span className="mt-[3px] inline-block size-1.5 shrink-0 rounded-full bg-blue-400/80 dark:bg-blue-300/70" />
+                              <span>
+                                {i + 1}. {line}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     ) : null}
 
