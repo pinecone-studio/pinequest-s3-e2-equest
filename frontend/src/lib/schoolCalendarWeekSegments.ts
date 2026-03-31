@@ -7,7 +7,16 @@ import {
   blockHeightPercent,
   slotTopPercent,
 } from "@/constants/calendar";
-import type { SchoolCalendarEvent } from "@/gql/graphql";
+
+// NOTE: create-exam-service GraphQL schema-д school calendar type одоогоор байхгүй.
+// UI layer дээр mock/өөр эх сурвалжаас ирэх event shape-ийг энд local type-оор барина.
+export type SchoolCalendarEvent = {
+  id: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+  allDay: boolean;
+};
 
 export type SchoolCalendarWeekSegment = {
   eventId: string;

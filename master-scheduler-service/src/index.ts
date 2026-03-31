@@ -191,6 +191,29 @@ function extractModelIdsFromListModelsResponse(data: any): string[] {
   return Array.from(new Set(ids));
 }
 
+function extractJsonArray(text: string): string {
+  const unfenced = (text ?? "").replace(/```json|```/g, "").trim();
+  const start = unfenced.indexOf("[");
+  const end = unfenced.lastIndexOf("]");
+  return start >= 0 && end >= 0 && end > start ? unfenced.slice(start, end + 1) : unfenced;
+}
+
+async function parseJsonArrayWithRepair(model: any, rawText: string): Promise<any[]> {
+  const jsonText = extractJsonArray(rawText);
+  try {
+    const parsed = JSON.parse(jsonText);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    const repairPrompt =
+      `Fix the following into STRICT valid JSON (no markdown, no trailing commas). ` +
+      `Output ONLY the JSON array.\n\n${jsonText}`;
+    const repaired = await model.generateContent(repairPrompt);
+    const repairedJson = extractJsonArray(repaired.response.text());
+    const parsed2 = JSON.parse(repairedJson);
+    return Array.isArray(parsed2) ? parsed2 : [];
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -510,6 +533,7 @@ export default {
           hoursPerSession: c.hoursPerSession,
           semesterId: c.semesterId,
         }));
+        const teacherIdsThisGroup = new Set(curriculum.map((c: any) => c.teacherId).filter(Boolean));
         const groups = [
           {
             id: group.id,
@@ -520,20 +544,30 @@ export default {
             homeClassroomId: group.homeClassroomId,
           },
         ];
+        // Reduce payload size: we mainly need valid IDs + types.
         const classrooms = allRooms.map((r: any) => ({
           id: r.id,
-          capacity: r.capacity,
           type: r.type,
-          status: r.status,
-          floor: r.floor,
+          capacity: r.capacity,
         }));
-        const periods = allPeriods.map((p: any) => ({
-          id: p.id,
-          shift: p.shift,
-          periodNumber: p.periodNumber,
-          startTime: p.startTime,
-          endTime: p.endTime,
-        }));
+        const shiftPeriods = allPeriods
+          .filter((p: any) => Number(p.shift) === Number(group.shift))
+          .map((p: any) => ({
+            id: p.id,
+            shift: p.shift,
+            periodNumber: p.periodNumber,
+          }));
+        // Keep legacy variable name used in retry prompts.
+        const periods = shiftPeriods;
+
+        const occupiedTeacherSlotsSmall = occupiedTeacherSlots.filter((s: any) =>
+          teacherIdsThisGroup.has(s.teacherId),
+        );
+        // Room conflicts can be enforced by DB unique index; keep a small hint set (LAB + home room only).
+        const candidateRoomIds = new Set<string>();
+        if (group.homeClassroomId) candidateRoomIds.add(String(group.homeClassroomId));
+        for (const r of classrooms) if (String(r.type).toUpperCase() === "LAB") candidateRoomIds.add(String(r.id));
+        const occupiedRoomSlotsSmall = occupiedRoomSlots.filter((s: any) => candidateRoomIds.has(String(s.classroomId)));
 
         // 3) AI PROMPT БЭЛДЭХ
         const prompt = `
@@ -544,9 +578,9 @@ export default {
           - Төлөвлөгөө (Curriculum): ${JSON.stringify(curriculum)}
           - Ангиуд (Groups): ${JSON.stringify(groups)}
           - Өрөөнүүд (Classrooms): ${JSON.stringify(classrooms)}
-          - Цаг (Periods): ${JSON.stringify(periods)}
-          - Бөглөрсөн багшийн слот (Other groups): ${JSON.stringify(occupiedTeacherSlots)}
-          - Бөглөрсөн өрөөний слот (All): ${JSON.stringify(occupiedRoomSlots)}
+          - Цаг (Periods): ${JSON.stringify(shiftPeriods)}
+          - Бөглөрсөн багшийн слот (This group's teachers): ${JSON.stringify(occupiedTeacherSlotsSmall)}
+          - Бөглөрсөн өрөөний слот (Hints only): ${JSON.stringify(occupiedRoomSlotsSmall)}
 
           ХАТУУ ДҮРЭМ:
           1. Энэ ангийн curriculum бүрийн weeklyHours-г бүрэн гүйцэт төлөвлө.
@@ -581,38 +615,20 @@ export default {
 
         // 4) AI-аас хариу авах
         const result = await model.generateContent(prompt);
-        const responseText = result.response.text().trim();
-        const unfenced = responseText.replace(/```json|```/g, "").trim();
-        const start = unfenced.indexOf("[");
-        const end = unfenced.lastIndexOf("]");
-        const jsonText =
-          start >= 0 && end >= 0 && end > start ? unfenced.slice(start, end + 1) : unfenced;
-
         let scheduleItems: any[];
         try {
-          scheduleItems = JSON.parse(jsonText);
-        } catch (e: any) {
-          // 2nd attempt: ask the model to repair into valid JSON only.
-          const repairPrompt = `Fix the following into STRICT valid JSON (no markdown, no trailing commas). Output ONLY the JSON array.\n\n${jsonText}`;
-          const repaired = await model.generateContent(repairPrompt);
-          const repairedText = repaired.response.text().replace(/```json|```/g, "").trim();
-          const rs = repairedText.indexOf("[");
-          const re = repairedText.lastIndexOf("]");
-          const repairedJson =
-            rs >= 0 && re >= 0 && re > rs ? repairedText.slice(rs, re + 1) : repairedText;
-          try {
-            scheduleItems = JSON.parse(repairedJson);
-          } catch (e2: any) {
-            return Response.json(
-              {
-                error: `AI returned invalid JSON: ${e2?.message ?? String(e2)}`,
-                model: env.GEMINI_MODEL ?? "gemini-2.5-flash",
-                rawHead: repairedJson.slice(0, 2000),
-                rawTail: repairedJson.slice(Math.max(0, repairedJson.length - 2000)),
-              },
-              { status: 500 }
-            );
-          }
+          scheduleItems = await parseJsonArrayWithRepair(model, result.response.text());
+        } catch (e2: any) {
+          const raw = extractJsonArray(result.response.text());
+          return Response.json(
+            {
+              error: `AI returned invalid JSON: ${e2?.message ?? String(e2)}`,
+              model: modelOverride ?? env.GEMINI_MODEL ?? "gemini-2.5-flash",
+              rawHead: raw.slice(0, 2000),
+              rawTail: raw.slice(Math.max(0, raw.length - 2000)),
+            },
+            { status: 500 },
+          );
         }
 
         // 4.5) Validate completeness (weeklyHours) and retry once if needed
@@ -620,24 +636,39 @@ export default {
         for (const c of curriculum) requiredByCurriculumId.set(c.id, Number(c.weeklyHours) || 0);
 
         const allowedCurriculumIds = new Set(curriculum.map((c: any) => c.id));
-        const normalized = Array.isArray(scheduleItems) ? scheduleItems : [];
-        scheduleItems = normalized.filter(
-          (it: any) => it && allowedCurriculumIds.has(it.curriculumId) && it.semesterId === semesterId,
-        );
+        const normalizeForCounting = (items: any[]) =>
+          items
+            .filter((it) => it && typeof it === "object")
+            .map((it) => ({
+              ...it,
+              curriculumId: (it as any).curriculumId,
+              // If model omitted semesterId, default it (we enforce later anyway).
+              semesterId: String((it as any).semesterId ?? semesterId),
+            }))
+            .filter((it) => allowedCurriculumIds.has(it.curriculumId) && it.semesterId === semesterId);
 
-        const countByCurriculumId = new Map<string, number>();
-        for (const it of scheduleItems) {
-          const k = String(it.curriculumId);
-          countByCurriculumId.set(k, (countByCurriculumId.get(k) ?? 0) + 1);
-        }
+        const computeMissing = (items: any[]) => {
+          const countByCurriculumId = new Map<string, number>();
+          for (const it of items) {
+            const k = String(it.curriculumId);
+            countByCurriculumId.set(k, (countByCurriculumId.get(k) ?? 0) + 1);
+          }
+          const missing: Array<{ curriculumId: string; required: number; got: number }> = [];
+          for (const [cid, required] of requiredByCurriculumId.entries()) {
+            const got = countByCurriculumId.get(cid) ?? 0;
+            if (required > 0 && got !== required) missing.push({ curriculumId: cid, required, got });
+          }
+          return missing;
+        };
 
-        const missing: Array<{ curriculumId: string; required: number; got: number }> = [];
-        for (const [cid, required] of requiredByCurriculumId.entries()) {
-          const got = countByCurriculumId.get(cid) ?? 0;
-          if (required > 0 && got !== required) missing.push({ curriculumId: cid, required, got });
-        }
+        // Retry a few times until weeklyHours counts match exactly.
+        let lastMissing: Array<{ curriculumId: string; required: number; got: number }> = [];
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          scheduleItems = normalizeForCounting(Array.isArray(scheduleItems) ? scheduleItems : []);
+          const missing = computeMissing(scheduleItems);
+          lastMissing = missing;
+          if (missing.length === 0) break;
 
-        if (missing.length > 0) {
           const retryPrompt = `
 You MUST return STRICT JSON array only.
 Goal: fix/extend the schedule for groupId=${groupId} semesterId=${semesterId}.
@@ -654,11 +685,23 @@ OccupiedRoomSlots: ${JSON.stringify(occupiedRoomSlots)}
 Return FULL corrected schedule array (not just diffs).
 `;
           const retry = await model.generateContent(retryPrompt);
-          const t = retry.response.text().replace(/```json|```/g, "").trim();
-          const s2 = t.indexOf("[");
-          const e2 = t.lastIndexOf("]");
-          const j2 = s2 >= 0 && e2 >= 0 && e2 > s2 ? t.slice(s2, e2 + 1) : t;
-          scheduleItems = JSON.parse(j2);
+          scheduleItems = await parseJsonArrayWithRepair(model, retry.response.text());
+        }
+
+        // If still incomplete after retries, fail clearly (avoid inserting partial schedules).
+        scheduleItems = normalizeForCounting(Array.isArray(scheduleItems) ? scheduleItems : []);
+        lastMissing = computeMissing(scheduleItems);
+        if (lastMissing.length > 0) {
+          return Response.json(
+            {
+              error: "AI could not generate a complete schedule after retries.",
+              missing: lastMissing,
+              count: scheduleItems.length,
+              groupId,
+              semesterId,
+            },
+            { status: 422 },
+          );
         }
 
         // 4.6) Validation + sanitization before DB (өдөр/цаг/өрөө)
@@ -700,11 +743,7 @@ OccupiedRoomSlots: ${JSON.stringify(occupiedRoomSlots)}
 Return FULL corrected schedule array (not just diffs).
 `;
           const retry2 = await model.generateContent(retryPrompt2);
-          const t2 = retry2.response.text().replace(/```json|```/g, "").trim();
-          const s3 = t2.indexOf("[");
-          const e3 = t2.lastIndexOf("]");
-          const j3 = s3 >= 0 && e3 >= 0 && e3 > s3 ? t2.slice(s3, e3 + 1) : t2;
-          scheduleItems = JSON.parse(j3);
+          scheduleItems = await parseJsonArrayWithRepair(model, retry2.response.text());
         }
 
         sanitized = sanitizeScheduleItems(scheduleItems, sanitizeCtx);
@@ -738,7 +777,7 @@ Return FULL corrected schedule array (not just diffs).
         let inserted = 0;
         if (scheduleItems.length > 0) {
           // D1/SQLite variable limits vary; keep chunks small to avoid "too many SQL variables"
-          const chunkSize = 25;
+          const chunkSize = 10;
           for (let i = 0; i < scheduleItems.length; i += chunkSize) {
             const chunk = scheduleItems.slice(i, i + chunkSize);
             const rows = chunk.map((item: any) => ({
@@ -763,12 +802,29 @@ Return FULL corrected schedule array (not just diffs).
                 ],
               });
 
-            inserted += Array.isArray(res) ? res.length : rows.length;
+            // D1 returns write meta; Drizzle may not return inserted rows. Count requested rows as "attempted",
+            // and compare with final DB counts if needed.
+            inserted += rows.length;
           }
         }
 
-        return Response.json({ 
-          success: true, 
+        if (inserted !== scheduleItems.length) {
+          return Response.json(
+            {
+              success: false,
+              error:
+                "Schedule generation produced rows but not all could be inserted (likely room/time conflicts or DB constraints).",
+              count: scheduleItems.length,
+              inserted,
+              groupId,
+              semesterId,
+            },
+            { status: 409 },
+          );
+        }
+
+        return Response.json({
+          success: true,
           message: "Хуваарь амжилттай үүсэж хадгалагдлаа.",
           count: scheduleItems.length,
           inserted,

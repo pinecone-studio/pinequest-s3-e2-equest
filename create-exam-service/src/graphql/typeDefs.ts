@@ -248,10 +248,46 @@ export const typeDefs = /* GraphQL */ `
     updatedAt: String!
   }
 
+  type Teacher {
+    id: ID!
+    firstName: String!
+    lastName: String!
+    shortName: String
+    email: String
+    department: String!
+    teachingLevel: String!
+    role: String!
+    workLoadLimit: Int!
+  }
+
+  type TeacherMainLesson {
+    id: ID!
+    dayOfWeek: Int!
+    semesterId: String!
+    isDraft: Boolean!
+    groupId: String!
+    gradeLevel: Int!
+    subjectId: String!
+    subjectName: String!
+    classroomId: String!
+    classroomRoomNumber: String!
+    periodId: Int!
+    periodShift: Int!
+    periodNumber: Int!
+    startTime: String!
+    endTime: String!
+  }
+
   type Query {
     listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
     getNewMathExam(examId: ID!): NewMathExam
     getAiExamSchedule(examId: ID!): ExamSchedule
+    getTeachersList(grades: [Int!] = [9, 10, 11, 12]): [Teacher!]!
+    getTeacherMainLessonsList(
+      teacherId: ID!
+      semesterId: String = "2026-SPRING"
+      includeDraft: Boolean = false
+    ): [TeacherMainLesson!]!
   }
 
   type Mutation {

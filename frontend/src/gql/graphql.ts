@@ -318,6 +318,10 @@ export type Query = {
   /** AI scheduler: нэг мөрийн төлөв (polling-д ашиглана) */
   getAiExamSchedule?: Maybe<ExamSchedule>;
   getNewMathExam?: Maybe<NewMathExam>;
+  /** ai-scheduler-teacher: тухайн багшийн үндсэн хичээлийн (primary) хуваарь */
+  getTeacherMainLessonsList: Array<TeacherMainLesson>;
+  /** ai-scheduler-teacher: 9–12-р ангийн Math (MATH_HS) ордог багш нар */
+  getTeachersList: Array<Teacher>;
   listNewMathExams: Array<NewMathExamSummary>;
 };
 
@@ -329,6 +333,18 @@ export type QueryGetAiExamScheduleArgs = {
 
 export type QueryGetNewMathExamArgs = {
   examId: Scalars['ID']['input'];
+};
+
+
+export type QueryGetTeacherMainLessonsListArgs = {
+  includeDraft?: InputMaybe<Scalars['Boolean']['input']>;
+  semesterId?: InputMaybe<Scalars['String']['input']>;
+  teacherId: Scalars['ID']['input'];
+};
+
+
+export type QueryGetTeachersListArgs = {
+  grades?: InputMaybe<Array<Scalars['Int']['input']>>;
 };
 
 
@@ -410,3 +426,34 @@ export type SaveNewMathExamPayload = {
   updatedAt: Scalars['String']['output'];
 };
 
+export type Teacher = {
+  __typename?: 'Teacher';
+  department: Scalars['String']['output'];
+  email?: Maybe<Scalars['String']['output']>;
+  firstName: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  lastName: Scalars['String']['output'];
+  role: Scalars['String']['output'];
+  shortName?: Maybe<Scalars['String']['output']>;
+  teachingLevel: Scalars['String']['output'];
+  workLoadLimit: Scalars['Int']['output'];
+};
+
+export type TeacherMainLesson = {
+  __typename?: 'TeacherMainLesson';
+  classroomId: Scalars['String']['output'];
+  classroomRoomNumber: Scalars['String']['output'];
+  dayOfWeek: Scalars['Int']['output'];
+  endTime: Scalars['String']['output'];
+  gradeLevel: Scalars['Int']['output'];
+  groupId: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  isDraft: Scalars['Boolean']['output'];
+  periodId: Scalars['Int']['output'];
+  periodNumber: Scalars['Int']['output'];
+  periodShift: Scalars['Int']['output'];
+  semesterId: Scalars['String']['output'];
+  startTime: Scalars['String']['output'];
+  subjectId: Scalars['String']['output'];
+  subjectName: Scalars['String']['output'];
+};

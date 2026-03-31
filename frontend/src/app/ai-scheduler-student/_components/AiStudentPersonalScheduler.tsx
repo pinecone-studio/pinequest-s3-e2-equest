@@ -11,7 +11,6 @@ import {
   startOfWeek,
 } from "date-fns";
 import { mn } from "date-fns/locale";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -38,6 +37,7 @@ import {
 import {
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -123,7 +123,10 @@ function SchedulerAppearanceMenu() {
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
           {""}
         </DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
+        <DropdownMenuRadioGroup
+          value={theme ?? "system"}
+          onValueChange={setTheme}
+        >
           <DropdownMenuRadioItem value="light" className="text-sm">
             <Sun className="size-4" aria-hidden />
             Цайвар
@@ -265,6 +268,10 @@ export function AiStudentPersonalScheduler({
   );
   const [rightTab, setRightTab] = useState<"plan" | "about">("plan");
   const [shift, setShift] = useState<TeacherShiftId>(defaultShift);
+  const [selectedGrade, setSelectedGrade] = useState<"9" | "10" | "11" | "12">(
+    "9",
+  );
+  const [selectedGroup, setSelectedGroup] = useState<"A" | "B" | "C" | "D">("A");
 
   const calendarMainRef = useRef<HTMLElement>(null);
   const calendarFocusAnchorRef = useRef<HTMLDivElement>(null);
@@ -365,12 +372,74 @@ export function AiStudentPersonalScheduler({
           </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <SchedulerAppearanceMenu />
-            <Badge
-              variant="outline"
-              className="rounded-full border-zinc-200 bg-white text-[11px] text-zinc-600 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-            >
-              {selectedLabel}
-            </Badge>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 shrink-0 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  aria-label="Анги сонгох"
+                >
+                  <span className="max-w-[min(100%,10rem)] truncate">
+                    {selectedGrade}-р анги
+                  </span>
+                  <ChevronDown
+                    className="ml-2 size-4 opacity-70"
+                    aria-hidden
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>Анги</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={selectedGrade}
+                  onValueChange={(v) =>
+                    setSelectedGrade(v as "9" | "10" | "11" | "12")
+                  }
+                >
+                  <DropdownMenuRadioItem value="9">9-р анги</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="10">
+                    10-р анги
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="11">
+                    11-р анги
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="12">
+                    12-р анги
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 shrink-0 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  aria-label="Бүлэг сонгох"
+                >
+                  <span className="max-w-[min(100%,8rem)] truncate">
+                    {selectedGroup} бүлэг
+                  </span>
+                  <ChevronDown
+                    className="ml-2 size-4 opacity-70"
+                    aria-hidden
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>Бүлэг</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={selectedGroup}
+                  onValueChange={(v) => setSelectedGroup(v as "A" | "B" | "C" | "D")}
+                >
+                  <DropdownMenuRadioItem value="A">A бүлэг</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="B">B бүлэг</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="C">C бүлэг</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="D">D бүлэг</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
@@ -389,7 +458,9 @@ export function AiStudentPersonalScheduler({
             <div
               className={cn(
                 "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4",
-                shellMode ? "min-w-[min(100vw,272px)]" : "min-w-[min(100vw,272px)]",
+                shellMode
+                  ? "min-w-[min(100vw,272px)]"
+                  : "min-w-[min(100vw,272px)]",
               )}
             >
               <div className={cn(panelLight, "p-3")}>
@@ -397,13 +468,8 @@ export function AiStudentPersonalScheduler({
                   <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                     Календарь
                   </p>
-                  <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-                    Өдөр сонгох
-                  </p>
                 </div>
-                <p className="mb-2 px-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                  {selectedLabel}
-                </p>
+
                 <div className="flex justify-center">
                   <Calendar
                     mode="single"
@@ -532,8 +598,8 @@ export function AiStudentPersonalScheduler({
                           Student view (mock)
                         </p>
                         <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-                          Одоогоор зөвхөн demo өгөгдөл: батлагдсан давтлага + секц
-                          + personal төлөвлөгөө.
+                          Одоогоор зөвхөн demo өгөгдөл: батлагдсан давтлага +
+                          секц + personal төлөвлөгөө.
                         </p>
                       </div>
                     </div>
@@ -542,11 +608,6 @@ export function AiStudentPersonalScheduler({
                     </span>
                   </div>
                   <div className="mt-2 flex flex-col gap-1.5 border-t border-zinc-200/80 pt-2 dark:border-zinc-700/80 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-[9px] text-zinc-500 dark:text-zinc-500">
-                      Тор: {CALENDAR_VIEW_CONFIG.dayVisible.start}–
-                      {CALENDAR_VIEW_CONFIG.dayVisible.end}. Улаан бүсүүд нь
-                      “төлөвлөхөд тохиромжгүй” үе (shared constants).
-                    </p>
                     <div
                       className="flex shrink-0 rounded-lg border border-zinc-200 bg-white p-0.5 dark:border-zinc-600 dark:bg-zinc-900"
                       role="group"
@@ -592,7 +653,10 @@ export function AiStudentPersonalScheduler({
                   {weekDays.map((d) => {
                     const isSel = isSameDay(d, anchor);
                     return (
-                      <div key={format(d, "yyyy-MM-dd")} className="text-center">
+                      <div
+                        key={format(d, "yyyy-MM-dd")}
+                        className="text-center"
+                      >
                         <div
                           className={cn(
                             "mx-auto flex size-8 items-center justify-center rounded-full text-[11px] font-medium sm:size-9 sm:text-xs",
@@ -746,10 +810,16 @@ export function AiStudentPersonalScheduler({
                   </div>
                 </div>
 
-                <p className={cn("mt-2 text-center text-[10px] leading-relaxed", textDim)}>
+                <p
+                  className={cn(
+                    "mt-2 text-center text-[10px] leading-relaxed",
+                    textDim,
+                  )}
+                >
                   Demo: батлагдсан давтлага/секц/personal төлөвлөгөө давхарга.
-                  Дараа нь student-ийн баталгаажсан давтлага (recurrence), секцийн
-                  бүртгэл, personal төлөвлөгөө DB/GraphQL-оор орж ирэхээр солино.
+                  Дараа нь student-ийн баталгаажсан давтлага (recurrence),
+                  секцийн бүртгэл, personal төлөвлөгөө DB/GraphQL-оор орж
+                  ирэхээр солино.
                 </p>
               </div>
             </main>
@@ -809,7 +879,10 @@ export function AiStudentPersonalScheduler({
                             ["Personal төлөвлөгөө", planSummary.pln],
                           ] as const
                         ).map(([label, items]) => (
-                          <div key={label} className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                          <div
+                            key={label}
+                            className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
+                          >
                             <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                               {label} · {items.length}
                             </p>
@@ -820,7 +893,10 @@ export function AiStudentPersonalScheduler({
                             ) : (
                               <ul className="mt-2 space-y-2">
                                 {items.map((b) => (
-                                  <li key={b.id} className="flex items-start gap-2">
+                                  <li
+                                    key={b.id}
+                                    className="flex items-start gap-2"
+                                  >
                                     <span
                                       className={cn(
                                         "mt-0.5 inline-flex size-2.5 shrink-0 rounded-sm",
@@ -852,7 +928,12 @@ export function AiStudentPersonalScheduler({
                     </div>
                   </div>
                 ) : (
-                  <div className={cn(panelLight, "p-4 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300")}>
+                  <div
+                    className={cn(
+                      panelLight,
+                      "p-4 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300",
+                    )}
+                  >
                     <p>
                       Энэ дэлгэц нь багшийн “Operations Center” хэв маягийг
                       сурагчийн хэрэгцээнд тааруулж хувиргасан хувилбар.
@@ -892,4 +973,3 @@ export function AiStudentPersonalScheduler({
     </div>
   );
 }
-

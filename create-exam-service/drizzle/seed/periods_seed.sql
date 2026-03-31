@@ -1,4 +1,10 @@
-PRAGMA foreign_keys = ON;
+-- Periods нь master_schedules.period_id зэрэг FK-ийн эх хүснэгт тул
+-- эхлээд хамааралтай мөрүүдийг цэвэрлэж байж periods-ийг reset хийнэ.
+PRAGMA foreign_keys = OFF;
+
+DELETE FROM master_schedules;
+DELETE FROM ancillary_activities;
+DELETE FROM exam_schedules;
 
 DELETE FROM periods;
 
@@ -17,4 +23,6 @@ INSERT INTO periods (id, shift, period_number, start_time, end_time, break_minut
 (12, 2, 5, '16:35', '17:15', 10),
 (13, 2, 6, '17:25', '18:05', 5),
 (14, 2, 7, '18:10', '18:50', 5);
+
+PRAGMA foreign_keys = ON;
 

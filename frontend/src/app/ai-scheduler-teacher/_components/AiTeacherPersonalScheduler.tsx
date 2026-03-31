@@ -36,11 +36,15 @@ import {
 import {
   ApproveAiExamScheduleDocument,
   GetAiExamScheduleDocument,
+  GetTeachersListDocument,
+  GetTeacherMainLessonsListDocument,
   RequestAiExamScheduleDocument,
 } from "@/gql/create-exam-documents";
 import type {
   ExamSchedule,
   ExamScheduleVariant,
+  Teacher,
+  TeacherMainLesson,
   RequestExamSchedulePayload,
 } from "@/gql/graphql";
 import { cn } from "@/lib/utils";
@@ -141,8 +145,8 @@ function periodLengthMinutes(
  * хичээл/багшийн нэрийг карт дээр давтахгүй.
  */
 function primaryLessonCardModel(
-  lesson: MockPrimaryLesson,
-  opts?: { cabinetRoom?: string },
+  lesson: MockPrimaryLesson & { roomNumber?: string | null },
+  opts?: { cabinetRoom?: string; roomNumber?: string | null },
 ) {
   const v = lesson.slotVariant ?? "default";
   const mins = periodLengthMinutes(
@@ -172,7 +176,10 @@ function primaryLessonCardModel(
     };
   }
 
-  const room = roomBadgeForPrimaryLesson(lesson.title, opts?.cabinetRoom);
+  const room =
+    opts?.roomNumber?.trim?.() ||
+    lesson.roomNumber?.trim?.() ||
+    roomBadgeForPrimaryLesson(lesson.title, opts?.cabinetRoom);
   return {
     variant: v,
     headline: lesson.title,
@@ -212,10 +219,22 @@ const WEEKDAY_LETTER_MN: Record<number, string> = {
 
 const DEFAULT_TEST_ID = "a1000000-0000-4000-8000-000000000001";
 const DEFAULT_CLASS_ID = "10A";
+const DEFAULT_SEMESTER_ID = "2026-SPRING";
 
 const panelLight =
   "rounded-2xl border border-zinc-200/90 bg-white shadow-sm shadow-zinc-200/40 dark:border-zinc-600/80 dark:bg-zinc-900/95 dark:shadow-black/40";
 const textDim = "text-zinc-500 dark:text-zinc-400";
+
+function parseClockHHMM(s: string): { h: number; m: number } | null {
+  const v = String(s ?? "").trim();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(mm)) return null;
+  if (h < 0 || h > 23 || mm < 0 || mm > 59) return null;
+  return { h, m: mm };
+}
 
 function SchedulerAppearanceMenu() {
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -475,9 +494,7 @@ export function AiTeacherPersonalScheduler({
   /** I = өглөөний ээлж (ахлах), II = өдрийн ээлж (бага анги) — анхны scroll төвлөрөлт. */
   const [teacherShift, setTeacherShift] =
     useState<TeacherShiftId>(defaultTeacherShift);
-  const [selectedTeacherId, setSelectedTeacherId] = useState(
-    DEFAULT_MOCK_TEACHER_ID,
-  );
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
   const [teacherPickerOpen, setTeacherPickerOpen] = useState(false);
   const calendarMainRef = useRef<HTMLElement>(null);
   const calendarFocusAnchorRef = useRef<HTMLDivElement>(null);
@@ -487,11 +504,115 @@ export function AiTeacherPersonalScheduler({
     setTeacherShift(defaultTeacherShift);
   }, [defaultTeacherShift]);
 
-  const selectedTeacher = useMemo(() => {
-    return getMockTeacherById(selectedTeacherId) ?? MOCK_I_SHIFT_TEACHERS[0];
-  }, [selectedTeacherId]);
+  type GetTeachersListData = { getTeachersList: Teacher[] };
+  type GetTeachersListVars = { grades?: number[] };
 
-  const activePrimaryLessons = selectedTeacher.lessons;
+  const { data: teacherData, loading: teacherLoading } = useQuery<
+    GetTeachersListData,
+    GetTeachersListVars
+  >(GetTeachersListDocument, {
+    variables: { grades: [9, 10, 11, 12] },
+    fetchPolicy: "cache-first",
+    notifyOnNetworkStatusChange: true,
+  });
+
+  const teacherOptions = useMemo(() => {
+    const rows = teacherData?.getTeachersList ?? [];
+    return rows.filter((t) => t.role === "TEACHER");
+  }, [teacherData?.getTeachersList]);
+
+  useEffect(() => {
+    // Teachers query дуусаагүй үед fallback руу бүү үсэр — header дээр hardcode мэт харагддаг.
+    if (teacherLoading) return;
+
+    const first = teacherOptions[0]?.id ?? "";
+    if (first) {
+      // Хэрэв өмнө нь fallback mock ID тавигдсан бол real жагсаалтын 1-р багш руу шилжүүлнэ.
+      if (!selectedTeacherId || selectedTeacherId === DEFAULT_MOCK_TEACHER_ID) {
+        setSelectedTeacherId(first);
+      }
+      return;
+    }
+
+    // Real багш олдохгүй үед л mock fallback (UI тасрахгүй, grid mock хэвээр).
+    if (!selectedTeacherId) {
+      setSelectedTeacherId(DEFAULT_MOCK_TEACHER_ID);
+    }
+  }, [selectedTeacherId, teacherOptions, teacherLoading]);
+
+  const selectedTeacherRow = useMemo(() => {
+    if (!selectedTeacherId) return null;
+    return teacherOptions.find((t) => t.id === selectedTeacherId) ?? null;
+  }, [teacherOptions, selectedTeacherId]);
+
+  type ListTeacherMainLessonsData = {
+    getTeacherMainLessonsList: TeacherMainLesson[];
+  };
+  type ListTeacherMainLessonsVars = {
+    teacherId: string;
+    semesterId?: string;
+    includeDraft?: boolean;
+  };
+
+  const { data: mainLessonsData } = useQuery<
+    ListTeacherMainLessonsData,
+    ListTeacherMainLessonsVars
+  >(GetTeacherMainLessonsListDocument, {
+    variables: {
+      teacherId: selectedTeacherId || DEFAULT_MOCK_TEACHER_ID,
+      semesterId: DEFAULT_SEMESTER_ID,
+      includeDraft: false,
+    },
+    skip: !selectedTeacherId,
+    fetchPolicy: "network-only",
+    notifyOnNetworkStatusChange: true,
+  });
+
+  const selectedTeacher = useMemo(() => {
+    const mock = getMockTeacherById(DEFAULT_MOCK_TEACHER_ID) ?? MOCK_I_SHIFT_TEACHERS[0];
+    const displayName = selectedTeacherRow?.shortName?.trim()
+      ? selectedTeacherRow.shortName
+      : selectedTeacherRow
+        ? `${selectedTeacherRow.lastName} ${selectedTeacherRow.firstName}`
+        : mock.displayName;
+    const roleNote = selectedTeacherRow
+      ? `${selectedTeacherRow.department} · ${selectedTeacherRow.teachingLevel} · ${selectedTeacherRow.workLoadLimit}/өдөр`
+      : mock.roleNote;
+    return { ...mock, displayName, roleNote };
+  }, [selectedTeacherRow, selectedTeacherId]);
+
+  type PrimaryLesson = MockPrimaryLesson & { roomNumber?: string | null };
+
+  const activePrimaryLessons = useMemo(() => {
+    const rows = mainLessonsData?.getTeacherMainLessonsList ?? [];
+    if (!rows.length) {
+      return selectedTeacher.lessons.map((l) => ({ ...l })) as PrimaryLesson[];
+    }
+    const lessons: PrimaryLesson[] = [];
+    for (const r of rows) {
+      const start = parseClockHHMM(r.startTime);
+      const end = parseClockHHMM(r.endTime);
+      if (!start || !end) continue;
+      const colIdxRaw = (r.dayOfWeek ?? 1) - 1;
+      const colIdx = Number.isFinite(colIdxRaw)
+        ? Math.max(0, Math.min(6, Math.floor(colIdxRaw)))
+        : 0;
+      lessons.push({
+        colIdx,
+        title: r.groupId,
+        periodLabel: `${r.periodNumber}-р цаг`,
+        startH: start.h,
+        startM: start.m,
+        endH: end.h,
+        endM: end.m,
+        slotVariant: "default",
+        roomNumber: r.classroomRoomNumber ?? null,
+      });
+    }
+    return lessons.length
+      ? lessons
+      : (selectedTeacher.lessons.map((l) => ({ ...l })) as PrimaryLesson[]);
+  }, [mainLessonsData?.getTeacherMainLessonsList, selectedTeacher.lessons]);
 
   useLayoutEffect(() => {
     const main = calendarMainRef.current;
@@ -789,13 +910,27 @@ export function AiTeacherPersonalScheduler({
                 className="w-[min(100vw-2rem,20rem)] border-zinc-200 p-2 shadow-lg dark:border-zinc-600"
               >
                 <p className="px-2 pb-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                  Багш сонгох (I / II ээлж · mock)
+                  Багш сонгох (9–12 · Математик)
                 </p>
                 <p className="mb-2 px-2 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-                  Дараа нь DB-аас ачаална. Одоо mock: I ээлж 5 + II ээлж 5 (нийт 10).
+                  {teacherLoading
+                    ? "Ачааллаж байна…"
+                    : teacherOptions.length
+                      ? `Нийт ${teacherOptions.length} багш`
+                      : "Багш олдсонгүй (fallback: mock)."}
                 </p>
                 <ul className="max-h-[min(60vh,16rem)] space-y-0.5 overflow-y-auto">
-                  {MOCK_I_SHIFT_TEACHERS.map((t) => {
+                  {(teacherOptions.length
+                    ? teacherOptions.map((t) => ({
+                        id: t.id,
+                        displayName: (t.shortName?.trim()
+                          ? t.shortName
+                          : `${t.lastName} ${t.firstName}`) as string,
+                        roleNote: `${t.department} · ${t.teachingLevel}`,
+                        shift: teacherShift,
+                      }))
+                    : MOCK_I_SHIFT_TEACHERS
+                  ).map((t) => {
                     const on = t.id === selectedTeacherId;
                     return (
                       <li key={t.id}>
@@ -803,7 +938,7 @@ export function AiTeacherPersonalScheduler({
                           type="button"
                           onClick={() => {
                             setSelectedTeacherId(t.id);
-                            setTeacherShift(t.shift);
+                            // schedule mock тул одоохондоо teacherShift-ийг өөрчлөхгүй.
                             setTeacherPickerOpen(false);
                           }}
                           className={cn(
@@ -1280,6 +1415,7 @@ export function AiTeacherPersonalScheduler({
                               const v = lesson.slotVariant ?? "default";
                               const card = primaryLessonCardModel(lesson, {
                                 cabinetRoom: selectedTeacher.cabinetRoom,
+                                roomNumber: lesson.roomNumber ?? null,
                               });
                               return (
                                 <div
