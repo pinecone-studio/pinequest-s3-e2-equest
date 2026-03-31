@@ -421,6 +421,76 @@ function parseStart(iso: string | null | undefined) {
   }
 }
 
+type AiVariantCalendarLayout = {
+  id: string;
+  colIdx: number;
+  topPct: number;
+  heightPct: number;
+  lane: number;
+  laneCount: number;
+};
+
+function buildAiVariantLayouts(
+  variants: readonly ExamScheduleVariant[],
+): AiVariantCalendarLayout[] {
+  const blocks = variants
+    .map((v) => {
+      const startAt = parseStart(v.startTime);
+      if (!startAt) return null;
+      const endAt = new Date(startAt.getTime() + 90 * 60 * 1000);
+      return {
+        id: v.id,
+        colIdx: Math.max(0, Math.min(6, getISODay(startAt) - 1)),
+        startMin: startAt.getHours() * 60 + startAt.getMinutes(),
+        endMin: endAt.getHours() * 60 + endAt.getMinutes(),
+        topPct: slotTopPercent(startAt.getHours(), startAt.getMinutes()),
+        heightPct: blockHeightPercent(
+          startAt.getHours(),
+          startAt.getMinutes(),
+          endAt.getHours(),
+          endAt.getMinutes(),
+        ),
+      };
+    })
+    .filter((v): v is NonNullable<typeof v> => Boolean(v));
+
+  const byDay = new Map<number, typeof blocks>();
+  for (const block of blocks) {
+    const arr = byDay.get(block.colIdx) ?? [];
+    arr.push(block);
+    byDay.set(block.colIdx, arr);
+  }
+
+  const layouts: AiVariantCalendarLayout[] = [];
+  for (const [colIdx, dayBlocks] of byDay.entries()) {
+    dayBlocks.sort((a, b) => a.startMin - b.startMin);
+    const laneEndMins: number[] = [];
+    for (const block of dayBlocks) {
+      let lane = laneEndMins.findIndex((endMin) => endMin <= block.startMin);
+      if (lane === -1) {
+        lane = laneEndMins.length;
+        laneEndMins.push(block.endMin);
+      } else {
+        laneEndMins[lane] = block.endMin;
+      }
+      layouts.push({
+        id: block.id,
+        colIdx,
+        topPct: block.topPct,
+        heightPct: block.heightPct,
+        lane,
+        laneCount: 0,
+      });
+    }
+    const laneCount = Math.max(1, laneEndMins.length);
+    for (const layout of layouts) {
+      if (layout.colIdx === colIdx) layout.laneCount = laneCount;
+    }
+  }
+
+  return layouts;
+}
+
 /**
  * Багшийн хуанли = зөвхөн цаг харах биш, AI-Powered Operations Center.
  * Cron / Linear / Reclaim-ийн урсгал + ирээдүйн шийдлүүдийг нэг дэлгэцэнд.
@@ -593,6 +663,7 @@ export function AiTeacherPersonalScheduler({
   const toastKeyRef = useRef<string>("");
   const aiProgressToastIdRef = useRef<string | number | null>(null);
   const aiProgressStepRef = useRef(0);
+  const lastAutoFocusedSuggestionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setTeacherShift(defaultTeacherShift);
@@ -914,6 +985,22 @@ export function AiTeacherPersonalScheduler({
 
   useEffect(() => {
     const row = pollData?.getAiExamSchedule;
+    if (!row || row.status !== "suggested") return;
+    if (lastAutoFocusedSuggestionIdRef.current === row.id) return;
+
+    const firstVariantDay = (row.aiVariants ?? [])
+      .map((v) => parseStart(v.startTime))
+      .filter((d): d is Date => Boolean(d))
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+
+    if (!firstVariantDay) return;
+
+    lastAutoFocusedSuggestionIdRef.current = row.id;
+    setDate(startOfDay(firstVariantDay));
+  }, [pollData?.getAiExamSchedule]);
+
+  useEffect(() => {
+    const row = pollData?.getAiExamSchedule;
     if (!row || !pollExamId) return;
     const st = row.status;
     if (st === "suggested") {
@@ -1224,6 +1311,13 @@ export function AiTeacherPersonalScheduler({
   const suggested = liveSchedule?.status === "suggested";
   const showJob =
     liveSchedule && liveSchedule.id === lastQueuedExamId ? liveSchedule : null;
+  const aiVariantLayouts = useMemo(
+    () =>
+      showJob?.status === "suggested" && showJob.aiVariants?.length
+        ? buildAiVariantLayouts(showJob.aiVariants)
+        : [],
+    [showJob],
+  );
 
   /** `CALENDAR_VIEW_CONFIG.dayVisible` хүрээнд блокын байрлал (%) */
   function blockTopPercent(d: Date) {
@@ -1776,7 +1870,7 @@ export function AiTeacherPersonalScheduler({
                                 .map((seg) => (
                                   <div
                                     key={`school-bg-${seg.eventId}-${colIdx}-${seg.topPct}`}
-                                    className="pointer-events-none absolute left-0.5 right-0.5 z-1 select-none rounded-xl border border-amber-200/75 bg-amber-100/70 px-2 py-1.5 text-[10px] font-medium leading-tight text-amber-950/95 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35)] dark:border-amber-800/55 dark:bg-amber-950/45 dark:text-amber-50"
+                                    className="pointer-events-none absolute left-0.5 right-0.5 z-1 select-none rounded-xl border border-amber-200/60 bg-amber-50/60 px-2 py-1.5 text-[10px] font-medium leading-tight text-amber-950/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25)] dark:border-amber-800/45 dark:bg-amber-950/35 dark:text-amber-50"
                                     style={{
                                       top: `${seg.topPct}%`,
                                       height: `${seg.heightPct}%`,
@@ -1914,8 +2008,7 @@ export function AiTeacherPersonalScheduler({
                                 )}%`,
                                 minHeight: "48px",
                               }}
-                            >
-                              Баталгаажсан шалгалт
+                            >              
                               <span className="mt-0.5 block font-normal text-emerald-700 dark:text-emerald-300">
                                 {formatBlockDuration(
                                   CONFIRMED_EXAM_DEMO.startH,
@@ -1961,27 +2054,30 @@ export function AiTeacherPersonalScheduler({
                               {showJob?.aiVariants?.map((v) => {
                                 const startAt = parseStart(v.startTime);
                                 if (!startAt) return null;
-                                if (!isSameDay(startAt, d)) return null;
                                 const endAt = new Date(
                                   startAt.getTime() + 90 * 60 * 1000,
                                 );
-                                const top2 = slotTopPercent(
-                                  startAt.getHours(),
-                                  startAt.getMinutes(),
+                                const layout = aiVariantLayouts.find(
+                                  (row) => row.id === v.id && row.colIdx === colIdx,
                                 );
-                                const h2 = blockHeightPercent(
-                                  startAt.getHours(),
-                                  startAt.getMinutes(),
-                                  endAt.getHours(),
-                                  endAt.getMinutes(),
-                                );
+                                if (!layout || !isSameDay(startAt, d)) return null;
+                                const laneGap = 4;
+                                const totalGap = laneGap * (layout.laneCount - 1);
+                                const widthCalc = `calc((100% - ${totalGap}px) / ${layout.laneCount})`;
+                                const leftCalc =
+                                  layout.lane === 0
+                                    ? "4px"
+                                    : `calc(4px + (${widthCalc} + ${laneGap}px) * ${layout.lane})`;
                                 return (
                                   <div
                                     key={`ai-variant-${v.id}`}
                                     className="absolute left-1 right-1 z-10 rounded-xl border-2 border-dashed border-violet-400/90 bg-violet-50/95 px-2 py-1.5 text-[10px] font-semibold leading-tight text-violet-950 shadow-sm ring-1 ring-violet-200/70 dark:border-violet-500 dark:bg-violet-950/40 dark:text-violet-100 dark:ring-violet-800/50"
                                     style={{
-                                      top: `${top2}%`,
-                                      height: `${h2}%`,
+                                      top: `${layout.topPct}%`,
+                                      height: `${layout.heightPct}%`,
+                                      left: leftCalc,
+                                      right: "auto",
+                                      width: widthCalc,
                                       minHeight: "52px",
                                     }}
                                     title={v.reason ?? undefined}
