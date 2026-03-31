@@ -18,7 +18,6 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Popover,
@@ -36,13 +35,17 @@ import {
 import {
   ApproveAiExamScheduleDocument,
   GetAiExamScheduleDocument,
+  GetSchoolEventsDocument,
   GetTeachersListDocument,
   GetTeacherMainLessonsListDocument,
+  ListNewMathExamsDocument,
   RequestAiExamScheduleDocument,
 } from "@/gql/create-exam-documents";
 import type {
   ExamSchedule,
   ExamScheduleVariant,
+  NewMathExamSummary,
+  SchoolEvent,
   Teacher,
   TeacherMainLesson,
   RequestExamSchedulePayload,
@@ -79,7 +82,6 @@ import {
   getMockTeacherById,
   roomBadgeForPrimaryLesson,
 } from "@/constants/teacherScheduleMock";
-import { REAL_WORLD_SCHOOL_CALENDAR_MOCK } from "@/constants/schoolCalendarRealWorldMock";
 import {
   ArrowRight,
   CalendarClock,
@@ -360,6 +362,23 @@ type ApproveAiExamScheduleVars = {
   variantId: string;
 };
 
+type ListNewMathExamsData = {
+  listNewMathExams: NewMathExamSummary[];
+};
+
+type ListNewMathExamsVars = {
+  limit?: number;
+};
+
+type GetSchoolEventsData = {
+  getSchoolEvents: SchoolEvent[];
+};
+
+type GetSchoolEventsVars = {
+  startDate: string;
+  endDate: string;
+};
+
 function formatVariantWhen(iso: string) {
   try {
     const d = new Date(iso);
@@ -616,6 +635,56 @@ export function AiTeacherPersonalScheduler({
     notifyOnNetworkStatusChange: true,
   });
 
+  const { data: examTemplateData, loading: examTemplateLoading } = useQuery<
+    ListNewMathExamsData,
+    ListNewMathExamsVars
+  >(ListNewMathExamsDocument, {
+    variables: { limit: 50 },
+    fetchPolicy: "cache-first",
+    notifyOnNetworkStatusChange: true,
+  });
+
+  const examTemplateOptions = useMemo(
+    () => examTemplateData?.listNewMathExams ?? [],
+    [examTemplateData?.listNewMathExams],
+  );
+
+  const teacherClassOptions = useMemo(() => {
+    const fromLive = Array.from(
+      new Set(
+        (mainLessonsData?.getTeacherMainLessonsList ?? [])
+          .map((row) => row.groupId?.trim())
+          .filter((v): v is string => Boolean(v)),
+      ),
+    ).sort((a, b) => a.localeCompare(b, "mn"));
+
+    if (fromLive.length) return fromLive;
+
+    const mockTeacher =
+      getMockTeacherById(selectedTeacherId || DEFAULT_MOCK_TEACHER_ID) ??
+      MOCK_I_SHIFT_TEACHERS[0];
+
+    return Array.from(
+      new Set(
+        (mockTeacher.lessons ?? [])
+          .map((lesson) => lesson.title?.trim())
+          .filter((v): v is string => Boolean(v)),
+      ),
+    ).sort((a, b) => a.localeCompare(b, "mn"));
+  }, [mainLessonsData?.getTeacherMainLessonsList, selectedTeacherId]);
+
+  useEffect(() => {
+    if (!teacherClassOptions.length) return;
+    if (teacherClassOptions.includes(classId)) return;
+    setClassId(teacherClassOptions[0]);
+  }, [classId, teacherClassOptions]);
+
+  useEffect(() => {
+    if (!examTemplateOptions.length) return;
+    if (examTemplateOptions.some((row) => row.examId === testId)) return;
+    setTestId(examTemplateOptions[0].examId);
+  }, [examTemplateOptions, testId]);
+
   const selectedTeacher = useMemo(() => {
     const mock =
       getMockTeacherById(DEFAULT_MOCK_TEACHER_ID) ?? MOCK_I_SHIFT_TEACHERS[0];
@@ -779,9 +848,11 @@ export function AiTeacherPersonalScheduler({
       if (payload?.success) {
         toastKeyRef.current = "";
         if (payload.examId) {
+          setAiDraftIntent("exam_intent");
           setLiveSchedule(null);
           setLastQueuedExamId(payload.examId);
           setPollExamId(payload.examId);
+          setRightTab("ai");
         }
         toast.success(payload.message, {
           description: payload.examId ? `examId: ${payload.examId}` : undefined,
@@ -803,19 +874,130 @@ export function AiTeacherPersonalScheduler({
     () => startOfWeek(anchor, { weekStartsOn: 1 }),
     [anchor],
   );
+  const yearStart = useMemo(
+    () => startOfDay(new Date(anchor.getFullYear(), 0, 1)),
+    [anchor],
+  );
+  const yearEnd = useMemo(
+    () => new Date(anchor.getFullYear(), 11, 31, 23, 59, 59, 999),
+    [anchor],
+  );
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
     [weekStart],
   );
 
-  /** Сургуулийн нэгдсэн календарийн mock — багшийн тор дээр дэвсгэр давхарга (GraphQL ирэхэд солино). */
+  const { data: teacherSchoolEventData } = useQuery<
+    GetSchoolEventsData,
+    GetSchoolEventsVars
+  >(GetSchoolEventsDocument, {
+    variables: {
+      startDate: yearStart.toISOString(),
+      endDate: yearEnd.toISOString(),
+    },
+    fetchPolicy: "cache-first",
+    notifyOnNetworkStatusChange: true,
+  });
+
+  const teacherSchoolCalendarEvents = useMemo(() => {
+    const rows = teacherSchoolEventData?.getSchoolEvents ?? [];
+    const ws = startOfDay(weekStart);
+    const we = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+    const out: {
+      id: string;
+      title: string;
+      startAt: string;
+      endAt: string;
+      allDay: boolean;
+    }[] = [];
+
+    const holidayWindows = rows
+      .filter(
+        (ev) =>
+          String(ev.eventType).toUpperCase() === "HOLIDAY" &&
+          String(ev.repeatPattern ?? "NONE").toUpperCase() === "NONE",
+      )
+      .map((ev) => ({
+        start: parseISO(ev.startDate),
+        end: parseISO(ev.endDate),
+      }))
+      .filter(
+        (w) =>
+          !Number.isNaN(w.start.getTime()) &&
+          !Number.isNaN(w.end.getTime()) &&
+          w.end > w.start,
+      );
+
+    const overlaps = (start: Date, end: Date) =>
+      start.getTime() < we.getTime() && end.getTime() > ws.getTime();
+
+    const overlapsHoliday = (start: Date, end: Date) =>
+      holidayWindows.some(
+        (w) => start.getTime() < w.end.getTime() && end.getTime() > w.start.getTime(),
+      );
+
+    for (const ev of rows) {
+      const start = parseISO(ev.startDate);
+      const end = parseISO(ev.endDate);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        continue;
+      }
+
+      const durationMs = end.getTime() - start.getTime();
+      const repeat = String(ev.repeatPattern ?? "NONE").toUpperCase();
+
+      const pushEvent = (occurrenceStart: Date, occurrenceEnd: Date, suffix: string) => {
+        if (!overlaps(occurrenceStart, occurrenceEnd)) return;
+        if (repeat !== "NONE" && overlapsHoliday(occurrenceStart, occurrenceEnd)) return;
+        const type = String(ev.eventType).toUpperCase();
+        const allDay =
+          Boolean(ev.isFullLock) &&
+          (type === "HOLIDAY" || type === "TRIP") &&
+          occurrenceEnd.getTime() - occurrenceStart.getTime() >= 20 * 60 * 60 * 1000;
+
+        out.push({
+          id: `${ev.id}:${suffix}`,
+          title: ev.title,
+          startAt: occurrenceStart.toISOString(),
+          endAt: occurrenceEnd.toISOString(),
+          allDay,
+        });
+      };
+
+      if (repeat === "NONE") {
+        pushEvent(start, end, "base");
+        continue;
+      }
+
+      let cursor = new Date(start);
+      let guard = 0;
+      while (cursor.getTime() < we.getTime() && guard < 400) {
+        const cursorEnd = new Date(cursor.getTime() + durationMs);
+        pushEvent(cursor, cursorEnd, cursor.toISOString());
+
+        if (repeat === "DAILY") {
+          cursor = addDays(cursor, 1);
+        } else if (repeat === "WEEKLY") {
+          cursor = addDays(cursor, 7);
+        } else if (repeat === "MONTHLY") {
+          cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, cursor.getDate(), cursor.getHours(), cursor.getMinutes(), cursor.getSeconds(), cursor.getMilliseconds());
+        } else {
+          break;
+        }
+        guard += 1;
+      }
+    }
+
+    return out;
+  }, [teacherSchoolEventData?.getSchoolEvents, weekStart]);
+
   const teacherSchoolEventSegments = useMemo(
     () =>
       buildSchoolCalendarSegmentsForWeek(
-        REAL_WORLD_SCHOOL_CALENDAR_MOCK,
+        teacherSchoolCalendarEvents,
         weekDays,
       ),
-    [weekDays],
+    [teacherSchoolCalendarEvents, weekDays],
   );
 
   /** Үндсэн хичээлийн цаг сургуулийн эвенттой давхцвал conflict (drag ирэхэд ижил шалгуур). */
@@ -1816,62 +1998,63 @@ export function AiTeacherPersonalScheduler({
                 {rightTab === "form" ? (
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label
-                        htmlFor="ai-draft-intent"
-                        className="text-xs text-zinc-600 dark:text-zinc-400"
-                      >
-                        AI Draft Intent
+                      <Label className="text-xs text-zinc-600 dark:text-zinc-400">
+                        AI Scheduler төрөл
+                      </Label>
+                      <div className="flex h-10 items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-900 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100">
+                        Шалгалт товлох
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-zinc-600 dark:text-zinc-400">
+                        Шалгалтын загвар
                       </Label>
                       <select
-                        id="ai-draft-intent"
-                        value={aiDraftIntent}
-                        onChange={(e) =>
-                          setAiDraftIntent(e.target.value as AiDraftIntentKind)
-                        }
-                        className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs text-zinc-900 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                      >
-                        <option value="exam_intent">Exam Intent</option>
-                        <option value="extra_activity_support_intent">
-                          Extra: Support (Давтлага)
-                        </option>
-                        <option value="extra_activity_club_intent">
-                          Extra: Club (Секц)
-                        </option>
-                        <option value="guidance_intent">
-                          Guidance (Зөвлөх/Анги уд)
-                        </option>
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="scheduler-test-id"
-                        className="text-xs text-zinc-600 dark:text-zinc-400"
-                      >
-                        testId
-                      </Label>
-                      <Input
-                        id="scheduler-test-id"
                         value={testId}
                         onChange={(e) => setTestId(e.target.value)}
-                        className="rounded-xl border-zinc-200 bg-white font-mono text-xs text-zinc-900 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                        autoComplete="off"
-                      />
+                        className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                      >
+                        {examTemplateOptions.length === 0 ? (
+                          <option value="">
+                            {examTemplateLoading
+                              ? "Ачааллаж байна…"
+                              : "Шалгалтын загвар олдсонгүй"}
+                          </option>
+                        ) : (
+                          examTemplateOptions.map((exam) => (
+                            <option key={exam.examId} value={exam.examId}>
+                              {exam.title}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                      {testId ? (
+                        <p className="break-all font-mono text-[10px] text-zinc-500 dark:text-zinc-400">
+                          {testId}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="space-y-2">
-                      <Label
-                        htmlFor="scheduler-class-id"
-                        className="text-xs text-zinc-600 dark:text-zinc-400"
-                      >
-                        classId
+                      <Label className="text-xs text-zinc-600 dark:text-zinc-400">
+                        Анги
                       </Label>
-                      <Input
-                        id="scheduler-class-id"
+                      <select
                         value={classId}
                         onChange={(e) => setClassId(e.target.value)}
-                        placeholder="10A"
-                        className="rounded-xl border-zinc-200 bg-white font-mono text-sm text-zinc-900 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                        autoComplete="off"
-                      />
+                        className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                      >
+                        {teacherClassOptions.length === 0 ? (
+                          <option value="">
+                            Ангийн мэдээлэл олдсонгүй
+                          </option>
+                        ) : (
+                          teacherClassOptions.map((groupId) => (
+                            <option key={groupId} value={groupId}>
+                              {groupId}
+                            </option>
+                          ))
+                        )}
+                      </select>
                     </div>
                     <Button
                       type="button"

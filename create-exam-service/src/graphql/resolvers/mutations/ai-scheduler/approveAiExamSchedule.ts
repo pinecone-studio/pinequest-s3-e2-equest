@@ -54,7 +54,7 @@ export const approveAiExamScheduleMutation = {
 		const end = new Date(start.getTime() + EXAM_DURATION_MS);
 		const now = new Date().toISOString();
 
-		const [updated] = await ctx.db
+		await ctx.db
 			.update(examSchedules)
 			.set({
 				startTime: start,
@@ -65,8 +65,13 @@ export const approveAiExamScheduleMutation = {
 				aiVariantsJson: null,
 				updatedAt: now,
 			})
+			.where(eq(examSchedules.id, examId));
+
+		const [updated] = await ctx.db
+			.select()
+			.from(examSchedules)
 			.where(eq(examSchedules.id, examId))
-			.returning();
+			.limit(1);
 
 		if (!updated) {
 			throw new GraphQLError("Шинэчлэлт амжилтгүй.");

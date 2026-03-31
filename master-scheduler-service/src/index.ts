@@ -949,7 +949,6 @@ Return FULL corrected schedule array (not just diffs).
         const insertedActual = Number(insertedActualRow?.[0]?.n ?? 0);
 
         if (insertedActual !== scheduleItems.length) {
-        if (inserted !== scheduleItems.length) {
           return Response.json(
             {
               success: false,
@@ -957,7 +956,7 @@ Return FULL corrected schedule array (not just diffs).
                 "Schedule generation produced rows but not all could be inserted (likely room/time conflicts or DB constraints).",
               count: scheduleItems.length,
               inserted: insertedActual,
-              inserted,
+              attempted: inserted,
               groupId,
               semesterId,
             },

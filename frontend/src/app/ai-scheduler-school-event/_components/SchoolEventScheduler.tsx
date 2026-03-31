@@ -6,6 +6,7 @@ import { useQuery } from "@apollo/client/react";
 import { useTheme } from "next-themes";
 import {
   addDays,
+  addMonths,
   endOfDay,
   format,
   getISODay,
@@ -100,7 +101,7 @@ const SCHOOL_EVENT_TYPE_META: Record<
   }
 > = {
   HOLIDAY: {
-    labelMn: "Амралт",
+    labelMn: "Амралт/ Баяр",
     examplesMn: "Нийтийн амралт, баярын өдөр",
     impactMn: "Хичээл төлөвлөхгүй (ихэвчлэн)",
     swatch: "bg-rose-600",
@@ -268,6 +269,10 @@ type DaySegment = {
   heightPct: number;
 };
 
+type CalendarSchoolEvent = SchoolEvent & {
+  occurrenceId: string;
+};
+
 function segmentForDay(
   day: Date,
   start: Date,
@@ -306,6 +311,14 @@ export function SchoolEventScheduler({
     [weekStart],
   );
   const weekRangeLabel = `${formatMnMonthDay(weekStart)} – ${formatMnMonthDay(weekEnd)}`;
+  const yearStart = useMemo(
+    () => startOfDay(new Date(anchor.getFullYear(), 0, 1)),
+    [anchor],
+  );
+  const yearEnd = useMemo(
+    () => endOfDay(new Date(anchor.getFullYear(), 11, 31)),
+    [anchor],
+  );
 
   type GetSchoolEventsData = { getSchoolEvents: SchoolEvent[] };
   type GetSchoolEventsVars = { startDate: string; endDate: string };
@@ -315,36 +328,103 @@ export function SchoolEventScheduler({
     GetSchoolEventsVars
   >(GetSchoolEventsDocument, {
     variables: {
-      startDate: startOfDay(weekStart).toISOString(),
-      endDate: endOfDay(weekEnd).toISOString(),
+      startDate: yearStart.toISOString(),
+      endDate: yearEnd.toISOString(),
     },
     fetchPolicy: "cache-first",
     notifyOnNetworkStatusChange: true,
   });
 
-  const mergedSchoolCalendarEvents = useMemo(() => {
+  const allSchoolCalendarEvents = useMemo(() => {
     const rows = schoolData?.getSchoolEvents ?? [];
-    // Backend нь ms -> ISO болгож өгсөн; энэ component нь ISO parseISO-оор ашиглана.
     return rows;
   }, [schoolData?.getSchoolEvents]);
 
-  const schoolEventsList = useMemo(() => {
+  const schoolEventsList = useMemo((): CalendarSchoolEvent[] => {
     const ws = startOfDay(weekStart);
     const we = endOfDay(weekEnd);
-    return mergedSchoolCalendarEvents
-      .filter((ev) => {
-        const s = parseISO(ev.startDate);
-        const e = parseISO(ev.endDate);
-        return s.getTime() < we.getTime() && e.getTime() > ws.getTime();
+    const out: CalendarSchoolEvent[] = [];
+
+    const overlaps = (start: Date, end: Date) =>
+      start.getTime() < we.getTime() && end.getTime() > ws.getTime();
+
+    const holidayWindows = allSchoolCalendarEvents
+      .filter(
+        (ev) =>
+          String(ev.eventType).toUpperCase() === "HOLIDAY" &&
+          String(ev.repeatPattern ?? "NONE").toUpperCase() === "NONE",
+      )
+      .map((ev) => {
+        const start = parseISO(ev.startDate);
+        const end = parseISO(ev.endDate);
+        return { start, end };
       })
-      .sort(
-        (a, b) =>
-          parseISO(a.startDate).getTime() - parseISO(b.startDate).getTime(),
+      .filter(
+        (w) =>
+          !Number.isNaN(w.start.getTime()) &&
+          !Number.isNaN(w.end.getTime()) &&
+          w.end > w.start,
       );
-  }, [mergedSchoolCalendarEvents, weekStart, weekEnd]);
+
+    const overlapsHoliday = (start: Date, end: Date) =>
+      holidayWindows.some(
+        (w) => start.getTime() < w.end.getTime() && end.getTime() > w.start.getTime(),
+      );
+
+    const pushOccurrence = (ev: SchoolEvent, start: Date, end: Date, key: string) => {
+      if (!overlaps(start, end)) return;
+      if (String(ev.repeatPattern ?? "NONE").toUpperCase() !== "NONE" && overlapsHoliday(start, end)) {
+        return;
+      }
+      out.push({
+        ...ev,
+        occurrenceId: `${ev.id}:${key}`,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+      });
+    };
+
+    for (const ev of allSchoolCalendarEvents) {
+      const start = parseISO(ev.startDate);
+      const end = parseISO(ev.endDate);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        continue;
+      }
+
+      const durationMs = end.getTime() - start.getTime();
+      const repeat = String(ev.repeatPattern ?? "NONE").toUpperCase();
+
+      if (repeat === "NONE") {
+        pushOccurrence(ev, start, end, "base");
+        continue;
+      }
+
+      let cursor = new Date(start);
+      let guard = 0;
+      while (cursor.getTime() < we.getTime() && guard < 400) {
+        const cursorEnd = new Date(cursor.getTime() + durationMs);
+        pushOccurrence(ev, cursor, cursorEnd, cursor.toISOString());
+
+        if (repeat === "DAILY") {
+          cursor = addDays(cursor, 1);
+        } else if (repeat === "WEEKLY") {
+          cursor = addDays(cursor, 7);
+        } else if (repeat === "MONTHLY") {
+          cursor = addMonths(cursor, 1);
+        } else {
+          break;
+        }
+        guard += 1;
+      }
+    }
+
+    return out.sort(
+      (a, b) => parseISO(a.startDate).getTime() - parseISO(b.startDate).getTime(),
+    );
+  }, [allSchoolCalendarEvents, weekStart, weekEnd]);
 
   const eventSegments = useMemo((): DaySegment[] => {
-    const events = mergedSchoolCalendarEvents;
+    const events = schoolEventsList;
     const out: DaySegment[] = [];
     for (const ev of events) {
       const start = parseISO(ev.startDate);
@@ -363,7 +443,7 @@ export function SchoolEventScheduler({
 
         if (allDay) {
           out.push({
-            eventId: ev.id,
+            eventId: ev.occurrenceId,
             title: ev.title,
             eventType: type,
             subcategory: ev.description,
@@ -379,7 +459,7 @@ export function SchoolEventScheduler({
         const eh = seg.end.getHours();
         const em = seg.end.getMinutes();
         out.push({
-          eventId: ev.id,
+          eventId: ev.occurrenceId,
           title: ev.title,
           eventType: type,
           subcategory: ev.description,
@@ -391,7 +471,7 @@ export function SchoolEventScheduler({
       });
     }
     return out;
-  }, [mergedSchoolCalendarEvents, weekDays]);
+  }, [schoolEventsList, weekDays]);
 
   function toggleLayer(id: SchoolSidebarLayerKey) {
     setLayerOn((p) => ({ ...p, [id]: !p[id] }));

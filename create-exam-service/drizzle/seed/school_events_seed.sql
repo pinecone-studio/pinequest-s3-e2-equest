@@ -3,18 +3,21 @@ PRAGMA foreign_keys = OFF;
 DELETE FROM school_event_teacher_targets
 WHERE event_id IN (
   'event-001', 'event-002', 'event-003', 'event-004', 'event-005', 'event-006', 'event-007', 'event-008', 'event-009', 'event-010',
+  'rec-teacher-meeting', 'rec-teacher-meeting-spring', 'rec-teacher-meeting-fall', 'rec-cleaning', 'rec-cleaning-spring', 'rec-cleaning-fall',
   'ev-01-01', 'ev-02-01', 'ev-03-01', 'ev-03-02', 'ev-04-01', 'ev-04-02', 'ev-04-03', 'ev-05-01', 'ev-05-02', 'ev-06-01', 'ev-06-02', 'ev-09-01', 'ev-12-01'
 );
 
 DELETE FROM school_event_targets
 WHERE event_id IN (
   'event-001', 'event-002', 'event-003', 'event-004', 'event-005', 'event-006', 'event-007', 'event-008', 'event-009', 'event-010',
+  'rec-teacher-meeting', 'rec-teacher-meeting-spring', 'rec-teacher-meeting-fall', 'rec-cleaning', 'rec-cleaning-spring', 'rec-cleaning-fall',
   'ev-01-01', 'ev-02-01', 'ev-03-01', 'ev-03-02', 'ev-04-01', 'ev-04-02', 'ev-04-03', 'ev-05-01', 'ev-05-02', 'ev-06-01', 'ev-06-02', 'ev-09-01', 'ev-12-01'
 );
 
 DELETE FROM school_events
 WHERE id IN (
   'event-001', 'event-002', 'event-003', 'event-004', 'event-005', 'event-006', 'event-007', 'event-008', 'event-009', 'event-010',
+  'rec-teacher-meeting', 'rec-teacher-meeting-spring', 'rec-teacher-meeting-fall', 'rec-cleaning', 'rec-cleaning-spring', 'rec-cleaning-fall',
   'ev-01-01', 'ev-02-01', 'ev-03-01', 'ev-03-02', 'ev-04-01', 'ev-04-02', 'ev-04-03', 'ev-05-01', 'ev-05-02', 'ev-06-01', 'ev-06-02', 'ev-09-01', 'ev-12-01'
 );
 
@@ -37,6 +40,78 @@ INSERT INTO school_events (
   created_at
 ) VALUES
   (
+    'rec-teacher-meeting-spring',
+    'Багш нарын долоо хоног бүрийн шуурхай',
+    'Хаврын улиралд Даваа гараг бүрийн 1-р цагт бүх багш нар хуралтай тул шалгалт авах боломжгүй.',
+    'TEACHER_DEVELOPMENT',
+    3,
+    'REQUIRED',
+    1767571200000,
+    1767574800000,
+    1,
+    1,
+    'WEEKLY',
+    1,
+    'TEACHERS',
+    1,
+    '#3B82F6',
+    1767571200000
+  ),
+  (
+    'rec-teacher-meeting-fall',
+    'Багш нарын долоо хоног бүрийн шуурхай',
+    'Намрын улиралд Даваа гараг бүрийн 1-р цагт бүх багш нар хуралтай тул шалгалт авах боломжгүй.',
+    'TEACHER_DEVELOPMENT',
+    3,
+    'REQUIRED',
+    1788739200000,
+    1788742800000,
+    1,
+    1,
+    'WEEKLY',
+    1,
+    'TEACHERS',
+    1,
+    '#3B82F6',
+    1788739200000
+  ),
+  (
+    'rec-cleaning-spring',
+    'Их цэвэрлэгээ',
+    'Хаврын улиралд Баасан гарагийн оройн их цэвэрлэгээ. Уян хатан тул шаардлагатай бол шалгалт авч болно.',
+    'MAINTENANCE',
+    1,
+    'FLEXIBLE',
+    1767339000000,
+    1767344400000,
+    7,
+    8,
+    'WEEKLY',
+    0,
+    'ALL',
+    1,
+    '#6B7280',
+    1767339000000
+  ),
+  (
+    'rec-cleaning-fall',
+    'Их цэвэрлэгээ',
+    'Намрын улиралд Баасан гарагийн оройн их цэвэрлэгээ. Уян хатан тул шаардлагатай бол шалгалт авч болно.',
+    'MAINTENANCE',
+    1,
+    'FLEXIBLE',
+    1788507000000,
+    1788512400000,
+    7,
+    8,
+    'WEEKLY',
+    0,
+    'ALL',
+    1,
+    '#6B7280',
+    1788507000000
+  ),
+  (
     'ev-01-01',
     'Шинэ жилийн амралт',
     NULL,
@@ -51,7 +126,7 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#EF4444',
+    '#F97316',
     1767225600000
   ),
   (
@@ -69,7 +144,7 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#EF4444',
+    '#F97316',
     1771200000000
   ),
   (
@@ -87,7 +162,7 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#EC4899',
+    '#10B981',
     1772928000000
   ),
   (
@@ -105,7 +180,7 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#B91C1C',
+    '#DC2626',
     1773966600000
   ),
   (
@@ -123,7 +198,7 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#D4AF37',
+    '#10B981',
     1775174400000
   ),
   (
@@ -141,7 +216,7 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#F97316',
+    '#F59E0B',
     1775782800000
   ),
   (
@@ -177,7 +252,7 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#B91C1C',
+    '#DC2626',
     1778545800000
   ),
   (
@@ -213,7 +288,7 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#059669',
+    '#10B981',
     1780275600000
   ),
   (
@@ -231,12 +306,12 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#FDE047',
+    '#F97316',
     1780358400000
   ),
   (
     'ev-09-01',
-    'Хичээлийн шинэ жил',
+    'Хичээлийн шинэ жилийн нээлт',
     NULL,
     'EVENT',
     4,
@@ -267,7 +342,7 @@ INSERT INTO school_events (
     1,
     'ALL',
     1,
-    '#06B6D4',
+    '#10B981',
     1798675200000
   );
 
