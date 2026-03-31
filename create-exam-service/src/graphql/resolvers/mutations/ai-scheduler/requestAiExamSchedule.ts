@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { GraphQLError } from "graphql";
 import type { GraphQLContext } from "../../../context";
 import { examSchedules } from "../../../../db/schema";
@@ -46,9 +47,8 @@ export const requestAiExamScheduleMutation = {
 				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 		const now = new Date().toISOString();
 
-		const [row] = await ctx.db
-			.insert(examSchedules)
-			.values({
+		try {
+			await ctx.db.insert(examSchedules).values({
 				id: examId,
 				testId,
 				classId,
@@ -59,24 +59,38 @@ export const requestAiExamScheduleMutation = {
 				aiReasoning: null,
 				createdAt: now,
 				updatedAt: now,
-			})
-			.returning({ id: examSchedules.id });
-
-		if (!row?.id) {
-			throw new GraphQLError("exam_schedules үүсгэж чадсангүй.");
+			});
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "exam_schedules insert алдаа";
+			throw new GraphQLError(`Шалгалтын request хадгалж чадсангүй: ${message}`);
 		}
 
-		await q.send({
-			examId: row.id,
-			classId,
-			testId,
-		});
+		try {
+			await q.send({
+				examId,
+				classId,
+				testId,
+			});
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "SCHEDULER_QUEUE send алдаа";
+			await ctx.db
+				.update(examSchedules)
+				.set({
+					status: "failed",
+					aiReasoning: `Queue илгээхэд алдаа гарлаа: ${message.slice(0, 2000)}`,
+					updatedAt: new Date().toISOString(),
+				})
+				.where(eq(examSchedules.id, examId));
+			throw new GraphQLError(`Шалгалтын request queue руу орж чадсангүй: ${message}`);
+		}
 
 		return {
 			success: true,
 			message:
 				"Шалгалтын хуваарь дараалалд орлоо. AI тооцоолол дуустал түр хүлээнэ үү.",
-			examId: row.id,
+			examId,
 		};
 	},
 };

@@ -1,7 +1,6 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { v4 as uuidv4 } from "uuid";
 
-import { aiExamTemplates } from "./aiExamTemplates";
 import { classrooms } from "./classrooms";
 
 /**
@@ -11,10 +10,8 @@ export const examSchedules = sqliteTable("exam_schedules", {
 	id: text("id")
 		.primaryKey()
 		.$defaultFn(() => uuidv4()),
-	/** Mock 5 тест / AI загварын `ai_exam_templates.id` */
-	testId: text("test_id")
-		.notNull()
-		.references(() => aiExamTemplates.id, { onDelete: "cascade" }),
+	/** Scheduler-ээр төлөвлөж буй шалгалтын ID (`new_exams.id` зэрэг upstream эх сурвалжийн ID). */
+	testId: text("test_id").notNull(),
 	classId: text("class_id").notNull(),
 	startTime: integer("start_time", { mode: "timestamp" }).notNull(),
 	/** AI батлах хүртэл null (pending) */

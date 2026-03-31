@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -48,22 +49,33 @@ import {
   type TeacherShiftId,
 } from "@/constants/calendar";
 import {
+  CalendarDays,
   CalendarClock,
+  Circle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  GraduationCap,
   Menu,
   Monitor,
   Moon,
+  Square,
   Sparkles,
   Sun,
   Target,
+  Triangle,
 } from "lucide-react";
 
 const panelLight =
   "rounded-2xl border border-zinc-200/90 bg-white shadow-sm shadow-zinc-200/40 dark:border-zinc-600/80 dark:bg-zinc-900/95 dark:shadow-black/40";
 const textDim = "text-zinc-500 dark:text-zinc-400";
+
+function formatMnMonthDay(d: Date) {
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${m}-р сарын ${day}`;
+}
 
 /** getISODay: 1=Даваа … 7=Ням */
 const WEEKDAY_LETTER_MN: Record<number, string> = {
@@ -330,11 +342,7 @@ export function AiStudentPersonalScheduler({
     [weekStart],
   );
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
-  const weekRangeLabel = `${format(weekStart, "MMM d", { locale: mn })} – ${format(
-    weekEnd,
-    "MMM d",
-    { locale: mn },
-  )}`;
+  const weekRangeLabel = `${formatMnMonthDay(weekStart)} – ${formatMnMonthDay(weekEnd)}`;
 
   function toggleLayer(id: StudentLayerId) {
     setLayerOn((p) => ({ ...p, [id]: !p[id] }));
@@ -381,6 +389,18 @@ export function AiStudentPersonalScheduler({
     if (!selectedStudentId) return null;
     return studentOptions.find((s) => s.id === selectedStudentId) ?? null;
   }, [selectedStudentId, studentOptions]);
+
+  const selectedStudentMeta = useMemo(() => {
+    if (!selectedStudent) {
+      return "Сурагч сонгоход байршил, ангийн мэдээлэл энд гарна.";
+    }
+
+    const location = selectedStudent.homeRoomNumber
+      ? `${selectedStudent.homeRoomNumber} тоот`
+      : "Тодорхойгүй";
+
+    return `Байршил: ${location} · ${selectedStudent.gradeLevel}-р анги`;
+  }, [selectedStudent]);
 
   useEffect(() => {
     // Refresh хийхэд default (9A) эхний сурагчийг автоматаар сонгоно.
@@ -500,15 +520,12 @@ export function AiStudentPersonalScheduler({
             </button>
             <div className="flex min-w-0 items-center gap-2">
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200/80 dark:bg-emerald-950/80 dark:text-emerald-200 dark:ring-emerald-700/60">
-                <CalendarClock className="size-4" strokeWidth={2} aria-hidden />
+                <GraduationCap className="size-4" strokeWidth={2} aria-hidden />
               </span>
               <div className="min-w-0">
                 <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
                   Сурагчийн хуанли
                 </h1>
-                <p className={cn("truncate text-[11px]", textDim)}>
-                  {format(anchor, "yyyy MMMM", { locale: mn })}
-                </p>
               </div>
             </div>
           </div>
@@ -643,6 +660,79 @@ export function AiStudentPersonalScheduler({
         </header>
 
         <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+          {!shellMode ? (
+            <nav
+              className="flex w-[68px] shrink-0 flex-col border-r border-zinc-600/25 bg-[#3a3a42] text-zinc-200"
+              aria-label="Үндсэн навигаци"
+            >
+              <div className="flex h-[52px] items-center justify-center border-b border-zinc-500/20">
+                <div className="flex items-center gap-0.5" aria-hidden>
+                  <Square className="size-2 fill-emerald-300/75 text-emerald-300/75" />
+                  <Circle className="size-2 fill-sky-400 text-sky-400" />
+                  <Triangle className="size-2 fill-emerald-300/75 text-emerald-300/75" />
+                </div>
+              </div>
+              <div className="flex flex-1 flex-col gap-1 px-2 py-3">
+                <Link
+                  href="/ai-scheduler-school-event"
+                  title="Сургуулийн хуанли"
+                  aria-label="Сургуулийн хуанли руу очих"
+                  className="flex size-11 cursor-pointer items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-blue-200"
+                >
+                  <CalendarDays
+                    className="size-5"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                </Link>
+                <Link
+                  href="/ai-scheduler-teacher"
+                  title="Багшийн хуанли"
+                  aria-label="Багшийн хуанли руу очих"
+                  className="flex size-11 cursor-pointer items-center justify-center rounded-xl  text-zinc-200 shadow-sm  ring-white/10 transition-colors hover:bg-white/12 hover:text-sky-200"
+                >
+                  <CalendarClock
+                    className="size-5"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                </Link>
+                <button
+                  type="button"
+                  title="Сурагчийн хуанли"
+                  aria-current="page"
+                  aria-label="Сурагчийн хуанли (одоо)"
+                  className="flex size-11 items-center justify-center rounded-xl bg-white/14 text-white shadow-sm ring-1 ring-white/12"
+                >
+                  <GraduationCap
+                    className="size-5"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  />
+                </button>
+              </div>
+              <div className="border-t border-zinc-500/20 p-2">
+                <button
+                  type="button"
+                  onClick={() => setCalendarSidebarOpen((o) => !o)}
+                  aria-expanded={calendarSidebarOpen}
+                  title={
+                    calendarSidebarOpen
+                      ? "Хуанлын панел хураах"
+                      : "Хуанлын панел дэлгэх"
+                  }
+                  className="flex size-11 w-full items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100"
+                >
+                  {calendarSidebarOpen ? (
+                    <ChevronLeft className="size-5" strokeWidth={1.5} />
+                  ) : (
+                    <ChevronRight className="size-5" strokeWidth={1.5} />
+                  )}
+                </button>
+              </div>
+            </nav>
+          ) : null}
+
           <aside
             id="student-scheduler-sidebar"
             className={cn(
@@ -650,7 +740,7 @@ export function AiStudentPersonalScheduler({
               calendarSidebarOpen
                 ? shellMode
                   ? "w-full max-w-[min(100vw,280px)] border-r sm:max-w-[272px]"
-                  : "w-full max-w-[min(100vw,280px)] border-r sm:max-w-[272px]"
+                  : "w-full max-w-[min(100vw-68px,280px)] border-r sm:max-w-[272px]"
                 : "w-0 border-r-0",
             )}
           >
@@ -659,7 +749,7 @@ export function AiStudentPersonalScheduler({
                 "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4",
                 shellMode
                   ? "min-w-[min(100vw,272px)]"
-                  : "min-w-[min(100vw,272px)]",
+                  : "min-w-[min(100vw-68px,272px)]",
               )}
             >
               <div className={cn(panelLight, "p-3")}>
@@ -668,7 +758,6 @@ export function AiStudentPersonalScheduler({
                     Календарь
                   </p>
                 </div>
-
                 <div className="flex justify-center">
                   <Calendar
                     mode="single"
@@ -688,7 +777,7 @@ export function AiStudentPersonalScheduler({
               >
                 <div className="px-3 py-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Давхарга ({Object.keys(LAYER_META).length})
+                    Эвент ({Object.keys(LAYER_META).length})
                   </p>
                 </div>
                 {(Object.keys(LAYER_META) as StudentLayerId[]).map((id) => {
@@ -783,28 +872,6 @@ export function AiStudentPersonalScheduler({
                     >
                       <ChevronRight className="size-4" strokeWidth={2} />
                     </button>
-                  </div>
-                </div>
-
-                <div className="mb-3 rounded-xl border border-blue-100/90 bg-linear-to-r from-blue-50/90 to-white px-3 py-2.5 dark:border-blue-900/50 dark:from-blue-950/50 dark:to-zinc-900/80">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                        <Target className="size-4" strokeWidth={2} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                          Student view (mock)
-                        </p>
-                        <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-                          Одоогоор зөвхөн demo өгөгдөл: батлагдсан давтлага +
-                          секц + personal төлөвлөгөө.
-                        </p>
-                      </div>
-                    </div>
-                    <span className="shrink-0 tabular-nums text-[10px] font-semibold text-blue-700 dark:text-blue-300">
-                      {visibleBlocks.length} блок
-                    </span>
                   </div>
                 </div>
 
@@ -982,10 +1049,7 @@ export function AiStudentPersonalScheduler({
                     textDim,
                   )}
                 >
-                  Demo: батлагдсан давтлага/секц/personal төлөвлөгөө давхарга.
-                  Дараа нь student-ийн баталгаажсан давтлага (recurrence),
-                  секцийн бүртгэл, personal төлөвлөгөө DB/GraphQL-оор орж
-                  ирэхээр солино.
+                  {selectedStudentMeta}
                 </p>
               </div>
             </main>
@@ -996,7 +1060,7 @@ export function AiStudentPersonalScheduler({
                   <Sparkles className="size-4" strokeWidth={2} aria-hidden />
                 </div>
                 <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-                  Сурагчийн төв
+                  Сурагчийн туслах
                 </span>
               </div>
 

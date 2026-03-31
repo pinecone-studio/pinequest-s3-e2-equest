@@ -36,6 +36,8 @@
 		"db:seed:teacher-subjects:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/teacher_subjects_seed.sql",
 		"db:seed:groups:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/groups_seed.sql",
 		"db:seed:groups:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/groups_seed.sql",
+		"db:seed:school-events:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/school_events_seed.sql",
+		"db:seed:school-events:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/school_events_seed.sql",
 		"db:seed:curriculum:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/curriculum_seed.sql",
 		"db:seed:curriculum:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/curriculum_seed.sql",
 		"db:seed:students:generate": "bun run scripts/generate-students-seed.ts",

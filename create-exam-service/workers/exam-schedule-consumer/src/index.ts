@@ -16,7 +16,8 @@ import { parseAiVariantsJson } from "../../../src/lib/exam-schedule-variants";
 
 export interface Env {
   DB: D1Database;
-  GEMINI_API_KEY: string;
+  GEMINI_API_KEY?: string;
+  GOOGLE_AI_API_KEY?: string;
   GEMINI_MODEL: string;
 }
 
@@ -29,12 +30,50 @@ type SchedulerMessageBody = {
 function extractJsonObject(text: string): Record<string, unknown> {
   const trimmed = text.trim();
   const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
+  if (start === -1) {
     throw new Error("JSON объект олдсонгүй");
   }
-  const raw = trimmed.slice(start, end + 1);
-  return JSON.parse(raw) as Record<string, unknown>;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < trimmed.length; i += 1) {
+    const ch = trimmed[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      depth += 1;
+      continue;
+    }
+    if (ch !== "}") continue;
+
+    depth -= 1;
+    if (depth === 0) {
+      const raw = trimmed.slice(start, i + 1);
+      return JSON.parse(raw) as Record<string, unknown>;
+    }
+  }
+
+  throw new Error("JSON объект бүрэн хаагдсангүй");
 }
 
 async function runScheduler(
@@ -109,14 +148,15 @@ async function runScheduler(
     return;
   }
 
-  const apiKey = env.GEMINI_API_KEY?.trim();
+  const apiKey = env.GOOGLE_AI_API_KEY?.trim() || env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     const now = new Date().toISOString();
     await db
       .update(examSchedules)
       .set({
         status: "failed",
-        aiReasoning: "GEMINI_API_KEY тохируулаагүй.",
+        aiReasoning:
+          "GOOGLE_AI_API_KEY эсвэл GEMINI_API_KEY тохируулаагүй.",
         updatedAt: now,
       })
       .where(eq(examSchedules.id, examId));

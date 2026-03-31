@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@apollo/client/react";
 import { useTheme } from "next-themes";
 import {
   addDays,
+  addMonths,
   endOfDay,
   format,
   getISODay,
@@ -25,14 +27,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { SchoolEventLayerKind } from "@/types/schoolCalendar";
 import { cn } from "@/lib/utils";
-import {
-  SCHOOL_EVENT_LAYER_ORDER,
-  SCHOOL_EVENT_LAYER_UI,
-  constraintLabelMn,
-} from "@/constants/calendarLayerTaxonomy";
-import { REAL_WORLD_SCHOOL_CALENDAR_MOCK } from "@/constants/schoolCalendarRealWorldMock";
+import { GetSchoolEventsDocument } from "@/gql/create-exam-documents";
+import type { SchoolEvent } from "@/gql/graphql";
 import {
   CALENDAR_BUFFER_BANDS,
   CALENDAR_OVERLAY_LAYOUTS,
@@ -76,6 +73,109 @@ const WEEKDAY_LETTER_MN: Record<number, string> = {
   6: "Б",
   7: "Н",
 };
+
+function formatMnMonthDay(d: Date) {
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${m}-р сарын ${day}`;
+}
+
+type SchoolEventType =
+  | "HOLIDAY"
+  | "EXAM"
+  | "TEACHER_DEVELOPMENT"
+  | "EXTRACURRICULAR"
+  | "PARENT_MEETING"
+  | "MAINTENANCE"
+  | "TRIP"
+  | "EVENT";
+
+const SCHOOL_EVENT_TYPE_META: Record<
+  SchoolEventType,
+  {
+    labelMn: string;
+    examplesMn: string;
+    impactMn: string;
+    swatch: string;
+    cardClass: string;
+  }
+> = {
+  HOLIDAY: {
+    labelMn: "Амралт/ Баяр",
+    examplesMn: "Нийтийн амралт, баярын өдөр",
+    impactMn: "Хичээл төлөвлөхгүй (ихэвчлэн)",
+    swatch: "bg-rose-600",
+    cardClass:
+      "border-rose-300 bg-rose-100 text-rose-950 dark:border-rose-700 dark:bg-rose-950/70 dark:text-rose-50",
+  },
+  EXAM: {
+    labelMn: "Шалгалт",
+    examplesMn: "Улсын/улирлын шалгалт, олимпиад",
+    impactMn: "Hard lock (EXAM)",
+    swatch: "bg-red-700",
+    cardClass:
+      "border-red-300 bg-red-100 text-red-950 dark:border-red-700 dark:bg-red-950/70 dark:text-red-50",
+  },
+  TEACHER_DEVELOPMENT: {
+    labelMn: "Багш нар",
+    examplesMn: "Сургалт, заах арга зүй, шуурхай",
+    impactMn: "Teacher lock",
+    swatch: "bg-sky-600",
+    cardClass:
+      "border-sky-300 bg-sky-100 text-sky-950 dark:border-sky-700 dark:bg-sky-950/70 dark:text-sky-50",
+  },
+  EXTRACURRICULAR: {
+    labelMn: "Дугуйлан/секц",
+    examplesMn: "Спорт, секц, тэмцээн",
+    impactMn: "Partial lock (сонгосон анги)",
+    swatch: "bg-emerald-600",
+    cardClass:
+      "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-50",
+  },
+  PARENT_MEETING: {
+    labelMn: "Эцэг эх",
+    examplesMn: "Эцэг эхийн хурал, уулзалт",
+    impactMn: "Ихэвчлэн мэдээллийн",
+    swatch: "bg-amber-600",
+    cardClass:
+      "border-amber-300 bg-amber-100 text-amber-950 dark:border-amber-700 dark:bg-amber-950/70 dark:text-amber-50",
+  },
+  MAINTENANCE: {
+    labelMn: "Засвар/Ариутгал",
+    examplesMn: "Ариутгал, засвар, цэвэрлэгээ",
+    impactMn: "Нөөцийн түгжээ",
+    swatch: "bg-zinc-600",
+    cardClass:
+      "border-zinc-300 bg-zinc-100 text-zinc-950 dark:border-zinc-600 dark:bg-zinc-900/70 dark:text-zinc-50",
+  },
+  TRIP: {
+    labelMn: "Аялал",
+    examplesMn: "Музей, аялал арга хэмжээ",
+    impactMn: "Full/partial lock (анги)",
+    swatch: "bg-pink-600",
+    cardClass:
+      "border-pink-300 bg-pink-100 text-pink-950 dark:border-pink-700 dark:bg-pink-950/70 dark:text-pink-50",
+  },
+  EVENT: {
+    labelMn: "Арга хэмжээ",
+    examplesMn: "Хичээлийн шинэ жил, Төгсөлтийн баяр",
+    impactMn: "Soft/Flexible байж болно",
+    swatch: "bg-blue-600",
+    cardClass:
+      "border-blue-300 bg-blue-100 text-blue-950 dark:border-blue-700 dark:bg-blue-950/70 dark:text-blue-50",
+  },
+};
+
+const SCHOOL_EVENT_TYPES: SchoolEventType[] = [
+  "EXAM",
+  "HOLIDAY",
+  "TEACHER_DEVELOPMENT",
+  "EXTRACURRICULAR",
+  "PARENT_MEETING",
+  "MAINTENANCE",
+  "TRIP",
+  "EVENT",
+];
 
 function SchedulerAppearanceMenu() {
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -140,7 +240,7 @@ function ReclaimLightBackdrop() {
   );
 }
 
-type SchoolSidebarLayerKey = SchoolEventLayerKind | "teacherExams";
+type SchoolSidebarLayerKey = SchoolEventType;
 
 function defaultSchoolLayerVisibility(): Record<
   SchoolSidebarLayerKey,
@@ -148,22 +248,29 @@ function defaultSchoolLayerVisibility(): Record<
 > {
   return {
     HOLIDAY: true,
-    ADMIN_FIXED: true,
-    RESOURCE_LOCK: true,
-    ACADEMIC_MILESTONE: true,
-    teacherExams: true,
+    EXAM: true,
+    TEACHER_DEVELOPMENT: true,
+    EXTRACURRICULAR: true,
+    PARENT_MEETING: true,
+    MAINTENANCE: true,
+    TRIP: true,
+    EVENT: true,
   };
 }
 
 type DaySegment = {
   eventId: string;
   title: string;
-  layerKind: SchoolEventLayerKind;
+  eventType: SchoolEventType;
   subcategory?: string | null;
   colIdx: number;
   allDay: boolean;
   topPct: number;
   heightPct: number;
+};
+
+type CalendarSchoolEvent = SchoolEvent & {
+  occurrenceId: string;
 };
 
 function segmentForDay(
@@ -203,46 +310,143 @@ export function SchoolEventScheduler({
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
     [weekStart],
   );
-  const weekRangeLabel = `${format(weekStart, "MMM d", { locale: mn })} – ${format(weekEnd, "MMM d, yyyy", { locale: mn })}`;
-
-  /** D1 хоосон үед GraphQL `schoolCalendarEvents` түр хаасан — зөвхөн mock. Дахин асаахад нэгтгэнэ. */
-  const mergedSchoolCalendarEvents = useMemo(
-    () => REAL_WORLD_SCHOOL_CALENDAR_MOCK,
-    [],
+  const weekRangeLabel = `${formatMnMonthDay(weekStart)} – ${formatMnMonthDay(weekEnd)}`;
+  const yearStart = useMemo(
+    () => startOfDay(new Date(anchor.getFullYear(), 0, 1)),
+    [anchor],
+  );
+  const yearEnd = useMemo(
+    () => endOfDay(new Date(anchor.getFullYear(), 11, 31)),
+    [anchor],
   );
 
-  const schoolEventsList = useMemo(() => {
+  type GetSchoolEventsData = { getSchoolEvents: SchoolEvent[] };
+  type GetSchoolEventsVars = { startDate: string; endDate: string };
+
+  const { data: schoolData } = useQuery<
+    GetSchoolEventsData,
+    GetSchoolEventsVars
+  >(GetSchoolEventsDocument, {
+    variables: {
+      startDate: yearStart.toISOString(),
+      endDate: yearEnd.toISOString(),
+    },
+    fetchPolicy: "cache-first",
+    notifyOnNetworkStatusChange: true,
+  });
+
+  const allSchoolCalendarEvents = useMemo(() => {
+    const rows = schoolData?.getSchoolEvents ?? [];
+    return rows;
+  }, [schoolData?.getSchoolEvents]);
+
+  const schoolEventsList = useMemo((): CalendarSchoolEvent[] => {
     const ws = startOfDay(weekStart);
     const we = endOfDay(weekEnd);
-    return mergedSchoolCalendarEvents
-      .filter((ev) => {
-        const s = parseISO(ev.startAt);
-        const e = parseISO(ev.endAt);
-        return s.getTime() < we.getTime() && e.getTime() > ws.getTime();
+    const out: CalendarSchoolEvent[] = [];
+
+    const overlaps = (start: Date, end: Date) =>
+      start.getTime() < we.getTime() && end.getTime() > ws.getTime();
+
+    const holidayWindows = allSchoolCalendarEvents
+      .filter(
+        (ev) =>
+          String(ev.eventType).toUpperCase() === "HOLIDAY" &&
+          String(ev.repeatPattern ?? "NONE").toUpperCase() === "NONE",
+      )
+      .map((ev) => {
+        const start = parseISO(ev.startDate);
+        const end = parseISO(ev.endDate);
+        return { start, end };
       })
-      .sort(
-        (a, b) => parseISO(a.startAt).getTime() - parseISO(b.startAt).getTime(),
+      .filter(
+        (w) =>
+          !Number.isNaN(w.start.getTime()) &&
+          !Number.isNaN(w.end.getTime()) &&
+          w.end > w.start,
       );
-  }, [mergedSchoolCalendarEvents, weekStart, weekEnd]);
+
+    const overlapsHoliday = (start: Date, end: Date) =>
+      holidayWindows.some(
+        (w) => start.getTime() < w.end.getTime() && end.getTime() > w.start.getTime(),
+      );
+
+    const pushOccurrence = (ev: SchoolEvent, start: Date, end: Date, key: string) => {
+      if (!overlaps(start, end)) return;
+      if (String(ev.repeatPattern ?? "NONE").toUpperCase() !== "NONE" && overlapsHoliday(start, end)) {
+        return;
+      }
+      out.push({
+        ...ev,
+        occurrenceId: `${ev.id}:${key}`,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+      });
+    };
+
+    for (const ev of allSchoolCalendarEvents) {
+      const start = parseISO(ev.startDate);
+      const end = parseISO(ev.endDate);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        continue;
+      }
+
+      const durationMs = end.getTime() - start.getTime();
+      const repeat = String(ev.repeatPattern ?? "NONE").toUpperCase();
+
+      if (repeat === "NONE") {
+        pushOccurrence(ev, start, end, "base");
+        continue;
+      }
+
+      let cursor = new Date(start);
+      let guard = 0;
+      while (cursor.getTime() < we.getTime() && guard < 400) {
+        const cursorEnd = new Date(cursor.getTime() + durationMs);
+        pushOccurrence(ev, cursor, cursorEnd, cursor.toISOString());
+
+        if (repeat === "DAILY") {
+          cursor = addDays(cursor, 1);
+        } else if (repeat === "WEEKLY") {
+          cursor = addDays(cursor, 7);
+        } else if (repeat === "MONTHLY") {
+          cursor = addMonths(cursor, 1);
+        } else {
+          break;
+        }
+        guard += 1;
+      }
+    }
+
+    return out.sort(
+      (a, b) => parseISO(a.startDate).getTime() - parseISO(b.startDate).getTime(),
+    );
+  }, [allSchoolCalendarEvents, weekStart, weekEnd]);
 
   const eventSegments = useMemo((): DaySegment[] => {
-    const events = mergedSchoolCalendarEvents;
+    const events = schoolEventsList;
     const out: DaySegment[] = [];
     for (const ev of events) {
-      const start = parseISO(ev.startAt);
-      const end = parseISO(ev.endAt);
+      const start = parseISO(ev.startDate);
+      const end = parseISO(ev.endDate);
       if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
         continue;
 
       weekDays.forEach((day, colIdx) => {
         const seg = segmentForDay(day, start, end);
         if (!seg) return;
-        if (ev.allDay) {
+        const type = String(ev.eventType) as SchoolEventType;
+        const allDay =
+          ev.isFullLock &&
+          (type === "HOLIDAY" || type === "TRIP") &&
+          end.getTime() - start.getTime() >= 20 * 60 * 60 * 1000;
+
+        if (allDay) {
           out.push({
-            eventId: ev.id,
+            eventId: ev.occurrenceId,
             title: ev.title,
-            layerKind: ev.layerKind,
-            subcategory: ev.subcategory,
+            eventType: type,
+            subcategory: ev.description,
             colIdx,
             allDay: true,
             topPct: 0,
@@ -255,10 +459,10 @@ export function SchoolEventScheduler({
         const eh = seg.end.getHours();
         const em = seg.end.getMinutes();
         out.push({
-          eventId: ev.id,
+          eventId: ev.occurrenceId,
           title: ev.title,
-          layerKind: ev.layerKind,
-          subcategory: ev.subcategory,
+          eventType: type,
+          subcategory: ev.description,
           colIdx,
           allDay: false,
           topPct: slotTopPercent(sh, sm),
@@ -267,7 +471,7 @@ export function SchoolEventScheduler({
       });
     }
     return out;
-  }, [mergedSchoolCalendarEvents, weekDays]);
+  }, [schoolEventsList, weekDays]);
 
   function toggleLayer(id: SchoolSidebarLayerKey) {
     setLayerOn((p) => ({ ...p, [id]: !p[id] }));
@@ -341,12 +545,6 @@ export function SchoolEventScheduler({
               </button>
             )}
             <div className="min-w-0">
-              <div className="mb-0.5 flex flex-wrap items-center gap-2">
-                <Badge className="rounded-md border-0 bg-blue-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white dark:bg-blue-500">
-                  <Building2 className="mr-1 inline size-3" />
-                  Сургууль
-                </Badge>
-              </div>
               <div className="flex min-w-0 items-center gap-2">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">
                   <CalendarClock
@@ -355,14 +553,12 @@ export function SchoolEventScheduler({
                     aria-hidden
                   />
                 </span>
-                <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
-                  Сургуулийн хуанли
-                </h1>
+                <div>
+                  <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
+                    Сургуулийн хуанли
+                  </h1>
+                </div>
               </div>
-              <p className={cn("truncate text-xs", textDim)}>
-                Нийтлэг үйл явдал ·{" "}
-                {format(anchor, "yyyy MMMM", { locale: mn })}
-              </p>
             </div>
           </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
@@ -448,10 +644,13 @@ export function SchoolEventScheduler({
                 <div className={cn(panelLight, "p-3")}>
                   <div className="mb-2 space-y-0.5 px-1">
                     <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                      Сургуулийн хуанли
+                      Календарь
                     </p>
                   </div>
-                  <div className="flex justify-center" aria-label="Өдөр сонгох хуанли">
+                  <div
+                    className="flex justify-center"
+                    aria-label="Өдөр сонгох хуанли"
+                  >
                     <Calendar
                       mode="single"
                       selected={date}
@@ -469,18 +668,10 @@ export function SchoolEventScheduler({
                   )}
                 >
                   <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Харагдац
+                    Эвент
                   </p>
-                  <div className="px-3 pt-1 pb-0.5">
-                    <p className="text-[10px] font-semibold text-zinc-600 dark:text-zinc-300">
-                      Сургуулийн эвент
-                    </p>
-                    <p className="mt-0.5 text-[9px] leading-snug text-zinc-500 dark:text-zinc-500">
-                      Дэд давхарга — ачааллын эрэмбэ (өөр өнгө)
-                    </p>
-                  </div>
-                  {SCHOOL_EVENT_LAYER_ORDER.map((kind) => {
-                    const meta = SCHOOL_EVENT_LAYER_UI[kind];
+                  {SCHOOL_EVENT_TYPES.map((kind) => {
+                    const meta = SCHOOL_EVENT_TYPE_META[kind];
                     const on = layerOn[kind];
                     return (
                       <button
@@ -513,7 +704,6 @@ export function SchoolEventScheduler({
                             className="mt-0.5 block truncate text-[9px] text-zinc-400 dark:text-zinc-500"
                             title={meta.impactMn}
                           >
-                            {constraintLabelMn(meta.constraint)} ·{" "}
                             {meta.impactMn}
                           </span>
                         </span>
@@ -530,55 +720,6 @@ export function SchoolEventScheduler({
                       </button>
                     );
                   })}
-                  {(() => {
-                    const layer = {
-                      id: "teacherExams" as const,
-                      label: "Багшийн оруулсан шалгалт",
-                      role: "Ирээдүйд exam_schedules / баталгаажсан хуваарь",
-                      swatch: "bg-violet-500",
-                    };
-                    const on = layerOn.teacherExams;
-                    return (
-                      <button
-                        key={layer.id}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => toggleLayer("teacherExams")}
-                        className={cn(
-                          "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                          on
-                            ? "bg-blue-50/80 text-zinc-900 dark:bg-blue-950/40 dark:text-zinc-100"
-                            : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/60",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "size-2.5 shrink-0 rounded-sm",
-                            layer.swatch,
-                            !on && "opacity-35",
-                          )}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">
-                            {layer.label}
-                          </span>
-                          <span className="block truncate text-[10px] text-zinc-500 dark:text-zinc-400">
-                            {layer.role}
-                          </span>
-                        </span>
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                            on
-                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900/70 dark:text-blue-200"
-                              : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
-                          )}
-                        >
-                          {on ? "Идэвхтэй" : "Нуугдсан"}
-                        </span>
-                      </button>
-                    );
-                  })()}
                 </div>
               </div>
             ) : (
@@ -761,10 +902,10 @@ export function SchoolEventScheduler({
                         {eventSegments
                           .filter(
                             (seg) =>
-                              seg.colIdx === colIdx && layerOn[seg.layerKind],
+                              seg.colIdx === colIdx && layerOn[seg.eventType],
                           )
                           .map((seg) => {
-                            const meta = SCHOOL_EVENT_LAYER_UI[seg.layerKind];
+                            const meta = SCHOOL_EVENT_TYPE_META[seg.eventType];
                             return (
                               <div
                                 key={`${seg.eventId}-${colIdx}-${seg.topPct}`}
@@ -800,14 +941,6 @@ export function SchoolEventScheduler({
                               </div>
                             );
                           })}
-                        {layerOn.teacherExams ? (
-                          <div
-                            className="pointer-events-none absolute bottom-2 left-1 right-1 z-4 rounded-lg border border-dashed border-violet-400/60 bg-violet-500/10 px-2 py-1 text-center text-[9px] font-medium text-violet-900/80 dark:border-violet-500/50 dark:bg-violet-950/30 dark:text-violet-200"
-                            data-school-skip-drag
-                          >
-                            Багшийн шалгалт — ирээдүйд GraphQL
-                          </div>
-                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -819,11 +952,7 @@ export function SchoolEventScheduler({
                     textDim,
                   )}
                 >
-                  Зөвхөн mock:{" "}
-                  <code className="text-zinc-600 dark:text-zinc-300">
-                    schoolCalendarRealWorldMock.ts
-                  </code>{" "}
-                  · D1 бэлэн болоход GraphQL query дахин нээнэ.
+                  @ Copyright 2026 TeamOne LLC. All rights reserved.
                 </p>
               </div>
             </main>
@@ -834,7 +963,7 @@ export function SchoolEventScheduler({
                   <Building2 className="size-4" strokeWidth={2} />
                 </div>
                 <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                  Сургуулийн мэдээлэл
+                  Сургуулийн туслах
                 </span>
               </div>
 
@@ -889,7 +1018,10 @@ export function SchoolEventScheduler({
                           </p>
                         ) : (
                           schoolEventsList.map((ev) => {
-                            const meta = SCHOOL_EVENT_LAYER_UI[ev.layerKind];
+                            const meta =
+                              SCHOOL_EVENT_TYPE_META[
+                                String(ev.eventType) as SchoolEventType
+                              ];
                             return (
                               <div
                                 key={ev.id}
@@ -901,14 +1033,18 @@ export function SchoolEventScheduler({
                                 <p className="font-semibold">{ev.title}</p>
                                 <p className="mt-0.5 text-[10px] opacity-90">
                                   {meta.labelMn}
-                                  {ev.subcategory ? ` · ${ev.subcategory}` : ""}
+                                  {ev.description ? ` · ${ev.description}` : ""}
                                 </p>
                                 <p className="mt-1 tabular-nums text-[10px] opacity-90">
-                                  {format(parseISO(ev.startAt), "MMM d HH:mm", {
-                                    locale: mn,
-                                  })}{" "}
+                                  {format(
+                                    parseISO(ev.startDate),
+                                    "MMM d HH:mm",
+                                    {
+                                      locale: mn,
+                                    },
+                                  )}{" "}
                                   –{" "}
-                                  {format(parseISO(ev.endAt), "MMM d HH:mm", {
+                                  {format(parseISO(ev.endDate), "MMM d HH:mm", {
                                     locale: mn,
                                   })}
                                 </p>

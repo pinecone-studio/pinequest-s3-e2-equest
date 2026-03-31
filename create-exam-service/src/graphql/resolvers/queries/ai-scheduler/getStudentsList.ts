@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { GraphQLError } from "graphql";
 
 import type { GraphQLContext } from "../../../context";
-import { groups, students } from "../../../../db/schema";
+import { classrooms, groups, students } from "../../../../db/schema";
 
 type Args = { grade: number; group: string };
 
@@ -45,10 +45,13 @@ export const getStudentsListQuery = {
         lastName: students.lastName,
         studentCode: students.studentCode,
         groupId: students.groupId,
+        gradeLevel: groups.gradeLevel,
+        homeRoomNumber: classrooms.roomNumber,
         status: students.status,
       })
       .from(students)
       .innerJoin(groups, eq(students.groupId, groups.id))
+      .leftJoin(classrooms, eq(groups.homeClassroomId, classrooms.id))
       .where(
         and(
           eq(students.groupId, groupId),

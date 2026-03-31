@@ -266,6 +266,8 @@ export const typeDefs = /* GraphQL */ `
     lastName: String!
     studentCode: String!
     groupId: String!
+    gradeLevel: Int!
+    homeRoomNumber: String
     status: String!
   }
 
@@ -307,6 +309,26 @@ export const typeDefs = /* GraphQL */ `
     endTime: String!
   }
 
+  type SchoolEvent {
+    id: ID!
+    title: String!
+    description: String
+    eventType: String!
+    priority: Int!
+    urgencyLevel: String!
+    targetType: String!
+    isSchoolWide: Boolean!
+    isFullLock: Boolean!
+    repeatPattern: String!
+    startDate: String!
+    endDate: String!
+    startPeriodId: Int
+    endPeriodId: Int
+    colorCode: String
+    groupIds: [String!]!
+    teacherIds: [String!]!
+  }
+
   type Query {
     listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
     getNewMathExam(examId: ID!): NewMathExam
@@ -323,6 +345,7 @@ export const typeDefs = /* GraphQL */ `
       semesterId: String = "2026-SPRING"
       includeDraft: Boolean = false
     ): [TeacherMainLesson!]!
+    getSchoolEvents(startDate: String!, endDate: String!): [SchoolEvent!]!
   }
 
   type Mutation {
@@ -342,6 +365,11 @@ export const typeDefs = /* GraphQL */ `
       preferredDate: String!
     ): RequestExamSchedulePayload!
     approveAiExamSchedule(examId: ID!, variantId: String!): ExamSchedule!
+    rejectAiExamScheduleVariant(
+      examId: ID!
+      variantId: String!
+      reason: String
+    ): ExamSchedule!
   }
 
   type NewMathExamSummary {

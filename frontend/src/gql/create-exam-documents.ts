@@ -129,6 +129,8 @@ export const GetStudentsListDocument = gql(`
 			lastName
 			studentCode
 			groupId
+			gradeLevel
+			homeRoomNumber
 			status
 		}
 	}
@@ -166,6 +168,30 @@ export const GetStudentMainLessonsListDocument = gql(`
 	}
 `);
 
+export const GetSchoolEventsDocument = gql(`
+	query GetSchoolEvents($startDate: String!, $endDate: String!) {
+		getSchoolEvents(startDate: $startDate, endDate: $endDate) {
+			id
+			title
+			description
+			eventType
+			priority
+			urgencyLevel
+			targetType
+			isSchoolWide
+			isFullLock
+			repeatPattern
+			startDate
+			endDate
+			startPeriodId
+			endPeriodId
+			colorCode
+			groupIds
+			teacherIds
+		}
+	}
+`);
+
 export const GetTeacherMainLessonsListDocument = gql(`
 	query GetTeacherMainLessonsList(
 		$teacherId: ID!
@@ -199,6 +225,34 @@ export const GetTeacherMainLessonsListDocument = gql(`
 export const ApproveAiExamScheduleDocument = gql(`
 	mutation ApproveAiExamSchedule($examId: ID!, $variantId: String!) {
 		approveAiExamSchedule(examId: $examId, variantId: $variantId) {
+			id
+			startTime
+			endTime
+			roomId
+			status
+			aiReasoning
+			aiVariants {
+				id
+				label
+				startTime
+				roomId
+				reason
+			}
+		}
+	}
+`);
+
+export const RejectAiExamScheduleVariantDocument = gql(`
+	mutation RejectAiExamScheduleVariant(
+		$examId: ID!
+		$variantId: String!
+		$reason: String
+	) {
+		rejectAiExamScheduleVariant(
+			examId: $examId
+			variantId: $variantId
+			reason: $reason
+		) {
 			id
 			startTime
 			endTime

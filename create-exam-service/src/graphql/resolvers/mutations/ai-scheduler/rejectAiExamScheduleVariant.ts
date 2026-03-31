@@ -8,12 +8,18 @@ import {
 	parseAiVariantsJson,
 } from "../../../../lib/exam-schedule-variants";
 
-const EXAM_DURATION_MS = 90 * 60 * 1000;
+type Args = {
+	examId: string;
+	variantId: string;
+	reason?: string | null;
+};
 
-type Args = { examId: string; variantId: string };
-
-export const approveAiExamScheduleMutation = {
-	approveAiExamSchedule: async (_: unknown, args: Args, ctx: GraphQLContext) => {
+export const rejectAiExamScheduleVariantMutation = {
+	rejectAiExamScheduleVariant: async (
+		_: unknown,
+		args: Args,
+		ctx: GraphQLContext,
+	) => {
 		if (!ctx.db) {
 			throw new GraphQLError(
 				"D1 DB холбогдоогүй байна (локалд .dev.vars + wrangler, production-д binding шалгана уу)",
@@ -21,6 +27,7 @@ export const approveAiExamScheduleMutation = {
 		}
 		const examId = String(args.examId ?? "").trim();
 		const variantId = String(args.variantId ?? "").trim();
+		const reason = String(args.reason ?? "").trim();
 		if (!examId || !variantId) {
 			throw new GraphQLError("examId, variantId заавал бөглөнө.");
 		}
@@ -36,33 +43,35 @@ export const approveAiExamScheduleMutation = {
 		}
 		if (row.status !== "suggested") {
 			throw new GraphQLError(
-				`Зөвхөн "suggested" төлөвт батална. Одоогийн төлөв: ${row.status}`,
+				`Зөвхөн "suggested" төлөвт татгалзана. Одоогийн төлөв: ${row.status}`,
 			);
 		}
 
 		const variants = parseAiVariantsJson(row.aiVariantsJson);
-		const chosen = variants.find((v) => v.id === variantId);
-		if (!chosen) {
-			throw new GraphQLError("Сонгосон variantId олдсонгүй.");
+		if (!variants.length) {
+			throw new GraphQLError("aiVariants хоосон байна.");
 		}
 
-		const start = new Date(chosen.startTime);
-		if (Number.isNaN(start.getTime())) {
-			throw new GraphQLError("Сонгосон хувилбарын startTime буруу байна.");
+		const remaining = variants.filter((v) => v.id !== variantId);
+		if (remaining.length === variants.length) {
+			throw new GraphQLError("variantId олдсонгүй.");
 		}
 
-		const end = new Date(start.getTime() + EXAM_DURATION_MS);
 		const now = new Date().toISOString();
+		const nextStatus = remaining.length ? "suggested" : "rejected";
+		const nextReason = reason
+			? `${row.aiReasoning ?? ""}${row.aiReasoning ? "\n\n" : ""}Багш татгалзсан (${variantId}): ${reason}`.slice(
+					0,
+					4000,
+				)
+			: row.aiReasoning ?? null;
 
 		await ctx.db
 			.update(examSchedules)
 			.set({
-				startTime: start,
-				endTime: end,
-				roomId: chosen.roomId,
-				status: "confirmed",
-				aiReasoning: chosen.reason ?? row.aiReasoning,
-				aiVariantsJson: null,
+				status: nextStatus,
+				aiVariantsJson: remaining.length ? JSON.stringify(remaining) : null,
+				aiReasoning: nextReason,
 				updatedAt: now,
 			})
 			.where(eq(examSchedules.id, examId));
@@ -80,3 +89,4 @@ export const approveAiExamScheduleMutation = {
 		return examScheduleRowToGql(updated);
 	},
 };
+
