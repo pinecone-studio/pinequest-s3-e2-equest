@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from "react"
 import {
   ArrowLeft,
   ArrowRight,
+  Bold,
+  CornerDownLeft,
   Eraser,
+  Italic,
+  List,
+  ListOrdered,
   Redo2,
   Type,
   Undo2,
@@ -90,8 +95,13 @@ type MathInputProps = {
   onChange?: (latex: string) => void
   onClear?: () => void
   onInsertLatex?: (latex: string, moveLeftAfterWrite?: number) => void
+  onInsertSystemLine?: () => void
   onMoveLeft?: () => void
   onMoveRight?: () => void
+  onToggleBold?: () => void
+  onToggleBulletList?: () => void
+  onToggleItalic?: () => void
+  onToggleOrderedList?: () => void
   onValueChange?: (latex: string) => void
   placeholder?: string
   value?: string
@@ -270,6 +280,57 @@ const TAB_CONFIG: Record<ActiveTab, TabConfig> = {
   },
 }
 
+const TAB_PILL_LABELS: Record<ActiveTab, { primary: string; secondary: string }> = {
+  basic: {
+    primary: "+ −",
+    secondary: "× ÷",
+  },
+  function: {
+    primary: "f(x) e",
+    secondary: "log ln",
+  },
+  trig: {
+    primary: "sin cos",
+    secondary: "tan cot",
+  },
+  calculus: {
+    primary: "lim dx",
+    secondary: "∫ Σ ∞",
+  },
+}
+
+function isNumericKey(action: KeyAction) {
+  return /^[0-9.]$/.test(action.label)
+}
+
+function isPrimaryOperatorKey(action: KeyAction) {
+  return ["+", "−", "×", "÷", ">", "%"].includes(action.label)
+}
+
+function isStructureKey(action: KeyAction) {
+  return (
+    action.hint === "fraction" ||
+    action.hint === "sqrt" ||
+    ["(", ")", "a/b", "√", "x²"].includes(action.label)
+  )
+}
+
+function getPaletteActionClassName(action: KeyAction) {
+  if (isNumericKey(action)) {
+    return "bg-[#f3f3f5] text-slate-900 hover:bg-[#ececef]"
+  }
+
+  if (isPrimaryOperatorKey(action)) {
+    return "bg-white text-slate-900 hover:bg-[#f8f8fa]"
+  }
+
+  if (isStructureKey(action)) {
+    return "bg-white text-slate-900 hover:bg-[#f8f8fa]"
+  }
+
+  return "bg-white text-slate-800 hover:bg-[#f8f8fa]"
+}
+
 function ensureStyle(id: string, href: string) {
   return new Promise<void>((resolve, reject) => {
     const existing = document.getElementById(id) as HTMLLinkElement | null
@@ -344,8 +405,13 @@ export function MathInput({
   onChange,
   onClear,
   onInsertLatex,
+  onInsertSystemLine,
   onMoveLeft,
   onMoveRight,
+  onToggleBold,
+  onToggleBulletList,
+  onToggleItalic,
+  onToggleOrderedList,
   onValueChange,
   placeholder = "Type math here",
   value,
@@ -424,6 +490,7 @@ export function MathInput({
       return
     }
 
+    const editorElement = editorRef.current
     const mathQuill = window.MathQuill?.getInterface(2)
 
     if (!mathQuill) {
@@ -431,7 +498,7 @@ export function MathInput({
       return
     }
 
-    const field = mathQuill.MathField(editorRef.current, {
+    const field = mathQuill.MathField(editorElement, {
       leftRightIntoCmdGoes: "up",
       spaceBehavesLikeTab: true,
       handlers: {
@@ -470,9 +537,7 @@ export function MathInput({
         fieldRef.current = null
       }
 
-      if (editorRef.current) {
-        editorRef.current.innerHTML = ""
-      }
+      editorElement.innerHTML = ""
     }
   }, [librariesReady.mathquill])
 
@@ -655,6 +720,32 @@ export function MathInput({
   const keyboardDisabled = isPaletteMode
     ? false
     : !librariesReady.mathquill || Boolean(libraryError)
+  const textFormattingActions = [
+    {
+      icon: Bold,
+      key: "bold",
+      label: "Bold",
+      onClick: onToggleBold,
+    },
+    {
+      icon: Italic,
+      key: "italic",
+      label: "Italic",
+      onClick: onToggleItalic,
+    },
+    {
+      icon: List,
+      key: "bullet-list",
+      label: "Bullet list",
+      onClick: onToggleBulletList,
+    },
+    {
+      icon: ListOrdered,
+      key: "ordered-list",
+      label: "Numbered list",
+      onClick: onToggleOrderedList,
+    },
+  ].filter((action) => typeof action.onClick === "function")
 
   function handleInsertAction(nextLatex: string, moveLeftAfterWrite = 0) {
     if (isPaletteMode) {
@@ -695,57 +786,105 @@ export function MathInput({
   return (
     <div
       className={cn(
-        "w-full overflow-hidden rounded-[28px] border border-border/70 bg-card shadow-[0_24px_70px_-36px_rgba(15,23,42,0.45)]",
+        isPaletteMode
+          ? "w-full overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_22px_40px_-34px_rgba(15,23,42,0.22)]"
+          : "w-full overflow-hidden rounded-[32px] border border-slate-200/80 bg-white shadow-[0_34px_90px_-42px_rgba(15,23,42,0.28)]",
         className
       )}
     >
       <div
         className={cn(
-          "border-b border-border/70 bg-gradient-to-br px-4 pb-4 pt-4 sm:px-5",
-          activeConfig.accent
+          isPaletteMode
+            ? "border-b border-slate-200 bg-white px-3 pb-2 pt-3 sm:px-3"
+            : "border-b border-slate-200/80 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.16),transparent_26%),radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(241,247,255,0.92))] px-4 pb-4 pt-4 sm:px-5",
+          !isPaletteMode && activeConfig.accent
         )}
       >
         {isPaletteMode ? (
-          <div className="flex items-center justify-between gap-3 rounded-[24px] border border-border/70 bg-background/85 px-4 py-3 backdrop-blur">
-            <div className="text-[11px] font-semibold tracking-[0.22em] text-muted-foreground">
-              CURRENT INPUT KEYBOARD
-            </div>
-            <div className="flex items-center gap-2">
+          <div className="space-y-3">
+            <div className="grid grid-cols-6 items-center gap-1 border-b border-slate-200 pb-2 text-slate-900">
+              <button
+                type="button"
+                className="flex h-10 items-center justify-center rounded-xl text-[1.15rem] font-medium transition hover:bg-slate-100"
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                abc
+              </button>
+              <button
+                type="button"
+                aria-label="Undo"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100"
+                onClick={undoStackRef.current.length === 0 ? undefined : undo}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <Undo2 className="size-5" />
+              </button>
               <button
                 type="button"
                 aria-label="Move cursor left"
-                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100"
                 onClick={handleMoveLeft}
                 onMouseDown={(event) => event.preventDefault()}
               >
-                <ArrowLeft className="size-4" />
+                <ArrowLeft className="size-5" />
               </button>
               <button
                 type="button"
                 aria-label="Move cursor right"
-                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100"
                 onClick={handleMoveRight}
                 onMouseDown={(event) => event.preventDefault()}
               >
-                <ArrowRight className="size-4" />
+                <ArrowRight className="size-5" />
+              </button>
+              <button
+                type="button"
+                aria-label="Insert system line"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100 disabled:opacity-50"
+                disabled={!onInsertSystemLine}
+                onClick={onInsertSystemLine}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <CornerDownLeft className="size-5" />
               </button>
               <button
                 type="button"
                 aria-label="Clear input"
-                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/8 text-destructive transition hover:bg-destructive/12"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100"
                 onClick={handleClear}
                 onMouseDown={(event) => event.preventDefault()}
               >
-                <Eraser className="size-4" />
+                <Eraser className="size-5" />
               </button>
             </div>
+
+            {textFormattingActions.length > 0 ? (
+              <div className="grid grid-cols-4 gap-2">
+                {textFormattingActions.map((action) => {
+                  const Icon = action.icon
+
+                  return (
+                    <button
+                      key={action.key}
+                      type="button"
+                      aria-label={action.label}
+                      className="flex h-9 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50"
+                      onClick={action.onClick}
+                      onMouseDown={(event) => event.preventDefault()}
+                    >
+                      <Icon className="size-4" />
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-6 gap-2">
+            <div className="grid grid-cols-7 gap-2">
               <button
                 type="button"
-                className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-border/70 bg-background/80 text-sm font-semibold text-foreground transition hover:bg-background"
+                className="flex h-11 items-center justify-center gap-2 rounded-full border border-slate-200/90 bg-white text-sm font-semibold text-slate-700 shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
                 onMouseDown={(event) => event.preventDefault()}
               >
                 <Type className="size-4" />
@@ -754,7 +893,7 @@ export function MathInput({
               <button
                 type="button"
                 aria-label="Undo"
-                className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
+                className="flex h-11 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                 disabled={undoStackRef.current.length === 0 || keyboardDisabled}
                 onClick={undo}
                 onMouseDown={(event) => event.preventDefault()}
@@ -764,7 +903,7 @@ export function MathInput({
               <button
                 type="button"
                 aria-label="Redo"
-                className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
+                className="flex h-11 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                 disabled={redoStackRef.current.length === 0 || keyboardDisabled}
                 onClick={redo}
                 onMouseDown={(event) => event.preventDefault()}
@@ -774,7 +913,7 @@ export function MathInput({
               <button
                 type="button"
                 aria-label="Move cursor left"
-                className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
+                className="flex h-11 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                 disabled={keyboardDisabled}
                 onClick={handleMoveLeft}
                 onMouseDown={(event) => event.preventDefault()}
@@ -784,7 +923,7 @@ export function MathInput({
               <button
                 type="button"
                 aria-label="Move cursor right"
-                className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-foreground transition hover:bg-background disabled:opacity-50"
+                className="flex h-11 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                 disabled={keyboardDisabled}
                 onClick={handleMoveRight}
                 onMouseDown={(event) => event.preventDefault()}
@@ -793,8 +932,18 @@ export function MathInput({
               </button>
               <button
                 type="button"
+                aria-label="Insert system line"
+                className="flex h-11 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                disabled={!onInsertSystemLine || keyboardDisabled}
+                onClick={onInsertSystemLine}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <CornerDownLeft className="size-4" />
+              </button>
+              <button
+                type="button"
                 aria-label="Clear input"
-                className="flex h-11 items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/8 text-destructive transition hover:bg-destructive/12 disabled:opacity-50"
+                className="flex h-11 items-center justify-center rounded-full border border-rose-200/90 bg-rose-50 text-rose-600 shadow-[0_14px_24px_-18px_rgba(244,63,94,0.32)] transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-100 disabled:opacity-50"
                 disabled={!latex || keyboardDisabled}
                 onClick={handleClear}
                 onMouseDown={(event) => event.preventDefault()}
@@ -803,37 +952,37 @@ export function MathInput({
               </button>
             </div>
 
-            <div className="mt-4 rounded-[24px] border border-border/70 bg-background/85 p-4 backdrop-blur">
-              <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold tracking-[0.22em] text-muted-foreground">
-                <span>MathQuill Input</span>
-                <span className="uppercase">{activeConfig.label}</span>
+            <div className="mt-4 rounded-[28px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,255,0.96))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_22px_48px_-34px_rgba(15,23,42,0.32)] backdrop-blur">
+              <div className="mb-3 flex items-center justify-between gap-3 text-[11px] font-semibold tracking-[0.22em] text-slate-500">
+                <span>LIVE EXPRESSION</span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] text-slate-600 uppercase">{activeConfig.label}</span>
               </div>
 
-              <div className="rounded-[20px] border border-border/60 bg-white/90 px-4 py-3 shadow-sm">
+              <div className="rounded-[30px] border border-slate-200/90 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-5 py-4 shadow-[0_20px_40px_-28px_rgba(15,23,42,0.35)]">
                 <div
                   ref={editorRef}
                   aria-label="Math input"
-                  className="math-input-editor min-h-12 w-full text-[1.45rem] text-foreground"
+                  className="math-input-editor min-h-14 w-full text-[1.55rem] text-slate-900"
                 />
                 {!latex && (
-                  <p className="pointer-events-none mt-1 text-sm text-muted-foreground">
+                  <p className="pointer-events-none mt-2 text-sm text-slate-400">
                     {placeholder}
                   </p>
                 )}
               </div>
 
-              <div className="mt-4 rounded-[20px] border border-dashed border-border/80 bg-muted/30 px-4 py-3">
-                <div className="mb-2 text-[11px] font-semibold tracking-[0.22em] text-muted-foreground">
-                  KaTeX Preview
+              <div className="mt-4 rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(241,247,255,0.9),rgba(236,244,252,0.95))] px-4 py-3">
+                <div className="mb-2 text-[11px] font-semibold tracking-[0.22em] text-slate-500">
+                  CAMERA-READY PREVIEW
                 </div>
 
                 {previewHtml ? (
                   <div
-                    className="math-preview min-h-16 overflow-x-auto text-foreground"
+                    className="math-preview min-h-16 overflow-x-auto text-slate-900"
                     dangerouslySetInnerHTML={{ __html: previewHtml }}
                   />
                 ) : (
-                  <div className="flex min-h-16 items-center text-sm text-muted-foreground">
+                  <div className="flex min-h-16 items-center text-sm text-slate-500">
                     {librariesReady.katex
                       ? "Rendered preview will appear here."
                       : "Loading KaTeX preview..."}
@@ -842,7 +991,7 @@ export function MathInput({
               </div>
 
               {libraryError && (
-                <p className="mt-3 rounded-2xl border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+                <p className="mt-3 rounded-2xl border border-rose-200/90 bg-rose-50 px-3 py-2 text-sm text-rose-600">
                   {libraryError}
                 </p>
               )}
@@ -851,39 +1000,81 @@ export function MathInput({
         )}
       </div>
 
-      <div className="border-b border-border/70 bg-muted/30 px-3 py-3 sm:px-4">
-        <div className="grid grid-cols-4 gap-2">
+      <div
+        className={cn(
+          isPaletteMode
+            ? "border-b border-slate-200 bg-white px-3 py-3 sm:px-3"
+            : "border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(244,248,255,0.92),rgba(238,244,251,0.96))] px-3 py-3 sm:px-4"
+        )}
+      >
+        <div
+          className={cn(
+            "grid grid-cols-4 gap-2",
+            isPaletteMode
+              ? ""
+              : "rounded-[24px] bg-white/80 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
+          )}
+        >
           {TAB_ORDER.map((tab) => {
             const isActive = tab === activeTab
+            const pillLabel = TAB_PILL_LABELS[tab]
 
             return (
               <button
                 key={tab}
                 type="button"
                 className={cn(
-                  "rounded-2xl px-3 py-3 text-xs font-semibold tracking-[0.16em] transition",
+                  isPaletteMode
+                    ? "rounded-full border px-2 py-2 text-center transition"
+                    : "rounded-[18px] px-3 py-3 text-xs font-semibold tracking-[0.16em] transition",
                   isActive
-                    ? "bg-foreground text-background shadow-sm"
-                    : "bg-background text-muted-foreground hover:bg-background/80 hover:text-foreground"
+                    ? isPaletteMode
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "bg-slate-900 text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.55)]"
+                    : isPaletteMode
+                      ? "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                      : "bg-transparent text-slate-500 hover:bg-slate-100/90 hover:text-slate-900"
                 )}
                 onClick={() => setActiveTab(tab)}
                 onMouseDown={(event) => event.preventDefault()}
               >
-                {TAB_CONFIG[tab].label}
+                {isPaletteMode ? (
+                  <span className="flex flex-col leading-tight">
+                    <span className="text-[0.72rem] font-semibold">{pillLabel.primary}</span>
+                    <span className="text-[0.72rem] font-medium opacity-80">{pillLabel.secondary}</span>
+                  </span>
+                ) : (
+                  TAB_CONFIG[tab].label
+                )}
               </button>
             )
           })}
         </div>
       </div>
 
-      <div className="bg-gradient-to-b from-background to-muted/20 p-3 sm:p-4">
-        <div className={cn("grid gap-2 sm:gap-3", activeConfig.cols)}>
+      <div
+        className={cn(
+          isPaletteMode
+            ? "bg-white px-0 pb-0 pt-0"
+            : "bg-[linear-gradient(180deg,rgba(255,255,255,0.7),rgba(241,245,249,0.9))] p-3 sm:p-4"
+        )}
+      >
+        <div
+          className={cn(
+            "grid",
+            activeConfig.cols,
+            isPaletteMode ? "gap-px bg-slate-200" : "gap-2 sm:gap-3"
+          )}
+        >
           {activeConfig.keys.map((action) => (
             <button
               key={action.key}
               type="button"
               className={cn(
-                "flex min-h-14 flex-col items-center justify-center rounded-[22px] border border-border/70 bg-background px-2 py-3 text-center shadow-sm transition hover:-translate-y-0.5 hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50",
+                isPaletteMode
+                  ? "flex min-h-[4.15rem] flex-col items-center justify-center px-2 py-3 text-center transition disabled:cursor-not-allowed disabled:opacity-50"
+                  : "flex min-h-[3.85rem] flex-col items-center justify-center rounded-[24px] border px-2 py-3 text-center transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50",
+                getPaletteActionClassName(action),
                 action.span
               )}
               disabled={keyboardDisabled}
@@ -896,11 +1087,11 @@ export function MathInput({
               }}
               onMouseDown={(event) => event.preventDefault()}
             >
-              <span className="text-base font-semibold text-foreground">
+              <span className="text-base font-semibold">
                 {action.label}
               </span>
               {action.hint && (
-                <span className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                <span className="mt-1 text-[11px] uppercase tracking-[0.18em] text-current/60">
                   {action.hint}
                 </span>
               )}
@@ -928,13 +1119,14 @@ export function MathInput({
 
         .math-input-editor .mq-root-block,
         .math-input-editor .mq-editable-field .mq-root-block {
-          min-height: 2.75rem;
+          min-height: 3rem;
           padding: 0;
           color: inherit;
         }
 
         .math-input-editor .mq-cursor {
-          border-color: currentColor;
+          border-color: #0f172a;
+          border-width: 2px;
         }
 
         .math-preview .katex-display {

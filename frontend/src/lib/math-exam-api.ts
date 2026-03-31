@@ -1,4 +1,5 @@
 import type {
+  ExtractExamEnhanceFocus,
   ExamApiResponse,
   GenerateExamRequest,
   GeneratedExamPayload,
@@ -105,12 +106,22 @@ export async function requestGeneratedExam({
   return parseExamResponse(response, "AI шалгалт үүсгэж чадсангүй.");
 }
 
-export async function requestExtractedExam(files: File[]) {
+export async function requestExtractedExam(
+  files: File[],
+  options?: {
+    enhanceFocus?: ExtractExamEnhanceFocus;
+    mode?: "enhance" | "fast";
+  },
+) {
   const attachments = await Promise.all(
     files.map((file) => serializeAttachment(file)),
   );
   const response = await fetch("/api/gemini-extract", {
-    body: JSON.stringify({ attachments }),
+    body: JSON.stringify({
+      attachments,
+      enhanceFocus: options?.enhanceFocus,
+      mode: options?.mode ?? "fast",
+    }),
     headers: {
       "Content-Type": "application/json",
     },

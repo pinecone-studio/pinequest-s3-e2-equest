@@ -102,6 +102,30 @@ function QuestionEditor({
   );
   const questionImageInputRef = useRef<HTMLInputElement | null>(null);
 
+  function openQuestionImagePicker() {
+    setIsImageToolsOpen(true);
+
+    requestAnimationFrame(() => {
+      const input = questionImageInputRef.current;
+
+      if (!input) {
+        return;
+      }
+
+      input.value = "";
+      input.click();
+    });
+  }
+
+  function handleImageShortcutClick() {
+    if (question.imageDataUrl) {
+      setIsImageToolsOpen((current) => !current);
+      return;
+    }
+
+    openQuestionImagePicker();
+  }
+
   async function handleQuestionImageChange(
     event: ChangeEvent<HTMLInputElement>,
   ) {
@@ -163,9 +187,9 @@ function QuestionEditor({
               }
               placeholder="Асуултын текстээ энд бичнэ үү..."
               secondaryAction={{
-                active: isImageToolsOpen,
+                active: isImageToolsOpen || Boolean(question.imageDataUrl),
                 icon: <ImagePlus />,
-                onClick: () => setIsImageToolsOpen((current) => !current),
+                onClick: handleImageShortcutClick,
               }}
             />
           </div>
@@ -228,7 +252,7 @@ function QuestionEditor({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => questionImageInputRef.current?.click()}
+                  onClick={openQuestionImagePicker}
                 >
                   <ImagePlus />
                   Зураг нэмэх

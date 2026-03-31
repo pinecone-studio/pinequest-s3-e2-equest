@@ -75,6 +75,7 @@ type InlineMathEditorProps = {
   autoFocus?: boolean;
   className?: string;
   onChange: (latex: string) => void;
+  onEnterKey?: () => void;
   value: string;
   variant?: "boxed" | "embedded";
 };
@@ -139,15 +140,53 @@ const InlineMathEditor = forwardRef<
   InlineMathEditorHandle,
   InlineMathEditorProps
 >(function InlineMathEditor(
-  { autoFocus = false, className, onChange, value, variant = "boxed" },
+  {
+    autoFocus = false,
+    className,
+    onChange,
+    onEnterKey,
+    value,
+    variant = "boxed",
+  },
   ref,
 ) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const fieldRef = useRef<MathFieldInstance | null>(null);
   const latexRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+  const onEnterKeyRef = useRef(onEnterKey);
   const suppressEditRef = useRef(false);
+  const previousAutoFocusRef = useRef(false);
   const [librariesReady, setLibrariesReady] = useState(false);
   const [libraryError, setLibraryError] = useState(false);
+
+  function focusEditor() {
+    fieldRef.current?.focus();
+  }
+
+  function isEditorFocused() {
+    const element = editorRef.current;
+
+    if (!element) {
+      return false;
+    }
+
+    const activeElement = document.activeElement;
+
+    if (!activeElement) {
+      return false;
+    }
+
+    return element === activeElement || element.contains(activeElement);
+  }
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    onEnterKeyRef.current = onEnterKey;
+  }, [onEnterKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,34 +252,61 @@ const InlineMathEditor = forwardRef<
           }
 
           latexRef.current = nextLatex;
-          onChange(nextLatex);
+          onChangeRef.current(nextLatex);
         },
       },
     });
 
     fieldRef.current = field;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || !onEnterKeyRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onEnterKeyRef.current();
+    };
+
+    editorElement.addEventListener("keydown", handleKeyDown, true);
     suppressEditRef.current = true;
     field.latex(latexRef.current);
 
     queueMicrotask(() => {
       suppressEditRef.current = false;
-
-      if (autoFocus) {
-        field.focus();
-      }
     });
 
     return () => {
+      editorElement.removeEventListener("keydown", handleKeyDown, true);
+
       if (fieldRef.current === field) {
         fieldRef.current = null;
       }
 
       editorElement.innerHTML = "";
     };
-  }, [autoFocus, librariesReady, onChange]);
+  }, [librariesReady]);
+
+  useEffect(() => {
+    if (!librariesReady) {
+      return;
+    }
+
+    if (autoFocus && !previousAutoFocusRef.current) {
+      queueMicrotask(() => {
+        focusEditor();
+      });
+    }
+
+    previousAutoFocusRef.current = autoFocus;
+  }, [autoFocus, librariesReady]);
 
   useEffect(() => {
     latexRef.current = value;
+
+    if (isEditorFocused()) {
+      return;
+    }
 
     if (!fieldRef.current || fieldRef.current.latex() === value) {
       return;
@@ -250,12 +316,8 @@ const InlineMathEditor = forwardRef<
     fieldRef.current.latex(value);
     queueMicrotask(() => {
       suppressEditRef.current = false;
-
-      if (autoFocus) {
-        fieldRef.current?.focus();
-      }
     });
-  }, [autoFocus, value]);
+  }, [value]);
 
   useImperativeHandle(
     ref,
@@ -317,6 +379,15 @@ const InlineMathEditor = forwardRef<
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || !onEnterKey) {
+            return;
+          }
+
+          event.preventDefault();
+          event.stopPropagation();
+          onEnterKey();
+        }}
         className={cn(
           variant === "embedded"
             ? "h-8 min-w-[6rem] bg-transparent px-0 text-sm text-foreground outline-none"

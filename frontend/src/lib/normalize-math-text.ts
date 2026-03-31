@@ -4,7 +4,7 @@
  */
 export function normalizePreviewMathText(raw: string): string {
   if (!raw) return raw;
-  let next = raw
+  const next = raw
     .replace(/\\\$(?=[A-Za-z])/g, "\\")
     .replace(/\\\$(?=\{)/g, "\\")
     .replace(/\\\\(?=[A-Za-z])/g, "\\")
@@ -13,7 +13,13 @@ export function normalizePreviewMathText(raw: string): string {
 }
 
 export function normalizeBackendMathText(raw: string): string {
-  return restoreInlineMathDelimiters(normalizeBackendLatexArtifacts(raw));
+  const normalizedRaw = normalizeSystemSeparators(raw);
+
+  if (containsExplicitMathDelimiters(normalizedRaw)) {
+    return normalizeBackendDelimitedMathText(normalizedRaw);
+  }
+
+  return restoreInlineMathDelimiters(normalizeBackendLatexArtifacts(normalizedRaw));
 }
 
 /**
@@ -22,6 +28,91 @@ export function normalizeBackendMathText(raw: string): string {
  */
 export function normalizeBackendLatexOnly(raw: string): string {
   return normalizeBackendLatexArtifacts(raw);
+}
+
+function containsExplicitMathDelimiters(raw: string): boolean {
+  if (!raw) {
+    return false;
+  }
+
+  return /\\\[[\s\S]+?\\\]|\\\([^)]+?\\\)|\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/.test(
+    raw,
+  );
+}
+
+function normalizeBackendDelimitedMathText(raw: string): string {
+  if (!raw) {
+    return raw;
+  }
+
+  const normalizedRaw = normalizeExplicitSystemLines(raw);
+
+  return normalizedRaw
+    .replace(/\\\$(?=[A-Za-z])/g, "\\")
+    .replace(/\\\$(?=\{)/g, "\\")
+    .replace(/\\\\(?=[A-Za-z])/g, "\\")
+    .replace(/\$([}\]\)])/g, "$1")
+    .trim();
+}
+
+function looksLikeSystemRelationLine(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  return /(?:=|<|>|\\(?:leq|geq|neq|lt|gt)\b)/.test(trimmed);
+}
+
+function normalizeSystemSeparators(raw: string): string {
+  if (!raw || raw.includes("\n") || /\\begin\{[a-zA-Z*]+\}/.test(raw)) {
+    return raw;
+  }
+
+  const parts = raw.split(/\\\\/).map((part) => part.trim()).filter(Boolean);
+
+  if (parts.length < 2 || !parts.every(looksLikeSystemRelationLine)) {
+    return raw;
+  }
+
+  return parts.join("\n");
+}
+
+function normalizeExplicitSystemLines(raw: string): string {
+  const trimmed = raw.trim();
+
+  if (!trimmed || /\\begin\{[a-zA-Z*]+\}/.test(trimmed)) {
+    return raw;
+  }
+
+  const wrappers = [
+    { close: "$$", open: "$$" },
+    { close: "\\]", open: "\\[" },
+    { close: "\\)", open: "\\(" },
+    { close: "$", open: "$" },
+  ] as const;
+
+  for (const wrapper of wrappers) {
+    if (!trimmed.startsWith(wrapper.open) || !trimmed.endsWith(wrapper.close)) {
+      continue;
+    }
+
+    const inner = trimmed
+      .slice(wrapper.open.length, trimmed.length - wrapper.close.length)
+      .trim();
+    const parts = inner.split(/\\\\/).map((part) => part.trim()).filter(Boolean);
+
+    if (parts.length < 2 || !parts.every(looksLikeSystemRelationLine)) {
+      return raw;
+    }
+
+    return parts
+      .map((part) => `${wrapper.open}${part}${wrapper.close}`)
+      .join("\n");
+  }
+
+  return raw;
 }
 
 function normalizeBackendLatexArtifacts(raw: string): string {
@@ -51,6 +142,14 @@ function restoreInlineMathDelimiters(value: string): string {
   if (!value) return value;
   if (value.includes("$")) return value;
 
+  const withWrappedEnvironments = value.replace(
+    /\\begin\{([a-zA-Z*]+)\}[\s\S]+?\\end\{\1\}/g,
+    (full) => `$$${full.trim()}$$`,
+  );
+  if (withWrappedEnvironments !== value) {
+    return withWrappedEnvironments;
+  }
+
   // Wrap obvious LaTeX commands inline.
   // Example: "Илэрхийллийг хялбарчил. \\sqrt{50}" -> "... $\\sqrt{50}$"
   const withWrappedCommands = value.replace(
@@ -72,4 +171,3 @@ function restoreInlineMathDelimiters(value: string): string {
     return `$${trimmed}$${punct ?? ""}`;
   });
 }
-

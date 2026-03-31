@@ -4,19 +4,7 @@ import type {
   GeneratedExamPayload,
 } from "@/lib/math-exam-contract";
 import { buildGeminiErrorResponse } from "@/lib/gemini-error";
-
-function cleanJsonBlock(value: string) {
-  const trimmed = value.trim();
-
-  if (trimmed.startsWith("```")) {
-    return trimmed
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-  }
-
-  return trimmed;
-}
+import { parseGeminiJson } from "@/lib/parse-gemini-json";
 
 function difficultyLabel(level: DifficultyLevel) {
   if (level === "easy") {
@@ -254,7 +242,7 @@ JSON бүтэц:
       );
     }
 
-    const exam = JSON.parse(cleanJsonBlock(text)) as GeneratedExamPayload;
+    const exam = parseGeminiJson<GeneratedExamPayload>(text);
 
     return Response.json({ exam });
   } catch (error) {

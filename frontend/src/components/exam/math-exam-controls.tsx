@@ -46,6 +46,7 @@ type MathExamControlsProps = {
   examTitle: string;
   generatorError: string;
   generatorSettings: GeneratorSettings;
+  isEnhancingSource: boolean;
   isExtractingSource: boolean;
   isGenerating: boolean;
   isGeneratorOpen: boolean;
@@ -54,6 +55,9 @@ type MathExamControlsProps = {
   onGenerateExam: () => void;
   onGeneratorOpenChange: (open: boolean) => void;
   bankExams: { examId: string; title: string }[];
+  onEnhanceImportedExam: (
+    focus: "all" | "images" | "incomplete" | "math",
+  ) => void;
   onRequestBankExams: () => void;
   onImportFromBank: (examId: string) => void;
   onReset: () => void;
@@ -72,6 +76,7 @@ export function MathExamControls({
   examTitle,
   generatorError,
   generatorSettings,
+  isEnhancingSource,
   isExtractingSource,
   isGenerating,
   isGeneratorOpen,
@@ -80,6 +85,7 @@ export function MathExamControls({
   onGenerateExam,
   onGeneratorOpenChange,
   bankExams,
+  onEnhanceImportedExam,
   onRequestBankExams,
   onImportFromBank,
   onReset,
@@ -90,6 +96,8 @@ export function MathExamControls({
   stats,
 }: MathExamControlsProps) {
   const generatorFileInputRef = useRef<HTMLInputElement | null>(null);
+  const importActionsDisabled =
+    isExtractingSource || isEnhancingSource || sourceFiles.length === 0;
 
   function handleSourceFileChange(event: ChangeEvent<HTMLInputElement>) {
     void onSourceFilesSelected(Array.from(event.target.files ?? []));
@@ -149,15 +157,52 @@ export function MathExamControls({
               {isExtractingSource ? (
                 <>
                   <LoaderCircle className="animate-spin" />
-                  Уншиж байна
+                  Fast import
                 </>
               ) : (
-                <>Docs file</>
+                <>Fast import</>
               )}
             </Button>
-            <Button type="button" variant="outline" onClick={() => {}}>
-              AI
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={importActionsDisabled}
+                >
+                  {isEnhancingSource ? (
+                    <>
+                      <LoaderCircle className="animate-spin" />
+                      AI сайжруулж байна
+                    </>
+                  ) : (
+                    <>AI Enhance</>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Сонгож сайжруулах</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => onEnhanceImportedExam("all")}>
+                  Бүгдийг сайжруулах
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => onEnhanceImportedExam("images")}
+                >
+                  Зураг таних
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => onEnhanceImportedExam("math")}
+                >
+                  Math сэргээх
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => onEnhanceImportedExam("incomplete")}
+                >
+                  Incomplete fix
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button type="button" variant="outline" disabled>
               AI Generate
               <ChevronDown
@@ -269,12 +314,17 @@ export function MathExamControls({
                   <Label>Хавсаргасан материал</Label>
                   <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
                     {sourceFiles.length > 0 ? (
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         {sourceFiles.map((file) => (
                           <div key={`${file.name}-${file.size}`}>
                             {file.name}
                           </div>
                         ))}
+                        <div className="text-xs text-muted-foreground/80">
+                          Fast import нь локал parser ашиглана. AI Enhance-ийг
+                          зураг, broken math, incomplete content дээр тусад нь
+                          ажиллуулна.
+                        </div>
                       </div>
                     ) : (
                       <div>Баримт хавсаргаагүй байна.</div>
