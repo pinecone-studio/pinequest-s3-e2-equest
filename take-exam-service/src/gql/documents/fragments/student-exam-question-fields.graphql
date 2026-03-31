@@ -7,6 +7,7 @@ fragment StudentExamQuestionFields on StudentExamQuestion {
   imageUrl
   audioUrl
   videoUrl
+  responseGuide
   options {
     ...ExamOptionFields
   }

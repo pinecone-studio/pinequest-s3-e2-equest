@@ -1,0 +1,7 @@
+fragment AttemptFeedbackFields on AttemptFeedback {
+  headline
+  summary
+  strengths
+  improvements
+  source
+}

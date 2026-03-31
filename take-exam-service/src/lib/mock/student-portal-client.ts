@@ -50,6 +50,7 @@ const MOCK_TESTS: TeacherTestSummary[] = [
 		title: "Явц-1: Физикийн үндэс",
 		description: "Физикийн суурь ойлголтыг шалгана.",
 		criteria: defaultCriteria({
+			className: "12A",
 			subject: "Физик",
 			topic: "Механик",
 			questionCount: 12,
@@ -61,6 +62,7 @@ const MOCK_TESTS: TeacherTestSummary[] = [
 		title: "Бататгах: Past simple tense",
 		description: "Англи хэлний Past Simple дүрмийн шалгалт.",
 		criteria: defaultCriteria({
+			className: "12A",
 			subject: "Англи хэл",
 			topic: "Past Simple",
 			questionCount: 10,
@@ -72,6 +74,7 @@ const MOCK_TESTS: TeacherTestSummary[] = [
 		title: "Хими: Bonding fundamentals",
 		description: "Холбооны үндэс, бодлого шийдэлт.",
 		criteria: defaultCriteria({
+			className: "12B",
 			subject: "Хими",
 			topic: "Bonding",
 			questionCount: 9,
@@ -83,6 +86,7 @@ const MOCK_TESTS: TeacherTestSummary[] = [
 		title: "Математик: Functions",
 		description: "Функцийн үндсэн ойлголт.",
 		criteria: defaultCriteria({
+			className: "12A, 12B",
 			subject: "Математик",
 			topic: "Functions",
 			questionCount: 8,
@@ -210,7 +214,12 @@ const seedResult = (
 	incorrectCount: Math.max(0, maxScore - score),
 	unansweredCount: 0,
 	questionResults: Array.from({ length: questionCount }, (_, idx) => ({
+		answerChangeCount: 0,
+		competency: "mock-competency",
+		dwellMs: 0,
+		prompt: `Mock question ${idx + 1}`,
 		questionId: `seed-q-${idx + 1}`,
+		questionType: "single-choice",
 		selectedOptionId: "a",
 		correctOptionId: idx % 4 === 0 ? "b" : "a",
 		isCorrect: idx % 4 !== 0,
@@ -306,6 +315,7 @@ const appendMockMonitoringEvent = (
 ) => {
 	const current = monitoringStore.get(attemptId) ?? {
 		totalEvents: 0,
+		infoCount: 0,
 		warningCount: 0,
 		dangerCount: 0,
 		lastEventAt: undefined,
@@ -328,8 +338,10 @@ const appendMockMonitoringEvent = (
 
 	if (input.severity === "danger") {
 		current.dangerCount += 1;
-	} else {
+	} else if (input.severity === "warning") {
 		current.warningCount += 1;
+	} else {
+		current.infoCount = (current.infoCount ?? 0) + 1;
 	}
 
 	monitoringStore.set(attemptId, current);
@@ -485,6 +497,11 @@ export const mockStudentPortalClient = {
 		appendMockMonitoringEvent(attemptId, input);
 		return true;
 	},
+
+	async logQuestionMetrics() {
+		await sleep();
+		return true;
+	},
 };
 
-export const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA !== "false";
+export const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -22,14 +22,28 @@ import {
   type LucideIcon,
   UserRound,
 } from "lucide-react";
+import { AiContentBadge } from "@/components/ai-content-badge";
+import { MathText } from "@/components/math-text";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type {
+  AttemptAnswerReviewItem,
   AttemptSummary,
   GetProgressResponse,
   StudentInfo,
   SubmitAnswersResponse,
   TeacherTestSummary,
 } from "@/lib/exam-service/types";
-import { formatDate, estimateDurationMinutes } from "./student-page-utils";
+import {
+  estimateDurationMinutes,
+  formatDate,
+  formatQuestionPrompt,
+} from "./student-page-utils";
 
 export type NavigationSection = "dashboard" | "tests" | "results";
 
@@ -38,20 +52,29 @@ export type ResultRow = {
   className: string;
   examName: string;
   finishedAt: string;
+  isApproved: boolean;
   scoreText: string;
   startedAt: string;
   subject: string;
   teacher: string;
 };
 
+type ResultCardsGridProps = {
+  attemptsById: Map<string, AttemptSummary>;
+  rows: ResultRow[];
+  onOpenAttempt: (attemptId: string) => void;
+};
+
 type StudentPageShellProps = {
   activeSection: NavigationSection;
   activeTestsCount: number;
+  approvedAttempts: AttemptSummary[];
   approvedAttemptsCount: number;
   averageScore: number;
   availableStudents: StudentInfo[];
   completedAttemptsLength: number;
   completionRate: number;
+  completedByTestId: Map<string, AttemptSummary>;
   error: string | null;
   filteredTests: TeacherTestSummary[];
   inProgressByTestId: Map<string, AttemptSummary>;
@@ -77,6 +100,159 @@ type StatCardProps = {
   value: string;
 };
 
+type FeedbackPanelProps = {
+  feedback: NonNullable<GetProgressResponse["feedback"]>;
+};
+
+type ResultBreakdownPanelProps = {
+  attempt: AttemptSummary;
+};
+
+function FeedbackPanel({ feedback }: FeedbackPanelProps) {
+  return (
+    <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-slate-800">
+      <div className="flex flex-wrap items-center gap-2 font-semibold text-sky-900">
+        <FileText className="h-4 w-4" />
+        <span>{feedback.headline}</span>
+        <AiContentBadge source={feedback.source} />
+      </div>
+      <p className="mt-2 text-sm leading-6 text-slate-700">{feedback.summary}</p>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
+            Сайн тал
+          </p>
+          <ul className="mt-2 space-y-1 text-sm text-slate-700">
+            {feedback.strengths.map((item) => (
+              <li key={item}>• {item}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
+            Сайжруулах зүйл
+          </p>
+          <ul className="mt-2 space-y-1 text-sm text-slate-700">
+            {feedback.improvements.map((item) => (
+              <li key={item}>• {item}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultBreakdownPanel({ attempt }: ResultBreakdownPanelProps) {
+  if (!attempt.result || attempt.result.questionResults.length === 0) {
+    return null;
+  }
+
+  const answerReviewByQuestionId = new Map(
+    (attempt.answerReview ?? []).map((item) => [item.questionId, item] as const),
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-3">
+        {attempt.result.questionResults.map((questionResult, index) => {
+          const answerReview = answerReviewByQuestionId.get(questionResult.questionId);
+          const isCorrect = questionResult.isCorrect;
+
+          return (
+            <article
+              key={questionResult.questionId}
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_18px_rgba(15,23,42,0.04)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    Асуулт {index + 1}
+                  </p>
+                  <MathText
+                    as="p"
+                    className="mt-2 text-base font-semibold leading-7 text-slate-900"
+                    displayMode={answerReview?.questionType === "math"}
+                    text={formatQuestionPrompt(
+                      answerReview?.prompt ?? `Асуулт ${index + 1}`,
+                    )}
+                  />
+                </div>
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    isCorrect
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-rose-50 text-rose-700"
+                  }`}
+                >
+                  {questionResult.pointsAwarded}/{questionResult.maxPoints} оноо
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Таны хариулт
+                  </p>
+                  <MathText
+                    as="p"
+                    className="mt-2 text-sm leading-6 text-slate-800"
+                    displayMode={answerReview?.questionType === "math"}
+                    text={
+                      answerReview?.selectedAnswerText ??
+                      answerReview?.selectedOptionId ??
+                      "Хариу өгөөгүй"
+                    }
+                  />
+                </div>
+
+                {(answerReview?.correctAnswerText || questionResult.correctOptionId) && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                      Зөв хариулт
+                    </p>
+                    <MathText
+                      as="p"
+                      className="mt-2 text-sm leading-6 text-slate-800"
+                      displayMode={answerReview?.questionType === "math"}
+                      text={
+                        answerReview?.correctAnswerText ??
+                        questionResult.correctOptionId ??
+                        "Зөв хариулт бүртгэгдээгүй"
+                      }
+                    />
+                  </div>
+                )}
+
+                {(answerReview?.responseGuide || questionResult.explanation) && (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
+                        Тайлбар
+                      </p>
+                      <AiContentBadge source={questionResult.explanationSource} />
+                    </div>
+                    <MathText
+                      as="p"
+                      className="mt-2 text-sm leading-6 text-slate-800"
+                      displayMode={answerReview?.questionType === "math"}
+                      text={
+                        questionResult.explanation ||
+                        answerReview?.responseGuide ||
+                        "Тайлбар нэмэгдээгүй."
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function StatCard({ caption, icon: Icon, title, value }: StatCardProps) {
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
@@ -95,6 +271,7 @@ function StatCard({ caption, icon: Icon, title, value }: StatCardProps) {
 }
 
 type TestCardsGridProps = {
+  completedByTestId: Map<string, AttemptSummary>;
   emptyMessage: string;
   filteredTests: TeacherTestSummary[];
   inProgressByTestId: Map<string, AttemptSummary>;
@@ -105,6 +282,7 @@ type TestCardsGridProps = {
 };
 
 function TestCardsGrid({
+  completedByTestId,
   emptyMessage,
   filteredTests,
   inProgressByTestId,
@@ -133,6 +311,7 @@ function TestCardsGrid({
     <div className="grid gap-4 lg:grid-cols-3">
       {filteredTests.map((test) => {
         const resumableAttempt = inProgressByTestId.get(test.id);
+        const completedAttempt = completedByTestId.get(test.id);
 
         return (
           <article
@@ -144,6 +323,11 @@ function TestCardsGrid({
               <h3 className="text-lg font-semibold text-slate-900">
                 {test.title}
               </h3>
+              {completedAttempt && (
+                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                  Дууссан
+                </span>
+              )}
               <p className="flex items-center gap-2 text-sm text-slate-500">
                 <BookOpen className="h-4 w-4" />
                 {test.criteria.subject}
@@ -172,6 +356,14 @@ function TestCardsGrid({
                 Үргэлжлүүлэх
                 <ArrowRight className="h-4 w-4" />
               </button>
+            ) : completedAttempt ? (
+              <button
+                disabled={true}
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-500"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Өгсөн шалгалт
+              </button>
             ) : (
               <button
                 onClick={() => onStartExam(test.id)}
@@ -194,13 +386,125 @@ function TestCardsGrid({
   );
 }
 
+function ResultCardsGrid({
+  attemptsById,
+  rows,
+  onOpenAttempt,
+}: ResultCardsGridProps) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-500">
+        Дүнгийн мэдээлэл одоогоор алга.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-3">
+      {rows.map((row) => {
+        const attempt = attemptsById.get(row.attemptId);
+        const isClickable = Boolean(attempt && row.isApproved);
+
+        return (
+          <article
+            key={row.attemptId}
+            className={`relative overflow-hidden rounded-2xl border bg-white p-5 pt-6 shadow-[0_6px_22px_rgba(15,23,42,0.06)] transition ${
+              row.isApproved
+                ? "border-emerald-200 ring-1 ring-emerald-100"
+                : "border-slate-200"
+            } ${isClickable ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(15,23,42,0.09)]" : ""}`}
+            onClick={() => {
+              if (isClickable) {
+                onOpenAttempt(row.attemptId);
+              }
+            }}
+          >
+            <div
+              className={`absolute inset-x-0 top-0 h-1 ${
+                row.isApproved ? "bg-emerald-400" : "bg-[#59c9ee]"
+              }`}
+            />
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {row.examName}
+                </h3>
+                <span
+                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    row.isApproved
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {row.isApproved ? "Батлагдсан" : "Хүлээгдэж байна"}
+                </span>
+              </div>
+              <p className="flex items-center gap-2 text-sm text-slate-500">
+                <BookOpen className="h-4 w-4" />
+                {row.subject}
+              </p>
+              <p className="flex items-center gap-2 text-xs text-slate-500">
+                <GraduationCap className="h-4 w-4" />
+                {row.className}
+              </p>
+              <p className="flex items-center gap-2 text-xs text-slate-500">
+                <CalendarClock className="h-4 w-4" />
+                Дууссан: {row.finishedAt}
+              </p>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Авсан оноо
+                </p>
+                <p
+                  className={`mt-1 text-2xl font-bold leading-none ${
+                    row.isApproved ? "text-emerald-700" : "text-slate-700"
+                  }`}
+                >
+                  {row.scoreText}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={!isClickable}
+                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+                  isClickable
+                    ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                    : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {row.isApproved ? (
+                  <>
+                    <FileCheck2 className="h-4 w-4" />
+                    Дэлгэрэнгүй
+                  </>
+                ) : (
+                  <>
+                    <Clock3 className="h-4 w-4" />
+                    Хүлээгдэж байна
+                  </>
+                )}
+              </button>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
 export function StudentPageShell({
   activeSection,
   activeTestsCount,
+  approvedAttempts,
   approvedAttemptsCount,
   averageScore,
   availableStudents,
   completedAttemptsLength,
+  completedByTestId,
   completionRate,
   error,
   filteredTests,
@@ -220,7 +524,19 @@ export function StudentPageShell({
   onStartExam,
 }: StudentPageShellProps) {
   const [isStudentMenuOpen, setIsStudentMenuOpen] = useState(false);
+  const [selectedResultAttemptId, setSelectedResultAttemptId] = useState<
+    string | null
+  >(null);
   const studentMenuRef = useRef<HTMLDivElement | null>(null);
+  const approvedAttemptById = useMemo(
+    () =>
+      new Map(approvedAttempts.map((attempt) => [attempt.attemptId, attempt] as const)),
+    [approvedAttempts],
+  );
+  const selectedResultAttempt =
+    (selectedResultAttemptId
+      ? approvedAttemptById.get(selectedResultAttemptId)
+      : null) ?? null;
 
   useEffect(() => {
     const closeOnOutside = (event: MouseEvent) => {
@@ -234,8 +550,8 @@ export function StudentPageShell({
   }, []);
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#eceff3]">
-      <div className="grid h-full grid-cols-[228px_1fr] grid-rows-[58px_1fr]">
+    <div className="h-screen overflow-hidden bg-[#eceff3] px-4">
+      <div className="mx-auto grid h-full w-full max-w-[1440px] grid-cols-[228px_1fr] grid-rows-[58px_1fr]">
         <aside className="row-start-1 col-start-1 flex items-center gap-3 border-r border-b border-slate-200 bg-white px-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#16a4e5] text-white">
             <GraduationCap className="h-5 w-5" />
@@ -390,20 +706,32 @@ export function StudentPageShell({
                       />
                     </div>
 
-                    {latestProgress &&
-                      (latestProgress.status === "submitted" ||
-                        latestProgress.status === "processing") && (
-                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700">
-                          <div className="flex items-center gap-2 font-semibold">
-                            <FileCheck2 className="h-4 w-4" />
-                            {latestProgress.status === "processing"
-                              ? "Шалгалтыг боловсруулж байна"
-                              : "Шалгалт амжилттай илгээгдлээ"}
+                {latestProgress &&
+                  (latestProgress.status === "submitted" ||
+                    latestProgress.status === "processing" ||
+                    latestProgress.status === "approved") && (
+                        <div className="space-y-4">
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700">
+                            <div className="flex items-center gap-2 font-semibold">
+                              <FileCheck2 className="h-4 w-4" />
+                              {latestProgress.status === "processing"
+                                ? "Шалгалтыг боловсруулж байна"
+                                : latestProgress.status === "approved"
+                                  ? "Шалгалтын дүн бэлэн боллоо"
+                                  : "Шалгалт амжилттай илгээгдлээ"}
+                            </div>
+                            <p className="mt-1 text-sm text-emerald-700/90">
+                              {latestProgress.status === "approved" &&
+                              latestProgress.result
+                                ? `${latestProgress.result.maxScore} онооноос ${latestProgress.result.score} авч, ${latestProgress.result.percentage}% гүйцэтгэл үзүүллээ.`
+                                : "Таны хариулт амжилттай бүртгэгдсэн. Багш баталсны дараа дүн, зөв хариу, тайлбар хэсэгт харагдана."}
+                            </p>
                           </div>
-                          <p className="mt-1 text-sm text-emerald-700/90">
-                            Таны хариулт амжилттай бүртгэгдсэн. Батлагдсаны
-                            дараа дүн хэсэгт харагдана.
-                          </p>
+
+                          {latestProgress.status === "approved" &&
+                            latestProgress.feedback && (
+                            <FeedbackPanel feedback={latestProgress.feedback} />
+                          )}
                         </div>
                       )}
 
@@ -418,6 +746,7 @@ export function StudentPageShell({
                         </span>
                       </div>
                       <TestCardsGrid
+                        completedByTestId={completedByTestId}
                         emptyMessage="Танд тохирох идэвхтэй шалгалт олдсонгүй."
                         filteredTests={filteredTests}
                         inProgressByTestId={inProgressByTestId}
@@ -444,6 +773,7 @@ export function StudentPageShell({
                       </div>
                     </div>
                     <TestCardsGrid
+                      completedByTestId={completedByTestId}
                       emptyMessage="Одоогоор шалгалт алга."
                       filteredTests={filteredTests}
                       inProgressByTestId={inProgressByTestId}
@@ -492,69 +822,11 @@ export function StudentPageShell({
                         Шалгалтын дүнгүүд
                       </h4>
 
-                      {resultRows.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-500">
-                          Дүнгийн мэдээлэл одоогоор алга.
-                        </div>
-                      ) : (
-                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.04)]">
-                          <div className="overflow-x-auto">
-                            <table className="min-w-full text-sm">
-                              <thead className="bg-slate-100 text-left text-slate-700">
-                                <tr>
-                                  <th className="px-4 py-3 font-semibold">
-                                    Шалгалтын нэр
-                                  </th>
-                                  <th className="px-4 py-3 font-semibold">
-                                    Хичээл
-                                  </th>
-                                  <th className="px-4 py-3 font-semibold">
-                                    Анги
-                                  </th>
-                                  <th className="px-4 py-3 font-semibold">
-                                    Багш
-                                  </th>
-                                  <th className="px-4 py-3 font-semibold">
-                                    Эхэлсэн огноо
-                                  </th>
-                                  <th className="px-4 py-3 font-semibold">
-                                    Дууссан огноо
-                                  </th>
-                                  <th className="px-4 py-3 font-semibold">
-                                    Авсан оноо
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {resultRows.map((row) => (
-                                  <tr
-                                    key={row.attemptId}
-                                    className="border-t border-slate-100 text-slate-800"
-                                  >
-                                    <td className="px-4 py-3">
-                                      {row.examName}
-                                    </td>
-                                    <td className="px-4 py-3">{row.subject}</td>
-                                    <td className="px-4 py-3">
-                                      {row.className}
-                                    </td>
-                                    <td className="px-4 py-3">{row.teacher}</td>
-                                    <td className="px-4 py-3">
-                                      {row.startedAt}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {row.finishedAt}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {row.scoreText}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
+                      <ResultCardsGrid
+                        attemptsById={approvedAttemptById}
+                        rows={resultRows}
+                        onOpenAttempt={setSelectedResultAttemptId}
+                      />
                     </div>
                   </section>
                 )}
@@ -563,6 +835,51 @@ export function StudentPageShell({
           </div>
         </main>
       </div>
+
+      <Dialog
+        open={Boolean(selectedResultAttempt)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedResultAttemptId(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-5xl lg:max-w-6xl">
+          {selectedResultAttempt ? (
+            <>
+              <DialogHeader>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <DialogTitle>{selectedResultAttempt.title}</DialogTitle>
+                    <DialogDescription>
+                      {selectedResultAttempt.percentage ?? 0}% гүйцэтгэл.
+                      Алдаа, тайлбар болон feedback-ийг доороос харна.
+                    </DialogDescription>
+                  </div>
+                  <div className="rounded-full bg-emerald-50 px-4 py-2 text-right">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                      Нийт оноо
+                    </p>
+                    <p className="text-lg font-bold text-emerald-700">
+                      {selectedResultAttempt.score ?? 0}/
+                      {selectedResultAttempt.maxScore ?? 0}
+                    </p>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="max-h-[75vh] overflow-y-auto pr-2">
+                {selectedResultAttempt.feedback && (
+                  <div className="mb-4">
+                    <FeedbackPanel feedback={selectedResultAttempt.feedback} />
+                  </div>
+                )}
+                <ResultBreakdownPanel attempt={selectedResultAttempt} />
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

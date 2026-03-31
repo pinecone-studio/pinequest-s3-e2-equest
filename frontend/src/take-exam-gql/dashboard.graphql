@@ -1,0 +1,165 @@
+fragment FrontendDashboardAttemptFields on AttemptSummary {
+  attemptId
+  testId
+  title
+  studentId
+  studentName
+  status
+  answerKeySource
+  score
+  maxScore
+  percentage
+  startedAt
+  submittedAt
+  monitoring {
+    totalEvents
+    warningCount
+    dangerCount
+    lastEventAt
+    recentEvents {
+      id
+      code
+      severity
+      title
+      detail
+      occurredAt
+    }
+  }
+  result {
+    score
+    maxScore
+    percentage
+    correctCount
+    incorrectCount
+    unansweredCount
+    questionResults {
+      questionId
+      prompt
+      competency
+      questionType
+      selectedOptionId
+      correctOptionId
+      isCorrect
+      pointsAwarded
+      maxPoints
+      explanation
+      explanationSource
+      dwellMs
+      answerChangeCount
+    }
+  }
+  answerReview {
+    questionId
+    prompt
+    competency
+    questionType
+    selectedOptionId
+    selectedAnswerText
+    correctAnswerText
+    points
+    responseGuide
+    dwellMs
+    answerChangeCount
+  }
+  feedback {
+    headline
+    summary
+    strengths
+    improvements
+    source
+  }
+}
+
+fragment FrontendDashboardLiveFeedFields on AttemptLiveFeedItem {
+  attemptId
+  testId
+  title
+  studentId
+  studentName
+  status
+  startedAt
+  submittedAt
+  monitoring {
+    totalEvents
+    warningCount
+    dangerCount
+    lastEventAt
+  }
+  latestEvent {
+    id
+    code
+    severity
+    title
+    detail
+    occurredAt
+  }
+}
+
+fragment FrontendDashboardAvailableTestFields on Test {
+  id
+  title
+  description
+  answerKeySource
+  updatedAt
+  criteria {
+    gradeLevel
+    className
+    subject
+    topic
+    difficulty
+    questionCount
+  }
+}
+
+query FrontendTakeExamDashboard($limit: Int!) {
+  availableTests {
+    ...FrontendDashboardAvailableTestFields
+  }
+  attempts {
+    ...FrontendDashboardAttemptFields
+  }
+  liveMonitoringFeed(limit: $limit) {
+    ...FrontendDashboardLiveFeedFields
+  }
+}
+
+query FrontendTakeExamDashboardWithMaterial($limit: Int!, $testId: ID!) {
+  availableTests {
+    ...FrontendDashboardAvailableTestFields
+  }
+  attempts {
+    ...FrontendDashboardAttemptFields
+  }
+  liveMonitoringFeed(limit: $limit) {
+    ...FrontendDashboardLiveFeedFields
+  }
+  testMaterial(testId: $testId) {
+    testId
+    title
+    description
+    timeLimitMinutes
+    criteria {
+      gradeLevel
+      className
+      subject
+      topic
+      difficulty
+      questionCount
+    }
+    questions {
+      questionId
+      type
+      prompt
+      points
+      competency
+      imageUrl
+      audioUrl
+      videoUrl
+      responseGuide
+      options {
+        id
+        text
+      }
+    }
+  }
+}

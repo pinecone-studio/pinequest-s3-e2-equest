@@ -6,4 +6,5 @@ fragment QuestionResultFields on QuestionResult {
   pointsAwarded
   maxPoints
   explanation
+  explanationSource
 }

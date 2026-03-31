@@ -1,12 +1,144 @@
 import { desc, eq } from "drizzle-orm";
-import type { AttemptSummary } from "@/lib/exam-service/types";
+import type {
+	AttemptReviewPayload,
+	AttemptSummary,
+	ExamResultSummary,
+} from "@/lib/exam-service/types";
 import { DbClient } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import { getAttemptMonitoringSummaries } from "./activity";
-import { cacheAttemptState, getAttemptStateFromKv } from "./cache";
-import { computeResult, getAttemptResults } from "./results";
+import {
+	ATTEMPTS_SUMMARY_CACHE_KEY,
+	ATTEMPTS_SUMMARY_CACHE_TTL_SECONDS,
+	computeProgress,
+	countAnsweredQuestions,
+} from "./common";
+import {
+	buildCreateExamServiceResult,
+	getExternalNewMathExam,
+	hydrateCreateExamServiceAnswerReview,
+	mergeCreateExamServiceResult,
+} from "./external";
+import {
+	enrichResultWithQuestionFeedback,
+	generateAttemptFeedback,
+	parseAttemptFeedback,
+	stringifyAttemptFeedback,
+} from "./feedback";
+import { parseStoredTeacherResult } from "./teacher-sync";
+import {
+	cacheAttemptState,
+	deleteJsonFromKv,
+	getAttemptStateFromKv,
+	readJsonFromKv,
+	resolveAttemptState,
+	writeJsonToKv,
+} from "./cache";
+import { computeResult, getAttemptAnswerReview, getAttemptResults } from "./results";
 
-export const listAttempts = async (db: DbClient): Promise<AttemptSummary[]> => {
+type ApproveAttemptOptions = {
+	ai?: {
+		run: (
+			model: string,
+			input: {
+				messages: Array<{ role: "system" | "user"; content: string }>;
+				response_format?: { type: "json_object" };
+			},
+		) => Promise<{ response?: string }>;
+	};
+	geminiApiKey?: string;
+	geminiModel?: string;
+	kv?: KVNamespace;
+	ollamaApiKey?: string;
+	ollamaBaseUrl?: string;
+	ollamaModel?: string;
+	review?: AttemptReviewPayload;
+};
+
+const clampPoints = (value: number, maxPoints: number) =>
+	Math.max(0, Math.min(Math.round(value), maxPoints));
+
+const buildReviewedResult = (
+	rows: Awaited<ReturnType<typeof getAttemptResults>>,
+	review?: AttemptReviewPayload,
+): ExamResultSummary => {
+	const reviewByQuestionId = new Map(
+		(review?.questionReviews ?? []).map((question) => [question.questionId, question] as const),
+	);
+
+	const questionResults = rows.map((row) => {
+		const manualReview = reviewByQuestionId.get(row.questionId);
+		const maxPoints = Math.max(
+			0,
+			Math.round(manualReview?.maxPoints ?? row.points),
+		);
+		const defaultPoints =
+			row.selectedOptionId === row.correctOptionId ? maxPoints : 0;
+		const pointsAwarded = clampPoints(
+			manualReview?.pointsAwarded ?? defaultPoints,
+			maxPoints,
+		);
+		const isCorrect =
+			typeof manualReview?.isCorrect === "boolean"
+				? manualReview.isCorrect
+				: pointsAwarded >= maxPoints && maxPoints > 0;
+
+		return {
+			answerChangeCount: row.answerChangeCount ?? 0,
+			competency: row.competency,
+			correctOptionId: manualReview?.correctOptionId ?? row.correctOptionId,
+			dwellMs: row.dwellMs ?? 0,
+			explanation:
+				manualReview?.explanation?.trim() ||
+				row.explanation ||
+				row.responseGuide ||
+				"",
+			isCorrect,
+			maxPoints,
+			pointsAwarded,
+			prompt: row.prompt,
+			questionId: row.questionId,
+			questionType: (row.questionType as "single-choice" | "math") ?? "single-choice",
+			selectedOptionId: row.selectedOptionId,
+		};
+	});
+
+	const score = questionResults.reduce(
+		(total, question) => total + question.pointsAwarded,
+		0,
+	);
+	const maxScore = questionResults.reduce(
+		(total, question) => total + question.maxPoints,
+		0,
+	);
+
+	return {
+		score,
+		maxScore,
+		percentage: maxScore === 0 ? 0 : Math.round((score / maxScore) * 100),
+		correctCount: questionResults.filter((question) => question.isCorrect).length,
+		incorrectCount: questionResults.filter(
+			(question) => question.selectedOptionId !== null && !question.isCorrect,
+		).length,
+		unansweredCount: questionResults.filter(
+			(question) => question.selectedOptionId === null,
+		).length,
+		questionResults,
+	};
+};
+
+export const listAttempts = async (
+	db: DbClient,
+	kv?: KVNamespace,
+): Promise<AttemptSummary[]> => {
+	const cachedSummaries = await readJsonFromKv<AttemptSummary[]>(
+		kv,
+		ATTEMPTS_SUMMARY_CACHE_KEY,
+	);
+	if (cachedSummaries) {
+		return cachedSummaries;
+	}
+
 	const records = await db.query.attempts.findMany({
 		orderBy: [desc(schema.attempts.startedAt)],
 	});
@@ -16,64 +148,208 @@ export const listAttempts = async (db: DbClient): Promise<AttemptSummary[]> => {
 	);
 
 	const summaries: AttemptSummary[] = [];
+	const externalExamCache = new Map<
+		string,
+		Awaited<ReturnType<typeof getExternalNewMathExam>>
+	>();
 
 	for (const record of records) {
-		const test = await db.query.tests.findFirst({
-			where: eq(schema.tests.id, record.testId),
-		});
+			const test = await db.query.tests.findFirst({
+				where: eq(schema.tests.id, record.testId),
+			});
+			const teacherSyncExport = await db.query.teacherSubmissionExports.findFirst({
+				where: eq(schema.teacherSubmissionExports.attemptId, record.id),
+			});
+			const attemptState = await resolveAttemptState(db, record.id, kv);
+			const answeredQuestions = Object.values(attemptState.answers).filter(Boolean).length;
+			const answerKeySource = test?.answerKeySource ?? "local";
+			const teacherCheckedResult = parseStoredTeacherResult(record.teacherResultJson);
+			const hasReviewableAnswers =
+				answerKeySource === "local" &&
+				(record.status === "submitted" || record.status === "approved");
+			const resultRows = hasReviewableAnswers
+				? await getAttemptResults(db, record.id)
+				: [];
+			let answerReview = await getAttemptAnswerReview(db, record.id);
+			let provisionalTeacherResult = undefined;
+			let externalExam = undefined;
+			if (
+				answerKeySource === "teacher_service" &&
+				test?.sourceService === "create-exam-service" &&
+				(record.status === "submitted" || record.status === "approved")
+			) {
+				try {
+					externalExam =
+						externalExamCache.get(test.generatorTestId) ??
+						(await getExternalNewMathExam(test.generatorTestId));
+					externalExamCache.set(test.generatorTestId, externalExam);
+					answerReview = hydrateCreateExamServiceAnswerReview(
+						answerReview,
+						externalExam,
+					);
+					provisionalTeacherResult =
+						(await buildCreateExamServiceResult(
+							db,
+							record.id,
+							test.generatorTestId,
+							externalExam,
+						)) ?? undefined;
+				} catch (error) {
+					console.error(
+						`Failed to build provisional teacher result for ${record.id}:`,
+						error,
+					);
+				}
+			}
+			const result =
+				answerKeySource === "teacher_service"
+					? provisionalTeacherResult
+						? mergeCreateExamServiceResult(
+								teacherCheckedResult,
+								provisionalTeacherResult,
+							)
+						: teacherCheckedResult
+					: teacherCheckedResult ??
+						(hasReviewableAnswers
+							? computeResult(resultRows)
+							: undefined);
 		const isApproved = record.status === "approved";
-		const resultRows = isApproved ? await getAttemptResults(db, record.id) : [];
 
 		summaries.push({
 			attemptId: record.id,
-			testId: record.testId,
-			title: test?.title || "Unknown Test",
-			studentId: record.studentId,
-			studentName: record.studentName,
-			status: record.status,
-			score: isApproved ? record.score ?? undefined : undefined,
-			maxScore: isApproved ? record.maxScore ?? undefined : undefined,
-			percentage: isApproved ? record.percentage ?? undefined : undefined,
-			startedAt: record.startedAt,
-			submittedAt: record.submittedAt ?? undefined,
-			result: isApproved ? computeResult(resultRows) : undefined,
-			monitoring: monitoringByAttemptId.get(record.id),
-		});
+				testId: record.testId,
+				title: test?.title || "Unknown Test",
+				studentId: record.studentId,
+				studentName: record.studentName,
+				status: record.status,
+				answerKeySource,
+				criteria: test
+				? {
+						gradeLevel: test.gradeLevel,
+							className: test.className,
+							subject: test.subject,
+							topic: test.topic,
+							difficulty: "medium",
+							questionCount: attemptState.totalQuestions,
+						}
+					: undefined,
+				progress: computeProgress(answeredQuestions, attemptState.totalQuestions),
+				score: isApproved ? record.score ?? undefined : undefined,
+				maxScore: isApproved ? record.maxScore ?? undefined : undefined,
+				percentage: isApproved ? record.percentage ?? undefined : undefined,
+				startedAt: record.startedAt,
+				submittedAt: record.submittedAt ?? undefined,
+				result,
+				answerReview,
+				feedback: parseAttemptFeedback(record.feedbackJson),
+				monitoring: monitoringByAttemptId.get(record.id),
+				teacherSync: teacherSyncExport
+					? {
+							status: teacherSyncExport.status,
+							targetService: teacherSyncExport.targetService,
+							lastError: teacherSyncExport.lastError ?? undefined,
+							sentAt: teacherSyncExport.sentAt ?? undefined,
+						}
+					: undefined,
+			});
 	}
 
+	await writeJsonToKv(
+		kv,
+		ATTEMPTS_SUMMARY_CACHE_KEY,
+		summaries,
+		ATTEMPTS_SUMMARY_CACHE_TTL_SECONDS,
+	);
+
 	return summaries;
+};
+
+export const invalidateAttemptsSummaryCache = async (kv?: KVNamespace) => {
+	await deleteJsonFromKv(kv, ATTEMPTS_SUMMARY_CACHE_KEY);
 };
 
 export const approveAttempt = async (
 	db: DbClient,
 	attemptId: string,
-	kv?: KVNamespace,
+	options: ApproveAttemptOptions = {},
 ) => {
 	const attempt = await db.query.attempts.findFirst({
 		where: eq(schema.attempts.id, attemptId),
 	});
 
 	if (!attempt) throw new Error("Оролдлого олдсонгүй.");
-	if (attempt.status === "approved") return;
-	if (attempt.status !== "submitted") {
+	const hasManualReview = (options.review?.questionReviews?.length ?? 0) > 0;
+	if (attempt.status === "approved" && !hasManualReview) return;
+	if (
+		attempt.status !== "submitted" &&
+		attempt.status !== "processing" &&
+		attempt.status !== "approved"
+	) {
 		throw new Error("Зөвхөн илгээгдсэн шалгалтыг батлах боломжтой.");
 	}
 
+	const test = await db.query.tests.findFirst({
+		where: eq(schema.tests.id, attempt.testId),
+	});
+	const storedReviewedResult = parseStoredTeacherResult(attempt.teacherResultJson);
+	if (test?.answerKeySource === "teacher_service" && !hasManualReview && !storedReviewedResult) {
+		throw new Error(
+			"Энэ шалгалтын зөв хариулт багшийн талд байгаа тул эндээс approve хийхгүй.",
+		);
+	}
+
 	const resultRows = await getAttemptResults(db, attemptId);
-	const result = computeResult(resultRows);
+	const result = await enrichResultWithQuestionFeedback(
+		resultRows,
+		hasManualReview
+		? buildReviewedResult(resultRows, options.review)
+		: storedReviewedResult ??
+			(test?.answerKeySource === "teacher_service"
+				? (() => {
+						throw new Error("Батлах review мэдээлэл дутуу байна.");
+					})()
+				: computeResult(resultRows)),
+		{
+			ai: options.ai,
+			geminiApiKey: options.geminiApiKey,
+			geminiModel: options.geminiModel,
+			ollamaApiKey: options.ollamaApiKey,
+			ollamaBaseUrl: options.ollamaBaseUrl,
+			ollamaModel: options.ollamaModel,
+		},
+	);
+	const attemptState = await resolveAttemptState(db, attemptId, options.kv);
+	const progress = computeProgress(
+		countAnsweredQuestions(attemptState.answers),
+		attemptState.totalQuestions,
+	);
+	const feedback = await generateAttemptFeedback(
+		db,
+		{ attemptId, progress, result },
+		{
+			ai: options.ai,
+			geminiApiKey: options.geminiApiKey,
+			geminiModel: options.geminiModel,
+			ollamaApiKey: options.ollamaApiKey,
+			ollamaBaseUrl: options.ollamaBaseUrl,
+			ollamaModel: options.ollamaModel,
+		},
+	);
 
 	await db.update(schema.attempts)
 		.set({
+			feedbackJson: stringifyAttemptFeedback(feedback),
 			status: "approved",
 			score: result.score,
 			maxScore: result.maxScore,
 			percentage: result.percentage,
+			teacherResultJson: JSON.stringify(result),
 		})
 		.where(eq(schema.attempts.id, attemptId));
 
-	const cachedState = await getAttemptStateFromKv(kv, attemptId);
+	const cachedState = await getAttemptStateFromKv(options.kv, attemptId);
 	if (cachedState) {
-		await cacheAttemptState(kv, {
+		await cacheAttemptState(options.kv, {
 			...cachedState,
 			status: "approved",
 		});

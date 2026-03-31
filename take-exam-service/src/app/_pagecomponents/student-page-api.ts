@@ -7,6 +7,7 @@ import {
   GetStudentsDocument,
   LogAttemptActivityDocument,
   ResumeExamDocument,
+  SyncExternalNewMathExamsDocument,
   StartExamDocument,
   SubmitAnswersDocument,
   type GetStudentDashboardQuery,
@@ -17,6 +18,10 @@ import {
   type SubmitAnswersMutation,
 } from "@/gql/generated";
 import type {
+  AiContentSource,
+  AttemptAnswerReviewItem,
+  AttemptQuestionMetricInput,
+  AttemptFeedback,
   AttemptMonitoringEvent,
   AttemptMonitoringSummary,
   AttemptSummary,
@@ -42,6 +47,29 @@ type GraphQlResult<T> = {
 type Nullable<T> = T | null | undefined;
 type DashboardAttempt = GetStudentDashboardQuery["attempts"][number];
 type DashboardAttemptMonitoring = NonNullable<DashboardAttempt["monitoring"]>;
+export type DashboardPayload = {
+  availableTests: TeacherTestSummary[];
+  attempts: AttemptSummary[];
+};
+
+const STUDENTS_CACHE_TTL_MS = 60_000;
+const DASHBOARD_CACHE_TTL_MS = 10_000;
+
+let studentsCache:
+  | {
+      expiresAt: number;
+      value: StudentInfo[];
+    }
+  | null = null;
+let studentsRequestInFlight: Promise<StudentInfo[]> | null = null;
+
+let dashboardCache:
+  | {
+      expiresAt: number;
+      value: DashboardPayload;
+    }
+  | null = null;
+let dashboardRequestInFlight: Promise<DashboardPayload> | null = null;
 
 export type AttemptActivityInput = {
   code: string;
@@ -50,6 +78,8 @@ export type AttemptActivityInput = {
   severity: ProctoringEventSeverity;
   title: string;
 };
+
+export type QuestionMetricInput = AttemptQuestionMetricInput;
 
 export type SebCheckResponse = {
   client?: {
@@ -96,6 +126,8 @@ const gqlRequest = async <TData, TVariables>(
   return payload.data;
 };
 
+const isFreshCache = (expiresAt: number) => expiresAt > Date.now();
+
 const mapMonitoringEvent = (
   event: DashboardAttemptMonitoring["recentEvents"][number],
 ): AttemptMonitoringEvent => ({
@@ -121,28 +153,119 @@ const mapMonitoringSummary = (
   };
 };
 
+const mapAttemptFeedback = (
+  feedback:
+    | Nullable<DashboardAttempt["feedback"]>
+    | Nullable<SubmitAnswersMutation["submitAnswers"]["feedback"]>,
+): AttemptFeedback | undefined => {
+  if (!feedback) return undefined;
+
+  return {
+    headline: feedback.headline,
+    summary: feedback.summary,
+    strengths: [...feedback.strengths],
+    improvements: [...feedback.improvements],
+    source: (feedback.source as AiContentSource | undefined) ?? undefined,
+  };
+};
+
+const computeFrontendResultSummary = (
+  questionResults: Array<{
+    answerChangeCount?: number;
+    competency?: string;
+    correctOptionId: string;
+    dwellMs?: number;
+    explanation?: string | null;
+    explanationSource?: string | null;
+    isCorrect?: boolean;
+    maxPoints: number;
+    pointsAwarded?: number;
+    prompt?: string;
+    questionId: string;
+    questionType?: "single-choice" | "math";
+    selectedOptionId?: string | null;
+  }>,
+): ExamResultSummary => {
+  const normalizedQuestionResults = questionResults.map((questionResult) => {
+    const isCorrect =
+      typeof questionResult.isCorrect === "boolean"
+        ? questionResult.isCorrect
+        : (questionResult.selectedOptionId ?? null) ===
+          questionResult.correctOptionId;
+    const maxPoints = questionResult.maxPoints ?? 0;
+    const pointsAwarded = Math.max(
+      0,
+      Math.min(questionResult.pointsAwarded ?? (isCorrect ? maxPoints : 0), maxPoints),
+    );
+
+    return {
+      answerChangeCount: questionResult.answerChangeCount ?? 0,
+      competency: questionResult.competency ?? "",
+      dwellMs: questionResult.dwellMs ?? 0,
+      prompt: questionResult.prompt ?? "",
+      questionId: questionResult.questionId,
+      questionType: questionResult.questionType ?? "single-choice",
+      selectedOptionId: questionResult.selectedOptionId ?? null,
+      correctOptionId: questionResult.correctOptionId,
+      isCorrect,
+      pointsAwarded,
+      maxPoints,
+      explanation: questionResult.explanation ?? "",
+      explanationSource:
+        (questionResult.explanationSource as AiContentSource | undefined) ??
+        undefined,
+    };
+  });
+
+  const score = normalizedQuestionResults.reduce(
+    (sum, questionResult) => sum + questionResult.pointsAwarded,
+    0,
+  );
+  const maxScore = normalizedQuestionResults.reduce(
+    (sum, questionResult) => sum + questionResult.maxPoints,
+    0,
+  );
+
+  return {
+    score,
+    maxScore,
+    percentage: maxScore === 0 ? 0 : Math.round((score / maxScore) * 100),
+    correctCount: normalizedQuestionResults.filter((item) => item.isCorrect)
+      .length,
+    incorrectCount: normalizedQuestionResults.filter(
+      (item) => item.selectedOptionId !== null && !item.isCorrect,
+    ).length,
+    unansweredCount: normalizedQuestionResults.filter(
+      (item) => item.selectedOptionId === null,
+    ).length,
+    questionResults: normalizedQuestionResults,
+  };
+};
+
 const mapExamResultSummary = (
   result: Nullable<DashboardAttempt["result"]>,
 ): ExamResultSummary | undefined => {
   if (!result) return undefined;
 
-  return {
-    score: result.score,
-    maxScore: result.maxScore,
-    percentage: result.percentage,
-    correctCount: result.correctCount,
-    incorrectCount: result.incorrectCount,
-    unansweredCount: result.unansweredCount,
-    questionResults: result.questionResults.map((questionResult) => ({
+  return computeFrontendResultSummary(
+    result.questionResults.map((questionResult) => ({
+      answerChangeCount: 0,
+      competency: "",
+      dwellMs: 0,
+      prompt: "",
       questionId: questionResult.questionId,
+      questionType: "single-choice",
       selectedOptionId: questionResult.selectedOptionId ?? null,
       correctOptionId: questionResult.correctOptionId,
       isCorrect: questionResult.isCorrect,
       pointsAwarded: questionResult.pointsAwarded,
       maxPoints: questionResult.maxPoints,
       explanation: questionResult.explanation ?? "",
+      explanationSource:
+        (questionResult.explanationSource as AiContentSource | undefined) ??
+        undefined,
     })),
-  };
+  );
 };
 
 const mapStudent = (
@@ -186,6 +309,29 @@ const mapAttemptSummary = (
   submittedAt: attempt.submittedAt ?? undefined,
   monitoring: mapMonitoringSummary(attempt.monitoring),
   result: mapExamResultSummary(attempt.result),
+  feedback: mapAttemptFeedback(attempt.feedback),
+  answerReview: attempt.answerReview?.map(
+    (item): AttemptAnswerReviewItem => ({
+      answerChangeCount: item.answerChangeCount ?? 0,
+      competency: item.competency,
+      correctAnswerText: item.correctAnswerText ?? undefined,
+      dwellMs: item.dwellMs ?? 0,
+      points: item.points,
+      prompt: item.prompt,
+      questionId: item.questionId,
+      questionType: item.questionType as "single-choice" | "math",
+      responseGuide: item.responseGuide ?? undefined,
+      selectedAnswerText: item.selectedAnswerText ?? undefined,
+      selectedOptionId: item.selectedOptionId ?? null,
+    }),
+  ),
+});
+
+export const mapDashboardPayload = (
+  data: GetStudentDashboardQuery,
+): DashboardPayload => ({
+  availableTests: data.availableTests.map(mapTest),
+  attempts: data.attempts.map(mapAttemptSummary),
 });
 
 const mapExamProgress = (
@@ -209,6 +355,12 @@ const mapStartExamResponse = (
   studentName: payload.studentName,
   startedAt: payload.startedAt,
   expiresAt: payload.expiresAt,
+  existingAnswers: Object.fromEntries(
+    (payload.existingAnswers ?? []).map((answer) => [
+      answer.questionId,
+      answer.selectedOptionId ?? null,
+    ]),
+  ),
   exam: {
     testId: payload.exam.testId,
     title: payload.exam.title,
@@ -224,7 +376,7 @@ const mapStartExamResponse = (
     },
     questions: payload.exam.questions.map((question) => ({
       questionId: question.questionId,
-      type: question.type as "single-choice",
+      type: question.type as "single-choice" | "math",
       prompt: question.prompt,
       points: question.points,
       competency: question.competency ?? undefined,
@@ -246,52 +398,124 @@ const mapSubmitAnswersResponse = (
   attemptId: payload.attemptId,
   status: payload.status as SubmitAnswersResponse["status"],
   progress: mapExamProgress(payload.progress),
-  result: payload.result
-    ? {
-        score: payload.result.score,
-        maxScore: payload.result.maxScore,
-        percentage: payload.result.percentage,
-        correctCount: payload.result.correctCount,
-        incorrectCount: payload.result.incorrectCount,
-        unansweredCount: payload.result.unansweredCount,
-        questionResults: payload.result.questionResults.map(
-          (questionResult) => ({
-            questionId: questionResult.questionId,
-            selectedOptionId: questionResult.selectedOptionId ?? null,
-            correctOptionId: questionResult.correctOptionId,
-            isCorrect: questionResult.isCorrect,
-            pointsAwarded: questionResult.pointsAwarded,
-            maxPoints: questionResult.maxPoints,
-            explanation: questionResult.explanation ?? "",
-          }),
-        ),
-      }
+  result: payload.status === "approved" && payload.result
+    ? computeFrontendResultSummary(
+        payload.result.questionResults.map((questionResult) => ({
+          answerChangeCount: 0,
+          competency: "",
+          dwellMs: 0,
+          prompt: "",
+          questionId: questionResult.questionId,
+          questionType: "single-choice",
+          selectedOptionId: questionResult.selectedOptionId ?? null,
+          correctOptionId: questionResult.correctOptionId,
+          isCorrect: questionResult.isCorrect,
+          pointsAwarded: questionResult.pointsAwarded,
+          maxPoints: questionResult.maxPoints,
+          explanation: questionResult.explanation ?? "",
+          explanationSource:
+            (questionResult.explanationSource as AiContentSource | undefined) ??
+            undefined,
+        })),
+      )
     : undefined,
+  feedback:
+    payload.status === "approved" ? mapAttemptFeedback(payload.feedback) : undefined,
 });
 
-export const loadStudentsData = async (): Promise<StudentInfo[]> => {
+export const loadStudentsData = async (
+  options?: { force?: boolean },
+): Promise<StudentInfo[]> => {
   if (USE_MOCK_DATA) {
     return mockStudentPortalClient.getStudents();
   }
 
-  const data = await gqlRequest(GetStudentsDocument);
-  return data.students.map(mapStudent);
+  if (!options?.force && studentsCache && isFreshCache(studentsCache.expiresAt)) {
+    return studentsCache.value;
+  }
+
+  if (!options?.force && studentsRequestInFlight) {
+    return studentsRequestInFlight;
+  }
+
+  studentsRequestInFlight = (async () => {
+    const data = await gqlRequest(GetStudentsDocument);
+    const nextStudents = data.students.map(mapStudent);
+    studentsCache = {
+      expiresAt: Date.now() + STUDENTS_CACHE_TTL_MS,
+      value: nextStudents,
+    };
+    return nextStudents;
+  })();
+
+  try {
+    return await studentsRequestInFlight;
+  } finally {
+    studentsRequestInFlight = null;
+  }
 };
 
-export const loadDashboardPayload = async (): Promise<{
-  availableTests: TeacherTestSummary[];
-  attempts: AttemptSummary[];
-}> => {
+export const loadDashboardPayload = async (
+  options?: { force?: boolean },
+): Promise<DashboardPayload> => {
   if (USE_MOCK_DATA) {
     return mockStudentPortalClient.getDashboard();
   }
 
-  const data = await gqlRequest(GetStudentDashboardDocument);
+  if (!options?.force && dashboardCache && isFreshCache(dashboardCache.expiresAt)) {
+    return dashboardCache.value;
+  }
 
-  return {
-    availableTests: data.availableTests.map(mapTest),
-    attempts: data.attempts.map(mapAttemptSummary),
-  };
+  if (!options?.force && dashboardRequestInFlight) {
+    return dashboardRequestInFlight;
+  }
+
+  dashboardRequestInFlight = (async () => {
+    const data = await gqlRequest(GetStudentDashboardDocument);
+
+    if (data.availableTests.length > 0) {
+      const nextPayload = mapDashboardPayload(data);
+      dashboardCache = {
+        expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
+        value: nextPayload,
+      };
+      return nextPayload;
+    }
+
+    try {
+      await gqlRequest(SyncExternalNewMathExamsDocument, { limit: 1 });
+      const syncedData = await gqlRequest(GetStudentDashboardDocument);
+
+      const nextPayload = mapDashboardPayload(syncedData);
+      dashboardCache = {
+        expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
+        value: nextPayload,
+      };
+      return nextPayload;
+    } catch (error) {
+      console.error(
+        "Failed to sync external exams before loading dashboard:",
+        error,
+      );
+    }
+
+    const nextPayload = mapDashboardPayload(data);
+    dashboardCache = {
+      expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
+      value: nextPayload,
+    };
+    return nextPayload;
+  })();
+
+  try {
+    return await dashboardRequestInFlight;
+  } finally {
+    dashboardRequestInFlight = null;
+  }
+};
+
+export const invalidateStudentDashboardCache = () => {
+  dashboardCache = null;
 };
 
 export const startExamRequest = async (payload: {
@@ -346,6 +570,43 @@ export const logAttemptActivityRequest = async (
   const data = await gqlRequest(LogAttemptActivityDocument, variables);
 
   return data.logAttemptActivity;
+};
+
+export const logQuestionMetricsRequest = async (
+  attemptId: string,
+  input: QuestionMetricInput[],
+) => {
+  if (USE_MOCK_DATA) {
+    return true;
+  }
+
+  const response = await fetch("/api/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `
+        mutation LogQuestionMetrics(
+          $attemptId: String!
+          $input: [QuestionMetricInput!]!
+        ) {
+          logQuestionMetrics(attemptId: $attemptId, input: $input)
+        }
+      `,
+      variables: { attemptId, input },
+    }),
+  });
+
+  const payload = (await response.json()) as GraphQlResult<{
+    logQuestionMetrics: boolean;
+  }>;
+
+  if (!response.ok || payload.errors?.length || !payload.data) {
+    throw new Error(
+      payload.errors?.[0]?.message || "Question metrics хадгалж чадсангүй.",
+    );
+  }
+
+  return payload.data.logQuestionMetrics;
 };
 
 export const checkSebAccessRequest = async (): Promise<SebCheckResponse> => {

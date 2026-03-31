@@ -36,7 +36,7 @@ export function SebAccessGate({
 }: SebAccessGateProps) {
   return (
     <div className="min-h-screen bg-[#eceff3] p-6">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-6xl items-center justify-center">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1440px] items-center justify-center">
         <div className="w-full rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
           <div className="mb-8 flex items-start gap-4">
             <div

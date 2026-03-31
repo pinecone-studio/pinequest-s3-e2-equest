@@ -2,6 +2,18 @@ type ColumnInfo = {
 	name: string;
 };
 
+function isDuplicateColumnError(error: unknown, columnName: string) {
+	if (!(error instanceof Error)) {
+		return false;
+	}
+
+	const message = error.message.toLowerCase();
+	return (
+		message.includes("duplicate column name") &&
+		message.includes(columnName.toLowerCase())
+	);
+}
+
 async function getColumnNames(db: D1Database, tableName: string) {
 	const result = await db
 		.prepare(`PRAGMA table_info(${tableName})`)
@@ -21,9 +33,16 @@ async function addColumnIfMissing(
 		return;
 	}
 
-	await db
-		.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${sqlDefinition}`)
-		.run();
+	try {
+		await db
+			.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${sqlDefinition}`)
+			.run();
+	} catch (error) {
+		if (!isDuplicateColumnError(error, columnName)) {
+			throw error;
+		}
+	}
+
 	columnNames.add(columnName);
 }
 
@@ -43,6 +62,8 @@ export async function ensureExamSchema(db: D1Database) {
 			`CREATE TABLE IF NOT EXISTS tests (
 				id text PRIMARY KEY NOT NULL,
 				generator_test_id text NOT NULL,
+				answer_key_source text NOT NULL DEFAULT 'local',
+				source_service text,
 				title text NOT NULL,
 				description text NOT NULL,
 				grade_level integer NOT NULL,
@@ -62,12 +83,15 @@ export async function ensureExamSchema(db: D1Database) {
 			`CREATE TABLE IF NOT EXISTS questions (
 				id text PRIMARY KEY NOT NULL,
 				test_id text NOT NULL,
+				type text NOT NULL DEFAULT 'single-choice',
 				prompt text NOT NULL,
 				options text NOT NULL,
 				correct_option_id text NOT NULL,
 				explanation text NOT NULL,
 				points integer NOT NULL,
 				competency text NOT NULL,
+				response_guide text,
+				answer_latex text,
 				image_url text,
 				audio_url text,
 				video_url text,
@@ -78,21 +102,23 @@ export async function ensureExamSchema(db: D1Database) {
 
 	await db
 		.prepare(
-			`CREATE TABLE IF NOT EXISTS attempts (
-				id text PRIMARY KEY NOT NULL,
-				test_id text NOT NULL,
-				student_id text NOT NULL,
-				student_name text NOT NULL,
-				shuffle_manifest text,
-				status text NOT NULL,
-				score integer,
-				max_score integer,
-				percentage integer,
-				started_at text NOT NULL,
-				expires_at text NOT NULL,
-				submitted_at text,
-				created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
-			)`,
+				`CREATE TABLE IF NOT EXISTS attempts (
+					id text PRIMARY KEY NOT NULL,
+					test_id text NOT NULL,
+					student_id text NOT NULL,
+					student_name text NOT NULL,
+					shuffle_manifest text,
+					status text NOT NULL,
+					score integer,
+					max_score integer,
+					percentage integer,
+					feedback_json text,
+					teacher_result_json text,
+					started_at text NOT NULL,
+					expires_at text NOT NULL,
+					submitted_at text,
+					created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+				)`,
 		)
 		.run();
 
@@ -118,6 +144,36 @@ export async function ensureExamSchema(db: D1Database) {
 				detail text NOT NULL,
 				occurred_at text NOT NULL,
 				created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+			)`,
+		)
+		.run();
+
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS attempt_question_metrics (
+				attempt_id text NOT NULL,
+				question_id text NOT NULL,
+				dwell_ms integer NOT NULL DEFAULT 0,
+				answer_change_count integer NOT NULL DEFAULT 0,
+				updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+				PRIMARY KEY(attempt_id, question_id)
+			)`,
+		)
+		.run();
+
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS teacher_submission_exports (
+				id text PRIMARY KEY NOT NULL,
+				attempt_id text NOT NULL,
+				test_id text NOT NULL,
+				target_service text NOT NULL,
+				status text NOT NULL DEFAULT 'pending',
+				payload_json text NOT NULL,
+				last_error text,
+				sent_at text,
+				created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+				updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
 			)`,
 		)
 		.run();
@@ -152,6 +208,20 @@ export async function ensureExamSchema(db: D1Database) {
 		db,
 		"tests",
 		testColumns,
+		"answer_key_source",
+		"answer_key_source text NOT NULL DEFAULT 'local'",
+	);
+	await addColumnIfMissing(
+		db,
+		"tests",
+		testColumns,
+		"source_service",
+		"source_service text",
+	);
+	await addColumnIfMissing(
+		db,
+		"tests",
+		testColumns,
 		"status",
 		"status text NOT NULL DEFAULT 'draft'",
 	);
@@ -171,6 +241,27 @@ export async function ensureExamSchema(db: D1Database) {
 	);
 
 	const questionColumns = await getColumnNames(db, "questions");
+	await addColumnIfMissing(
+		db,
+		"questions",
+		questionColumns,
+		"type",
+		"type text NOT NULL DEFAULT 'single-choice'",
+	);
+	await addColumnIfMissing(
+		db,
+		"questions",
+		questionColumns,
+		"response_guide",
+		"response_guide text",
+	);
+	await addColumnIfMissing(
+		db,
+		"questions",
+		questionColumns,
+		"answer_latex",
+		"answer_latex text",
+	);
 	await addColumnIfMissing(
 		db,
 		"questions",
@@ -208,6 +299,20 @@ export async function ensureExamSchema(db: D1Database) {
 		"created_at",
 		"created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL",
 	);
+	await addColumnIfMissing(
+		db,
+		"attempts",
+		attemptColumns,
+		"feedback_json",
+		"feedback_json text",
+	);
+	await addColumnIfMissing(
+		db,
+		"attempts",
+		attemptColumns,
+		"teacher_result_json",
+		"teacher_result_json text",
+	);
 
 	const proctoringEventColumns = await getColumnNames(db, "proctoring_events");
 	await addColumnIfMissing(
@@ -217,6 +322,84 @@ export async function ensureExamSchema(db: D1Database) {
 		"created_at",
 		"created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL",
 	);
+
+	const attemptQuestionMetricColumns = await getColumnNames(
+		db,
+		"attempt_question_metrics",
+	);
+	await addColumnIfMissing(
+		db,
+		"attempt_question_metrics",
+		attemptQuestionMetricColumns,
+		"dwell_ms",
+		"dwell_ms integer NOT NULL DEFAULT 0",
+	);
+	await addColumnIfMissing(
+		db,
+		"attempt_question_metrics",
+		attemptQuestionMetricColumns,
+		"answer_change_count",
+		"answer_change_count integer NOT NULL DEFAULT 0",
+	);
+	await addColumnIfMissing(
+		db,
+		"attempt_question_metrics",
+		attemptQuestionMetricColumns,
+		"updated_at",
+		"updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL",
+	);
+
+	const teacherSubmissionExportColumns = await getColumnNames(
+		db,
+		"teacher_submission_exports",
+	);
+	await addColumnIfMissing(
+		db,
+		"teacher_submission_exports",
+		teacherSubmissionExportColumns,
+		"last_error",
+		"last_error text",
+	);
+	await addColumnIfMissing(
+		db,
+		"teacher_submission_exports",
+		teacherSubmissionExportColumns,
+		"sent_at",
+		"sent_at text",
+	);
+	await addColumnIfMissing(
+		db,
+		"teacher_submission_exports",
+		teacherSubmissionExportColumns,
+		"created_at",
+		"created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL",
+	);
+	await addColumnIfMissing(
+		db,
+		"teacher_submission_exports",
+		teacherSubmissionExportColumns,
+		"updated_at",
+		"updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL",
+	);
+
+	await db.prepare(
+		`UPDATE tests
+		 SET answer_key_source = 'teacher_service',
+		     source_service = COALESCE(source_service, 'create-exam-service')
+		 WHERE id IN (
+		   SELECT DISTINCT test_id
+		   FROM questions
+		   WHERE competency = 'external-import'
+		 )`,
+	).run();
+
+	await db.prepare(
+		`UPDATE questions
+		 SET correct_option_id = '',
+		     explanation = '',
+		     answer_latex = NULL
+		 WHERE competency = 'external-import'`,
+	).run();
 
 	await db
 		.prepare(
@@ -236,6 +419,21 @@ export async function ensureExamSchema(db: D1Database) {
 	await db
 		.prepare(
 			"CREATE INDEX IF NOT EXISTS proctoring_events_attempt_occurred_idx ON proctoring_events (attempt_id, occurred_at)",
+		)
+		.run();
+	await db
+		.prepare(
+			"CREATE INDEX IF NOT EXISTS attempt_question_metrics_attempt_updated_idx ON attempt_question_metrics (attempt_id, updated_at)",
+		)
+		.run();
+	await db
+		.prepare(
+			"CREATE UNIQUE INDEX IF NOT EXISTS teacher_submission_exports_attempt_unique_idx ON teacher_submission_exports (attempt_id)",
+		)
+		.run();
+	await db
+		.prepare(
+			"CREATE INDEX IF NOT EXISTS teacher_submission_exports_status_idx ON teacher_submission_exports (status)",
 		)
 		.run();
 }

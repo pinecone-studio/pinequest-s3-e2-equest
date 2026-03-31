@@ -2,7 +2,9 @@ import type { ExamProgress } from "@/lib/exam-service/types";
 
 export const TEST_CACHE_TTL_SECONDS = 60 * 60 * 24;
 export const ATTEMPT_CACHE_TTL_SECONDS = 60 * 60 * 12;
+export const ATTEMPTS_SUMMARY_CACHE_TTL_SECONDS = 8;
 export const TEST_CACHE_INDEX_KEY = "tests:index";
+export const ATTEMPTS_SUMMARY_CACHE_KEY = "attempts:summary";
 
 export const createId = (prefix: string) =>
 	`${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -33,3 +35,11 @@ export const getQuestionOptions = (question: any) =>
 	typeof question.options === "string" ? JSON.parse(question.options) : question.options;
 
 export const getOptionId = (option: any) => option.id;
+
+export const normalizeFreeResponseAnswer = (value?: string | null) =>
+	(value ?? "")
+		.toLowerCase()
+		.replace(/\\,/g, ",")
+		.replace(/\$+/g, "")
+		.replace(/\s+/g, "")
+		.trim();

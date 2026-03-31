@@ -37,6 +37,25 @@ npm run deploy
 # or similar package manager command
 ```
 
+### Remote Ollama
+
+If you want `/api/ollama-teacher-feedback` to work on the deployed link, point it to a remote Ollama host instead of `localhost`.
+
+Set these variables in Cloudflare:
+
+```bash
+wrangler secret put OLLAMA_API_KEY
+```
+
+```json
+{
+  "OLLAMA_BASE_URL": "https://your-ollama-domain.example",
+  "OLLAMA_MODEL": "llama3.1"
+}
+```
+
+`OLLAMA_API_KEY` is optional and is only needed when your remote Ollama endpoint is protected.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

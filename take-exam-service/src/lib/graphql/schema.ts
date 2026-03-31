@@ -22,12 +22,30 @@ export const typeDefs = /* GraphQL */ `
     title: String!
     description: String!
     criteria: TestCriteria!
+    answerKeySource: String!
     updatedAt: String!
+  }
+
+  type ExternalExamSummary {
+    examId: ID!
+    title: String!
+    updatedAt: String!
+  }
+
+  type ExternalExamImportResult {
+    examId: ID!
+    importedTestId: ID!
+    title: String!
   }
 
   type ExamOption {
     id: ID!
     text: String!
+  }
+
+  type ExistingAnswer {
+    questionId: ID!
+    selectedOptionId: String
   }
 
   type StudentExamQuestion {
@@ -40,6 +58,7 @@ export const typeDefs = /* GraphQL */ `
     imageUrl: String
     audioUrl: String
     videoUrl: String
+    responseGuide: String
   }
 
   type ExamSession {
@@ -69,20 +88,35 @@ export const typeDefs = /* GraphQL */ `
 
   type AttemptMonitoringSummary {
     totalEvents: Int!
+    infoCount: Int
     warningCount: Int!
     dangerCount: Int!
     lastEventAt: String
     recentEvents: [AttemptMonitoringEvent!]!
   }
 
+  type AttemptFeedback {
+    headline: String!
+    summary: String!
+    strengths: [String!]!
+    improvements: [String!]!
+    source: String
+  }
+
   type QuestionResult {
     questionId: ID!
+    prompt: String!
+    competency: String!
+    questionType: String!
     selectedOptionId: String
     correctOptionId: String!
     isCorrect: Boolean!
     pointsAwarded: Int!
     maxPoints: Int!
     explanation: String
+    explanationSource: String
+    dwellMs: Int
+    answerChangeCount: Int
   }
 
   type AttemptResultSummary {
@@ -95,6 +129,27 @@ export const typeDefs = /* GraphQL */ `
     questionResults: [QuestionResult!]!
   }
 
+  type AttemptAnswerReviewItem {
+    questionId: ID!
+    prompt: String!
+    competency: String!
+    questionType: String!
+    selectedOptionId: String
+    selectedAnswerText: String
+    correctAnswerText: String
+    points: Int!
+    responseGuide: String
+    dwellMs: Int
+    answerChangeCount: Int
+  }
+
+  type TeacherSubmissionSync {
+    status: String!
+    targetService: String!
+    lastError: String
+    sentAt: String
+  }
+
   type AttemptSummary {
     attemptId: ID!
     testId: ID!
@@ -102,6 +157,9 @@ export const typeDefs = /* GraphQL */ `
     studentId: String!
     studentName: String!
     status: String!
+    criteria: TestCriteria
+    answerKeySource: String!
+    progress: ExamProgress!
     score: Int
     maxScore: Int
     percentage: Int
@@ -109,6 +167,22 @@ export const typeDefs = /* GraphQL */ `
     submittedAt: String
     result: AttemptResultSummary
     monitoring: AttemptMonitoringSummary
+    feedback: AttemptFeedback
+    teacherSync: TeacherSubmissionSync
+    answerReview: [AttemptAnswerReviewItem!]
+  }
+
+  type AttemptLiveFeedItem {
+    attemptId: ID!
+    testId: ID!
+    title: String!
+    studentId: String!
+    studentName: String!
+    status: String!
+    startedAt: String!
+    submittedAt: String
+    monitoring: AttemptMonitoringSummary
+    latestEvent: AttemptMonitoringEvent
   }
 
   type StartExamPayload {
@@ -118,6 +192,7 @@ export const typeDefs = /* GraphQL */ `
     studentName: String!
     startedAt: String!
     expiresAt: String!
+    existingAnswers: [ExistingAnswer!]
     exam: ExamSession!
     progress: ExamProgress!
   }
@@ -127,21 +202,28 @@ export const typeDefs = /* GraphQL */ `
     status: String!
     progress: ExamProgress!
     result: AttemptResultSummary
+    feedback: AttemptFeedback
   }
 
   type Query {
     students: [Student!]!
     availableTests: [Test!]!
     attempts: [AttemptSummary!]!
+    testMaterial(testId: ID!): ExamSession
+    liveMonitoringFeed(limit: Int): [AttemptLiveFeedItem!]!
+    externalNewMathExams(limit: Int): [ExternalExamSummary!]!
   }
 
   type Mutation {
     saveTest(test: String!): Boolean!
+    importNewMathExam(examId: ID!): ExternalExamImportResult!
+    syncExternalNewMathExams(limit: Int): [ExternalExamImportResult!]!
     startExam(testId: String!, studentId: String!, studentName: String!): StartExamPayload!
     resumeExam(attemptId: String!): StartExamPayload!
     submitAnswers(attemptId: String!, answers: [AnswerInput!]!, finalize: Boolean!): SubmitAnswersPayload!
-    approveAttempt(attemptId: String!): Boolean!
+    approveAttempt(attemptId: String!, review: AttemptReviewInput): Boolean!
     logAttemptActivity(attemptId: String!, input: AttemptActivityInput!): Boolean!
+    logQuestionMetrics(attemptId: String!, input: [QuestionMetricInput!]!): Boolean!
   }
 
   input AnswerInput {
@@ -155,6 +237,25 @@ export const typeDefs = /* GraphQL */ `
     title: String!
     detail: String!
     occurredAt: String
+  }
+
+  input QuestionMetricInput {
+    questionId: ID!
+    dwellMs: Int
+    answerChangeCount: Int
+  }
+
+  input AttemptQuestionReviewInput {
+    questionId: ID!
+    correctOptionId: String
+    explanation: String
+    isCorrect: Boolean
+    maxPoints: Int
+    pointsAwarded: Int
+  }
+
+  input AttemptReviewInput {
+    questionReviews: [AttemptQuestionReviewInput!]!
   }
 `;
 

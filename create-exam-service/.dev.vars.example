@@ -11,6 +11,8 @@
 # ── Зөвхөн локал (доор нэгийг нь бөглөнө) ──
 # GOOGLE_AI_API_KEY=
 GEMINI_API_KEY=
+TAKE_EXAM_RESULT_WEBHOOK_URL=http://localhost:3002/api/teacher-submission-result
+TAKE_EXAM_RESULT_WEBHOOK_SECRET=
 
 # analyzeQuestion model (сонголттой; wrangler.jsonc `vars.GEMINI_ANALYZE_MODEL`-тай нийлнэ)
 # GEMINI_ANALYZE_MODEL=gemini-1.5-flash

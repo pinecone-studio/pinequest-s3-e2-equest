@@ -6,15 +6,23 @@ import type { CodegenConfig } from "@graphql-codegen/cli";
  */
 const config: CodegenConfig = {
 	overwrite: true,
-	schema: "../create-exam-service/src/graphql/schema.graphql",
-	documents: ["src/gql/create-exam-documents.ts"],
 	ignoreNoDocuments: true,
+	hooks: {
+		afterAllFileWrite: ["node scripts/fix-typed-document-imports.cjs"],
+	},
 	generates: {
 		"src/gql/": {
+			schema: "../create-exam-service/src/graphql/schema.graphql",
+			documents: ["src/gql/create-exam-documents.ts"],
 			preset: "client",
 			presetConfig: {
 				gqlTagName: "gql",
 			},
+		},
+		"src/take-exam-gql/operations.ts": {
+			schema: "../take-exam-service/src/lib/graphql/schema.graphql",
+			documents: ["src/take-exam-gql/**/*.graphql"],
+			plugins: ["typescript", "typescript-operations", "typed-document-node"],
 		},
 	},
 };

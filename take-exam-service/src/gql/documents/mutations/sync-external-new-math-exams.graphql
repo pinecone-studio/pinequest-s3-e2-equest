@@ -1,0 +1,7 @@
+mutation SyncExternalNewMathExams($limit: Int) {
+  syncExternalNewMathExams(limit: $limit) {
+    examId
+    importedTestId
+    title
+  }
+}

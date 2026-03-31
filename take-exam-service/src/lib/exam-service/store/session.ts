@@ -33,8 +33,10 @@ type TestContext = {
 		topic: string;
 		timeLimitMinutes: number;
 	};
-	testQuestions: any[];
+	testQuestions: TestQuestion[];
 };
+
+type TestQuestion = (typeof schema.questions.$inferSelect) | ExamTest["questions"][number];
 
 const mapCachedTest = (test: ExamTest): TestContext["testData"] => ({
 	id: test.id,
@@ -89,14 +91,14 @@ const formatExamResponse = (
 	expiresAt: string,
 	testId: string,
 	testData: TestContext["testData"],
-	testQuestions: any[],
+	testQuestions: TestQuestion[],
 	answeredCount: number,
 	manifest = createShuffleManifest(attemptId, studentId, testId, testQuestions),
 ): StartExamResponse => {
 	const shuffledQuestions = applyShuffleManifest(testQuestions, manifest).map(
 		(question) => ({
 			questionId: getQuestionId(question),
-			type: "single-choice" as const,
+			type: (question.type as "single-choice" | "math") ?? "single-choice",
 			prompt: question.prompt,
 			options: getQuestionOptions(question),
 			points: question.points,
@@ -104,6 +106,7 @@ const formatExamResponse = (
 			imageUrl: question.imageUrl,
 			audioUrl: question.audioUrl,
 			videoUrl: question.videoUrl,
+			responseGuide: question.responseGuide,
 		}),
 	);
 

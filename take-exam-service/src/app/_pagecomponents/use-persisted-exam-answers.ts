@@ -6,7 +6,10 @@ type PersistedExamAnswers = Record<string, string | null>;
 
 const getStorageKey = (attemptId: string) => `answers_${attemptId}`;
 
-export function usePersistedExamAnswers(attemptId: string | null) {
+export function usePersistedExamAnswers(
+  attemptId: string | null,
+  serverAnswers?: PersistedExamAnswers | null,
+) {
   const [answers, setAnswers] = useState<PersistedExamAnswers>({});
 
   useEffect(() => {
@@ -17,7 +20,7 @@ export function usePersistedExamAnswers(attemptId: string | null) {
 
     const savedValue = localStorage.getItem(getStorageKey(attemptId));
     if (!savedValue) {
-      setAnswers({});
+      setAnswers(serverAnswers ?? {});
       return;
     }
 
@@ -26,9 +29,9 @@ export function usePersistedExamAnswers(attemptId: string | null) {
       setAnswers(parsed);
     } catch {
       localStorage.removeItem(getStorageKey(attemptId));
-      setAnswers({});
+      setAnswers(serverAnswers ?? {});
     }
-  }, [attemptId]);
+  }, [attemptId, serverAnswers]);
 
   useEffect(() => {
     if (!attemptId) return;

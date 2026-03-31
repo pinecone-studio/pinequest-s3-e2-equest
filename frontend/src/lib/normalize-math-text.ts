@@ -27,7 +27,7 @@ export function normalizeBackendMathText(raw: string): string {
  * Removes common backend/db artifacts but does NOT add `$...$` delimiters.
  */
 export function normalizeBackendLatexOnly(raw: string): string {
-  return normalizeBackendLatexArtifacts(raw);
+  return normalizeCommonMathSyntax(normalizeBackendLatexArtifacts(raw));
 }
 
 function containsExplicitMathDelimiters(raw: string): boolean {
@@ -138,6 +138,19 @@ function normalizeBackendLatexArtifacts(raw: string): string {
   return next.trim();
 }
 
+function normalizeCommonMathSyntax(value: string): string {
+  if (!value) return value;
+
+  return value
+    .replace(/\\left\{/g, "\\left(")
+    .replace(/\\right\}/g, "\\right)")
+    .replace(
+      /(^|[=+\-*/,(]\s*)(\d+)\s+(\d+)\/(\d+)(?=(?:\s|[+)=,.;:]|\\right|$))/g,
+      (_full, prefix: string, whole: string, numerator: string, denominator: string) =>
+        `${prefix}${whole}\\frac{${numerator}}{${denominator}}`,
+    );
+}
+
 function restoreInlineMathDelimiters(value: string): string {
   if (!value) return value;
   if (value.includes("$")) return value;
@@ -157,7 +170,7 @@ function restoreInlineMathDelimiters(value: string): string {
     (full) => `$${full.trim()}$`,
   );
   if (withWrappedCommands !== value) {
-    return withWrappedCommands;
+    return wrapTrailingLatexRuns(withWrappedCommands);
   }
 
   // Wrap ascii-only math-ish expressions containing =, ^, or _ with $...$.
@@ -165,9 +178,29 @@ function restoreInlineMathDelimiters(value: string): string {
   const pattern =
     /([A-Za-z0-9][A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]*[=^_][A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]*[A-Za-z0-9])([.?!,;:]?)/g;
 
-  return value.replace(pattern, (_full, expr: string, punct: string) => {
-    const trimmed = String(expr).trim();
-    if (!trimmed) return _full;
-    return `$${trimmed}$${punct ?? ""}`;
-  });
+  return wrapTrailingLatexRuns(
+    value.replace(pattern, (_full, expr: string, punct: string) => {
+      const trimmed = String(expr).trim();
+      if (!trimmed) return _full;
+      return `$${trimmed}$${punct ?? ""}`;
+    }),
+  );
+}
+
+function wrapTrailingLatexRuns(value: string): string {
+  if (!value || value.includes("$$")) {
+    return value;
+  }
+
+  return value.replace(
+    /(\\[A-Za-z][\\A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]+?)(?=(?:\s+[А-Яа-яӨөҮүЁё]|$))/g,
+    (full) => {
+      const trimmed = full.trim();
+      if (!trimmed || trimmed.includes("$")) {
+        return full;
+      }
+
+      return `$${trimmed}$`;
+    },
+  );
 }

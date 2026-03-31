@@ -14,7 +14,10 @@
 		"preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
 		"cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
 		"db:generate": "drizzle-kit generate",
-		"db:migrate": "drizzle-kit migrate"
+		"db:migrate": "drizzle-kit migrate",
+		"reset:student-data": "node scripts/reset-student-data.mjs --remote",
+		"reset:student-data:all": "node scripts/reset-student-data.mjs --remote --include-students",
+		"reset:student-data:local": "node scripts/reset-student-data.mjs --local"
 	},
 	"dependencies": {
 		"@apollo/client": "^4.1.6",
@@ -28,6 +31,7 @@
 		"graphql": "^16.13.1",
 		"graphql-yoga": "^5.18.1",
 		"input-otp": "^1.4.2",
+		"katex": "^0.16.22",
 		"lucide-react": "^1.7.0",
 		"next": "16.1.5",
 		"next-themes": "^0.4.6",

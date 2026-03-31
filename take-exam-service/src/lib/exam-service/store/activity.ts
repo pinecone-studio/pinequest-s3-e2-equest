@@ -1,5 +1,6 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, ne } from "drizzle-orm";
 import type {
+	AttemptLiveFeedItem,
 	AttemptMonitoringEvent,
 	AttemptMonitoringSummary,
 	ProctoringEventSeverity,
@@ -79,6 +80,7 @@ export const getAttemptMonitoringSummaries = async (
 	for (const row of rows) {
 		const summary = grouped.get(row.attemptId) ?? {
 			totalEvents: 0,
+			infoCount: 0,
 			warningCount: 0,
 			dangerCount: 0,
 			lastEventAt: undefined,
@@ -88,8 +90,10 @@ export const getAttemptMonitoringSummaries = async (
 		summary.totalEvents += 1;
 		if (row.severity === "danger") {
 			summary.dangerCount += 1;
-		} else {
+		} else if (row.severity === "warning") {
 			summary.warningCount += 1;
+		} else {
+			summary.infoCount = (summary.infoCount ?? 0) + 1;
 		}
 
 		if (!summary.lastEventAt) {
@@ -104,4 +108,62 @@ export const getAttemptMonitoringSummaries = async (
 	}
 
 	return grouped;
+};
+
+export const listLiveMonitoringFeed = async (
+	db: DbClient,
+	limit = 40,
+): Promise<AttemptLiveFeedItem[]> => {
+	const rows = await db.query.proctoringEvents.findMany({
+		where: ne(schema.proctoringEvents.severity, "info"),
+		orderBy: [
+			desc(schema.proctoringEvents.occurredAt),
+			desc(schema.proctoringEvents.createdAt),
+		],
+		limit,
+	});
+
+	if (rows.length === 0) {
+		return [];
+	}
+
+	const attemptIds = [...new Set(rows.map((row) => row.attemptId))];
+	const monitoringByAttemptId = await getAttemptMonitoringSummaries(db, attemptIds);
+	const attempts = await db.query.attempts.findMany({
+		where: inArray(schema.attempts.id, attemptIds),
+	});
+	const tests = await db.query.tests.findMany({
+		where: inArray(
+			schema.tests.id,
+			[...new Set(attempts.map((attempt) => attempt.testId))],
+		),
+	});
+
+	const attemptById = new Map(attempts.map((attempt) => [attempt.id, attempt]));
+	const testById = new Map(tests.map((test) => [test.id, test]));
+
+	return rows.flatMap((row) => {
+		const attempt = attemptById.get(row.attemptId);
+		if (
+			!attempt ||
+			(attempt.status !== "in_progress" && attempt.status !== "processing")
+		) {
+			return [];
+		}
+
+		return [
+			{
+				attemptId: attempt.id,
+				testId: attempt.testId,
+				title: testById.get(attempt.testId)?.title ?? "Unknown Test",
+				studentId: attempt.studentId,
+				studentName: attempt.studentName,
+				status: attempt.status,
+				startedAt: attempt.startedAt,
+				submittedAt: attempt.submittedAt ?? undefined,
+				monitoring: monitoringByAttemptId.get(attempt.id),
+				latestEvent: toMonitoringEvent(row),
+			},
+		];
+	});
 };

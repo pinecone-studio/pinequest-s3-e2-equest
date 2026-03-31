@@ -41,6 +41,19 @@ export const writeJsonToKv = async (
 	}
 };
 
+export const deleteJsonFromKv = async (
+	kv: KVNamespace | undefined,
+	key: string,
+) => {
+	if (!kv) return;
+
+	try {
+		await kv.delete(key);
+	} catch (error) {
+		console.error(`Failed to delete KV key "${key}":`, error);
+	}
+};
+
 export const syncPublishedTestCache = async (
 	kv: KVNamespace | undefined,
 	test: ExamTest,

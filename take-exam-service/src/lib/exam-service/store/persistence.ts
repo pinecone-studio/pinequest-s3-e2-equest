@@ -2,6 +2,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import type { ExamAnswerInput } from "@/lib/exam-service/types";
 import { DbClient } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
+import { normalizeFreeResponseAnswer } from "./common";
 
 const ANSWER_UPSERT_CHUNK_SIZE = 100;
 
@@ -26,8 +27,29 @@ export const persistAnswerUpdates = async (
 		return;
 	}
 
-	for (let index = 0; index < dedupedAnswers.length; index += ANSWER_UPSERT_CHUNK_SIZE) {
-		const chunk = dedupedAnswers.slice(index, index + ANSWER_UPSERT_CHUNK_SIZE);
+	const questionRows = await db.query.questions.findMany({
+		where: sql`${schema.questions.id} in (${sql.join(
+			dedupedAnswers.map((answer) => sql`${answer.questionId}`),
+			sql`, `,
+		)})`,
+		columns: {
+			id: true,
+			type: true,
+		},
+	});
+	const questionTypeById = new Map(
+		questionRows.map((question) => [question.id, question.type]),
+	);
+	const normalizedAnswers = dedupedAnswers.map((answer) => ({
+		...answer,
+		selectedOptionId:
+			questionTypeById.get(answer.questionId) === "math"
+				? normalizeFreeResponseAnswer(answer.selectedOptionId)
+				: answer.selectedOptionId,
+	}));
+
+	for (let index = 0; index < normalizedAnswers.length; index += ANSWER_UPSERT_CHUNK_SIZE) {
+		const chunk = normalizedAnswers.slice(index, index + ANSWER_UPSERT_CHUNK_SIZE);
 
 		await db.insert(schema.answers)
 			.values(

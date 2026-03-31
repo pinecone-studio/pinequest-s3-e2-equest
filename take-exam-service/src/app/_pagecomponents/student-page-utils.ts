@@ -63,9 +63,115 @@ export const formatTimeLeft = (ms: number) => {
 export const testKey = (test: TeacherTestSummary) =>
   `${test.criteria.subject}-${test.criteria.topic}-${test.title}`.toLowerCase();
 
+const normalizeClassSegment = (value: string) =>
+  value
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/АНГИ|БҮЛЭГ|CLASS/gi, "")
+    .trim();
+
+const extractGrade = (value: string) => value.match(/\d+/)?.[0] ?? "";
+
+const parseClassTargets = (value?: string | null) => {
+  const normalized = normalizeClassSegment(value ?? "");
+  if (!normalized) {
+    return [];
+  }
+
+  const directParts = normalized
+    .split(/[\/,;|]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const expanded = new Set<string>();
+
+  for (const part of directParts) {
+    const partGrade = extractGrade(part);
+    const partLetters = [...part.replace(/\d+/g, "").matchAll(/[A-ZА-ЯӨҮЁ]/g)].map(
+      (match) => match[0],
+    );
+
+    if (partGrade && partLetters.length > 1) {
+      for (const letter of partLetters) {
+        expanded.add(`${partGrade}${letter}`);
+      }
+      continue;
+    }
+
+    if (partGrade && partLetters.length === 1) {
+      expanded.add(`${partGrade}${partLetters[0]}`);
+      continue;
+    }
+
+    if (partGrade) {
+      expanded.add(partGrade);
+      continue;
+    }
+
+    if (partLetters.length > 0) {
+      for (const letter of partLetters) {
+        expanded.add(letter);
+      }
+    }
+  }
+
+  if (expanded.size > 0) {
+    return [...expanded];
+  }
+
+  return [normalized];
+};
+
+export const matchesStudentClassGroup = (
+  studentClassName?: string | null,
+  testClassName?: string | null,
+  testGradeLevel?: number | null,
+) => {
+  const studentNormalized = normalizeClassSegment(studentClassName ?? "");
+  if (!studentNormalized) {
+    return true;
+  }
+
+  const studentGrade = extractGrade(studentNormalized);
+  const studentLetters = [...studentNormalized.replace(/\d+/g, "").matchAll(/[A-ZА-ЯӨҮЁ]/g)].map(
+    (match) => match[0],
+  );
+
+  const testTargets = parseClassTargets(testClassName);
+  if (testTargets.length > 0) {
+    if (testTargets.includes(studentNormalized)) {
+      return true;
+    }
+
+    if (
+      studentGrade &&
+      studentLetters.length > 0 &&
+      testTargets.includes(`${studentGrade}${studentLetters[0]}`)
+    ) {
+      return true;
+    }
+
+    if (studentGrade && testTargets.includes(studentGrade)) {
+      return true;
+    }
+  }
+
+  if (typeof testGradeLevel === "number" && studentGrade) {
+    return Number(studentGrade) === testGradeLevel;
+  }
+
+  return false;
+};
+
 export const estimateDurationMinutes = (test: TeacherTestSummary) => {
   const subject = test.criteria.subject.toLowerCase();
   if (subject.includes("физик")) return 90;
   if (subject.includes("англи")) return 30;
   return Math.max(30, Math.min(120, test.criteria.questionCount * 5));
 };
+
+export const formatQuestionPrompt = (value?: string | null) =>
+  (value ?? "")
+    .replace(/^\s*(?:Q(?:uestion)?\s*)?\d+\s*[\).:-]?\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();

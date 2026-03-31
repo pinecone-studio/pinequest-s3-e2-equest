@@ -1,14 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { loadDashboardPayload, loadStudentsData } from "./student-page-api";
-import { formatDate, testKey } from "./student-page-utils";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useApolloClient, useQuery } from "@apollo/client/react";
+import {
+  GetStudentDashboardDocument,
+  SyncExternalNewMathExamsDocument,
+} from "@/gql/generated";
+import {
+  loadDashboardPayload,
+  loadStudentsData,
+  mapDashboardPayload,
+} from "./student-page-api";
+import {
+  formatDate,
+  matchesStudentClassGroup,
+  testKey,
+} from "./student-page-utils";
 import type {
   AttemptSummary,
   StudentInfo,
   TeacherTestSummary,
 } from "@/lib/exam-service/types";
 import type { ResultRow } from "./student-page-shell";
+import { USE_MOCK_DATA } from "@/lib/mock/student-portal-client";
 
 type UseStudentDashboardDataArgs = {
   enabled?: boolean;
@@ -19,11 +33,25 @@ export function useStudentDashboardData({
   enabled = true,
   setError,
 }: UseStudentDashboardDataArgs) {
+  const apolloClient = useApolloClient();
   const [availableStudents, setAvailableStudents] = useState<StudentInfo[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [tests, setTests] = useState<TeacherTestSummary[]>([]);
   const [allAttempts, setAllAttempts] = useState<AttemptSummary[]>([]);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isStudentsLoading, setIsStudentsLoading] = useState(true);
+  const [hasTriggeredExternalSync, setHasTriggeredExternalSync] =
+    useState(false);
+  const {
+    data: dashboardData,
+    error: dashboardError,
+    loading: isDashboardLoading,
+    refetch: refetchDashboard,
+  } = useQuery(GetStudentDashboardDocument, {
+    fetchPolicy: "cache-first",
+    nextFetchPolicy: "cache-first",
+    notifyOnNetworkStatusChange: true,
+    skip: !enabled || USE_MOCK_DATA,
+  });
 
   const selectedStudent = useMemo(
     () =>
@@ -71,25 +99,32 @@ export function useStudentDashboardData({
     return map;
   }, [studentAttempts]);
 
+  const completedByTestId = useMemo(() => {
+    const map = new Map<string, AttemptSummary>();
+
+    studentAttempts
+      .filter(
+        (attempt) =>
+          attempt.status === "approved" || attempt.status === "submitted",
+      )
+      .forEach((attempt) => {
+        const existing = map.get(attempt.testId);
+        if (
+          !existing ||
+          new Date(existing.startedAt) < new Date(attempt.startedAt)
+        ) {
+          map.set(attempt.testId, attempt);
+        }
+      });
+
+    return map;
+  }, [studentAttempts]);
+
   const filteredTests = useMemo(() => {
     if (!selectedStudent) return [];
 
-    return Array.from(
+    const dedupedTests = Array.from(
       tests
-        .filter((test) => {
-          const studentClass = selectedStudent.className.trim().toUpperCase();
-          const testClass = test.criteria.className.trim().toUpperCase();
-          const classMatched = testClass === "" || testClass === studentClass;
-          if (!classMatched) return false;
-
-          const alreadyFinished = studentAttempts.some(
-            (attempt) =>
-              attempt.testId === test.id &&
-              (attempt.status === "submitted" || attempt.status === "approved"),
-          );
-
-          return !alreadyFinished;
-        })
         .reduce((map, test) => {
           const key = testKey(test);
           const existing = map.get(key);
@@ -105,9 +140,35 @@ export function useStudentDashboardData({
         }, new Map<string, TeacherTestSummary>())
         .values(),
     );
-  }, [selectedStudent, studentAttempts, tests]);
+    const matchingTests = dedupedTests.filter((test) =>
+      matchesStudentClassGroup(
+        selectedStudent.className,
+        test.criteria.className,
+        test.criteria.gradeLevel,
+      ),
+    );
+    const candidateTests = matchingTests.length > 0 ? matchingTests : dedupedTests;
 
-  const activeTestsCount = filteredTests.length;
+    const resumableTest = candidateTests.find((test) =>
+      inProgressByTestId.has(test.id),
+    );
+    if (resumableTest) {
+      return [resumableTest];
+    }
+
+    const nextAvailableTest = candidateTests.find(
+      (test) => !completedByTestId.has(test.id),
+    );
+    if (nextAvailableTest) {
+      return [nextAvailableTest];
+    }
+
+    return candidateTests.slice(0, 1);
+  }, [completedByTestId, inProgressByTestId, selectedStudent, tests]);
+
+  const activeTestsCount = filteredTests.filter(
+    (test) => !completedByTestId.has(test.id),
+  ).length;
 
   const completionRate = approvedAttempts.length
     ? Math.round(
@@ -164,6 +225,7 @@ export function useStudentDashboardData({
           examName: attempt.title,
           subject: mappedTest?.criteria.subject ?? "Ерөнхий",
           className: selectedStudent?.className ?? "-",
+          isApproved: attempt.status === "approved",
           teacher: "С.Жаргалмаа",
           startedAt: formatDate(attempt.startedAt),
           finishedAt: formatDate(attempt.submittedAt ?? attempt.startedAt),
@@ -173,30 +235,98 @@ export function useStudentDashboardData({
     [completedAttempts, selectedStudent, testsById],
   );
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async (options?: { force?: boolean }) => {
     if (!enabled) return;
 
-    const data = await loadDashboardPayload();
+    if (USE_MOCK_DATA) {
+      const data = await loadDashboardPayload(options);
+      setTests(data.availableTests ?? []);
+      setAllAttempts(data.attempts ?? []);
+      return;
+    }
 
-    setTests(data.availableTests ?? []);
-    setAllAttempts(data.attempts ?? []);
-  };
+    const result = await refetchDashboard();
+    if (!result.data) {
+      return;
+    }
+
+    const mappedPayload = mapDashboardPayload(result.data);
+    setTests(mappedPayload.availableTests);
+    setAllAttempts(mappedPayload.attempts);
+  }, [enabled, refetchDashboard]);
+
+  useEffect(() => {
+    if (USE_MOCK_DATA || !enabled || !dashboardData) {
+      return;
+    }
+
+    const mappedPayload = mapDashboardPayload(dashboardData);
+    setTests(mappedPayload.availableTests);
+    setAllAttempts(mappedPayload.attempts);
+  }, [dashboardData, enabled]);
+
+  useEffect(() => {
+    if (!dashboardError) {
+      return;
+    }
+
+    setError(dashboardError.message || "Өгөгдөл ачаалж чадсангүй.");
+  }, [dashboardError, setError]);
+
+  useEffect(() => {
+    if (
+      USE_MOCK_DATA ||
+      !enabled ||
+      !dashboardData ||
+      hasTriggeredExternalSync ||
+      dashboardData.availableTests.length > 0
+    ) {
+      return;
+    }
+
+    setHasTriggeredExternalSync(true);
+
+    void apolloClient
+      .mutate({
+        mutation: SyncExternalNewMathExamsDocument,
+        variables: { limit: 1 },
+      })
+      .then(async () => {
+        const result = await refetchDashboard();
+        if (!result.data) {
+          return;
+        }
+
+        const mappedPayload = mapDashboardPayload(result.data);
+        setTests(mappedPayload.availableTests);
+        setAllAttempts(mappedPayload.attempts);
+      })
+      .catch((error) => {
+        console.error(
+          "Failed to sync external exams before loading dashboard:",
+          error,
+        );
+      });
+  }, [
+    apolloClient,
+    dashboardData,
+    enabled,
+    hasTriggeredExternalSync,
+    refetchDashboard,
+  ]);
 
   useEffect(() => {
     if (!enabled) {
-      setIsInitialLoading(false);
+      setIsStudentsLoading(false);
       return;
     }
 
     const initialize = async () => {
       setError(null);
-      setIsInitialLoading(true);
+      setIsStudentsLoading(true);
 
       try {
-        const [nextStudents, dashboardData] = await Promise.all([
-          loadStudentsData(),
-          loadDashboardPayload(),
-        ]);
+        const nextStudents = await loadStudentsData();
 
         setAvailableStudents(nextStudents);
         setSelectedStudentId((prev) => {
@@ -206,19 +336,20 @@ export function useStudentDashboardData({
 
           return nextStudents[0]?.id ?? "";
         });
-        setTests(dashboardData.availableTests ?? []);
-        setAllAttempts(dashboardData.attempts ?? []);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Өгөгдөл ачаалж чадсангүй.",
         );
       } finally {
-        setIsInitialLoading(false);
+        setIsStudentsLoading(false);
       }
     };
 
     void initialize();
   }, [enabled, setError]);
+
+  const isInitialLoading =
+    isStudentsLoading || (enabled && !USE_MOCK_DATA && isDashboardLoading && !dashboardData);
 
   return {
     activeTestsCount,
@@ -227,6 +358,7 @@ export function useStudentDashboardData({
     availableStudents,
     averageScore,
     completedAttempts,
+    completedByTestId,
     completionRate,
     filteredTests,
     inProgressByTestId,

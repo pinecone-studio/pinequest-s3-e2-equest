@@ -5,6 +5,10 @@ fragment StartExamPayloadFields on StartExamPayload {
   studentName
   startedAt
   expiresAt
+  existingAnswers {
+    questionId
+    selectedOptionId
+  }
   exam {
     ...ExamSessionFields
   }
