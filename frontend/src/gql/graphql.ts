@@ -172,6 +172,11 @@ export type Mutation = {
   approveAiExamSchedule: ExamSchedule;
   createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
+  /**
+   * Багш AI-ийн санал (variant)-аас татгалзана. Үлдсэн санал байвал suggested хэвээр,
+   * бүгд татгалзвал status = rejected болно.
+   */
+  rejectAiExamScheduleVariant: ExamSchedule;
   requestAiExamSchedule: RequestExamSchedulePayload;
   saveExam: SaveExamPayload;
   saveNewMathExam: SaveNewMathExamPayload;
@@ -196,6 +201,13 @@ export type MutationCreateAiExamTemplateArgs = {
 
 export type MutationGenerateExamQuestionsArgs = {
   input: ExamGenerationInput;
+};
+
+
+export type MutationRejectAiExamScheduleVariantArgs = {
+  examId: Scalars['ID']['input'];
+  reason?: InputMaybe<Scalars['String']['input']>;
+  variantId: Scalars['String']['input'];
 };
 
 

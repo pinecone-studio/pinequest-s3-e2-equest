@@ -174,6 +174,11 @@ export type Mutation = {
   approveAiExamSchedule: ExamSchedule;
   createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
+  /**
+   * Багш AI-ийн санал (variant)-аас татгалзана. Үлдсэн санал байвал suggested хэвээр,
+   * бүгд татгалзвал status = rejected болно.
+   */
+  rejectAiExamScheduleVariant: ExamSchedule;
   requestAiExamSchedule: RequestExamSchedulePayload;
   saveExam: SaveExamPayload;
   saveNewMathExam: SaveNewMathExamPayload;
@@ -198,6 +203,13 @@ export type MutationCreateAiExamTemplateArgs = {
 
 export type MutationGenerateExamQuestionsArgs = {
   input: ExamGenerationInput;
+};
+
+
+export type MutationRejectAiExamScheduleVariantArgs = {
+  examId: Scalars['ID']['input'];
+  reason?: InputMaybe<Scalars['String']['input']>;
+  variantId: Scalars['String']['input'];
 };
 
 
@@ -479,7 +491,9 @@ export type SchoolEvent = {
 export type Student = {
   __typename?: 'Student';
   firstName: Scalars['String']['output'];
+  gradeLevel: Scalars['Int']['output'];
   groupId: Scalars['String']['output'];
+  homeRoomNumber?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   lastName: Scalars['String']['output'];
   status: Scalars['String']['output'];
@@ -754,6 +768,7 @@ export type MutationResolvers<ContextType = GraphQLContext, ParentType extends R
   approveAiExamSchedule?: Resolver<ResolversTypes['ExamSchedule'], ParentType, ContextType, RequireFields<MutationApproveAiExamScheduleArgs, 'examId' | 'variantId'>>;
   createAiExamTemplate?: Resolver<ResolversTypes['AiExamTemplatePayload'], ParentType, ContextType, RequireFields<MutationCreateAiExamTemplateArgs, 'input'>>;
   generateExamQuestions?: Resolver<ResolversTypes['ExamGenerationResult'], ParentType, ContextType, RequireFields<MutationGenerateExamQuestionsArgs, 'input'>>;
+  rejectAiExamScheduleVariant?: Resolver<ResolversTypes['ExamSchedule'], ParentType, ContextType, RequireFields<MutationRejectAiExamScheduleVariantArgs, 'examId' | 'variantId'>>;
   requestAiExamSchedule?: Resolver<ResolversTypes['RequestExamSchedulePayload'], ParentType, ContextType, RequireFields<MutationRequestAiExamScheduleArgs, 'classId' | 'preferredDate' | 'testId'>>;
   saveExam?: Resolver<ResolversTypes['SaveExamPayload'], ParentType, ContextType, RequireFields<MutationSaveExamArgs, 'input'>>;
   saveNewMathExam?: Resolver<ResolversTypes['SaveNewMathExamPayload'], ParentType, ContextType, RequireFields<MutationSaveNewMathExamArgs, 'input'>>;
@@ -881,7 +896,9 @@ export type SchoolEventResolvers<ContextType = GraphQLContext, ParentType extend
 
 export type StudentResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Student'] = ResolversParentTypes['Student']> = ResolversObject<{
   firstName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  gradeLevel?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   groupId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  homeRoomNumber?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   lastName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

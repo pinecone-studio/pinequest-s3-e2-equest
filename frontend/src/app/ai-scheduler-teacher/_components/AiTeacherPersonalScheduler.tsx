@@ -39,6 +39,7 @@ import {
   GetTeachersListDocument,
   GetTeacherMainLessonsListDocument,
   ListNewMathExamsDocument,
+  RejectAiExamScheduleVariantDocument,
   RequestAiExamScheduleDocument,
 } from "@/gql/create-exam-documents";
 import type {
@@ -360,6 +361,16 @@ type ApproveAiExamScheduleData = {
 type ApproveAiExamScheduleVars = {
   examId: string;
   variantId: string;
+};
+
+type RejectAiExamScheduleVariantData = {
+  rejectAiExamScheduleVariant: ExamSchedule;
+};
+
+type RejectAiExamScheduleVariantVars = {
+  examId: string;
+  variantId: string;
+  reason?: string;
 };
 
 type ListNewMathExamsData = {
@@ -757,6 +768,11 @@ export function AiTeacherPersonalScheduler({
     ApproveAiExamScheduleVars
   >(ApproveAiExamScheduleDocument);
 
+  const [rejectVariant, { loading: rejectLoading }] = useMutation<
+    RejectAiExamScheduleVariantData,
+    RejectAiExamScheduleVariantVars
+  >(RejectAiExamScheduleVariantDocument);
+
   const { data: pollData } = useQuery<
     GetAiExamScheduleData,
     GetAiExamScheduleVars
@@ -789,12 +805,16 @@ export function AiTeacherPersonalScheduler({
       });
       return;
     }
-    if (st !== "confirmed" && st !== "failed") return;
+    if (st !== "confirmed" && st !== "failed" && st !== "rejected") return;
     const key = `${row.id}:${st}`;
     if (toastKeyRef.current === key) return;
     toastKeyRef.current = key;
     if (st === "confirmed") {
       toast.success("Хуваарь баталгаажлаа.");
+    } else if (st === "rejected") {
+      toast.message("Саналууд татгалзагдлаа.", {
+        description: row.aiReasoning ?? undefined,
+      });
     } else {
       toast.error(row.aiReasoning ?? "AI scheduler алдаатай дууслаа.");
     }
@@ -822,6 +842,34 @@ export function AiTeacherPersonalScheduler({
         e && typeof e === "object" && "message" in e
           ? String((e as { message: string }).message)
           : "Батлахад алдаа гарлаа.";
+      toast.error(msg);
+    }
+  }
+
+  async function handleRejectVariant(v: ExamScheduleVariant) {
+    const examId = liveSchedule?.id ?? lastQueuedExamId;
+    if (!examId) {
+      toast.error("examId олдсонгүй.");
+      return;
+    }
+    try {
+      const { data } = await rejectVariant({
+        variables: {
+          examId,
+          variantId: v.id,
+          reason: v.reason ?? undefined,
+        },
+      });
+      const next = data?.rejectAiExamScheduleVariant;
+      if (next) {
+        setLiveSchedule(next);
+        toast.success("Татгалзлаа.");
+      }
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message: string }).message)
+          : "Татгалзахад алдаа гарлаа.";
       toast.error(msg);
     }
   }
@@ -933,27 +981,42 @@ export function AiTeacherPersonalScheduler({
 
     const overlapsHoliday = (start: Date, end: Date) =>
       holidayWindows.some(
-        (w) => start.getTime() < w.end.getTime() && end.getTime() > w.start.getTime(),
+        (w) =>
+          start.getTime() < w.end.getTime() &&
+          end.getTime() > w.start.getTime(),
       );
 
     for (const ev of rows) {
       const start = parseISO(ev.startDate);
       const end = parseISO(ev.endDate);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      if (
+        Number.isNaN(start.getTime()) ||
+        Number.isNaN(end.getTime()) ||
+        end <= start
+      ) {
         continue;
       }
 
       const durationMs = end.getTime() - start.getTime();
       const repeat = String(ev.repeatPattern ?? "NONE").toUpperCase();
 
-      const pushEvent = (occurrenceStart: Date, occurrenceEnd: Date, suffix: string) => {
+      const pushEvent = (
+        occurrenceStart: Date,
+        occurrenceEnd: Date,
+        suffix: string,
+      ) => {
         if (!overlaps(occurrenceStart, occurrenceEnd)) return;
-        if (repeat !== "NONE" && overlapsHoliday(occurrenceStart, occurrenceEnd)) return;
+        if (
+          repeat !== "NONE" &&
+          overlapsHoliday(occurrenceStart, occurrenceEnd)
+        )
+          return;
         const type = String(ev.eventType).toUpperCase();
         const allDay =
           Boolean(ev.isFullLock) &&
           (type === "HOLIDAY" || type === "TRIP") &&
-          occurrenceEnd.getTime() - occurrenceStart.getTime() >= 20 * 60 * 60 * 1000;
+          occurrenceEnd.getTime() - occurrenceStart.getTime() >=
+            20 * 60 * 60 * 1000;
 
         out.push({
           id: `${ev.id}:${suffix}`,
@@ -980,7 +1043,15 @@ export function AiTeacherPersonalScheduler({
         } else if (repeat === "WEEKLY") {
           cursor = addDays(cursor, 7);
         } else if (repeat === "MONTHLY") {
-          cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, cursor.getDate(), cursor.getHours(), cursor.getMinutes(), cursor.getSeconds(), cursor.getMilliseconds());
+          cursor = new Date(
+            cursor.getFullYear(),
+            cursor.getMonth() + 1,
+            cursor.getDate(),
+            cursor.getHours(),
+            cursor.getMinutes(),
+            cursor.getSeconds(),
+            cursor.getMilliseconds(),
+          );
         } else {
           break;
         }
@@ -993,10 +1064,7 @@ export function AiTeacherPersonalScheduler({
 
   const teacherSchoolEventSegments = useMemo(
     () =>
-      buildSchoolCalendarSegmentsForWeek(
-        teacherSchoolCalendarEvents,
-        weekDays,
-      ),
+      buildSchoolCalendarSegmentsForWeek(teacherSchoolCalendarEvents, weekDays),
     [teacherSchoolCalendarEvents, weekDays],
   );
 
@@ -1796,52 +1864,54 @@ export function AiTeacherPersonalScheduler({
                             </div>
                           ) : null}
 
-                          {layerOn.ai_draft && suggested && colIdx === 2 ? (
+                          {layerOn.ai_draft && suggested ? (
                             <>
-                              <div
-                                className="absolute left-0.5 right-0.5 z-10 w-[calc(100%-4px)] -rotate-2 rounded-xl border-2 border-dashed border-violet-400 bg-violet-50 px-2 py-2 text-[10px] font-semibold leading-tight text-violet-950 shadow-md shadow-violet-200/60 ring-1 ring-violet-200/80 dark:border-violet-500 dark:bg-violet-950/50 dark:text-violet-100 dark:shadow-violet-900/40 dark:ring-violet-800/60"
-                                style={{ top: "18%", minHeight: "72px" }}
-                              >
-                                {AI_DRAFT_INTENT_META[aiDraftIntent].draftTitle}{" "}
-                                — Slots
-                                <span className="mt-0.5 block font-normal text-violet-700 dark:text-violet-300">
-                                  AI-ийн оновчтой цаг · тасархай хүрээ
-                                </span>
-                                <span className="mt-1 block text-[9px] font-normal text-violet-600/90 dark:text-violet-400/90">
-                                  Confirm дарвал{" "}
-                                  {AI_DRAFT_INTENT_META[aiDraftIntent]
-                                    .confirmTarget === "confirmed_exam"
-                                    ? "ногоон (Confirmed Exam)"
-                                    : "индиго (Confirmed Ancillary)"}{" "}
-                                  болно
-                                </span>
-                              </div>
-                              <svg
-                                className="pointer-events-none absolute left-[40%] top-[32%] z-5 h-16 w-24 text-violet-500 dark:text-violet-400"
-                                viewBox="0 0 96 64"
-                                fill="none"
-                                aria-hidden
-                              >
-                                <path
-                                  d="M8 8 Q 48 40 88 52"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                />
-                                <path
-                                  d="M82 46 L88 52 L80 54"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              </svg>
-                              <div
-                                className="absolute left-1 right-1 top-[58%] rounded-xl border-2 border-dashed border-violet-300/90 bg-violet-50/70 px-2 py-1.5 text-center text-[9px] font-medium text-violet-900 dark:border-violet-600 dark:bg-violet-950/35 dark:text-violet-200"
-                                style={{ height: "44px" }}
-                              >
-                                Сул цонх
-                              </div>
+                              {showJob?.aiVariants?.map((v) => {
+                                const startAt = parseStart(v.startTime);
+                                if (!startAt) return null;
+                                if (!isSameDay(startAt, d)) return null;
+                                const endAt = new Date(
+                                  startAt.getTime() + 90 * 60 * 1000,
+                                );
+                                const top2 = slotTopPercent(
+                                  startAt.getHours(),
+                                  startAt.getMinutes(),
+                                );
+                                const h2 = blockHeightPercent(
+                                  startAt.getHours(),
+                                  startAt.getMinutes(),
+                                  endAt.getHours(),
+                                  endAt.getMinutes(),
+                                );
+                                return (
+                                  <div
+                                    key={`ai-variant-${v.id}`}
+                                    className="absolute left-1 right-1 z-10 rounded-xl border-2 border-dashed border-violet-400/90 bg-violet-50/95 px-2 py-1.5 text-[10px] font-semibold leading-tight text-violet-950 shadow-sm ring-1 ring-violet-200/70 dark:border-violet-500 dark:bg-violet-950/40 dark:text-violet-100 dark:ring-violet-800/50"
+                                    style={{
+                                      top: `${top2}%`,
+                                      height: `${h2}%`,
+                                      minHeight: "52px",
+                                    }}
+                                    title={v.reason ?? undefined}
+                                  >
+                                    {v.label}
+                                    <span className="mt-0.5 block font-normal text-violet-700 dark:text-violet-300">
+                                      {formatBlockDuration(
+                                        startAt.getHours(),
+                                        startAt.getMinutes(),
+                                        endAt.getHours(),
+                                        endAt.getMinutes(),
+                                      )}
+                                      {v.roomId ? ` · Өрөө ${v.roomId}` : ""}
+                                    </span>
+                                    {v.reason ? (
+                                      <span className="mt-0.5 block text-[9px] font-normal text-violet-600/90 line-clamp-2 dark:text-violet-400/90">
+                                        {v.reason}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
                             </>
                           ) : null}
 
@@ -2044,9 +2114,7 @@ export function AiTeacherPersonalScheduler({
                         className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
                       >
                         {teacherClassOptions.length === 0 ? (
-                          <option value="">
-                            Ангийн мэдээлэл олдсонгүй
-                          </option>
+                          <option value="">Ангийн мэдээлэл олдсонгүй</option>
                         ) : (
                           teacherClassOptions.map((groupId) => (
                             <option key={groupId} value={groupId}>
@@ -2066,7 +2134,7 @@ export function AiTeacherPersonalScheduler({
                         <Loader2 className="size-4 animate-spin" />
                       ) : (
                         <span className="flex items-center justify-center gap-2">
-                          Тооцоолох
+                          Товлох
                           <ArrowRight className="size-4" />
                         </span>
                       )}
@@ -2081,11 +2149,14 @@ export function AiTeacherPersonalScheduler({
                   <div className="space-y-3">
                     <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/50 px-3 py-2.5 dark:border-indigo-500/25 dark:bg-indigo-950/30">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-800 dark:text-indigo-200">
-                        Intelligent Buffer · замын зураг
+                        Intelligent Buffer · тайлбар
                       </p>
-                      <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[10px] leading-snug text-indigo-900/90 dark:text-indigo-100/85">
+                      <ul className="mt-1.5 space-y-1 text-[10px] leading-snug text-indigo-900/90 dark:text-indigo-100/85">
                         {INTELLIGENT_BUFFER_ROADMAP_MN.map((line, i) => (
-                          <li key={`ib-${i}`}>{line}</li>
+                          <li key={`ib-${i}`} className="flex gap-2">
+                            <span className="mt-[2px] inline-block size-1.5 shrink-0 rounded-full bg-indigo-400/80 dark:bg-indigo-300/70" />
+                            <span>{line}</span>
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -2134,29 +2205,49 @@ export function AiTeacherPersonalScheduler({
                         {showJob.aiVariants.map((v) => (
                           <div
                             key={v.id}
-                            className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white py-2 pl-3 pr-2 shadow-sm dark:border-zinc-600 dark:bg-zinc-900"
+                            className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-600 dark:bg-zinc-900"
                           >
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                                 {v.label}
                               </p>
                               <p className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400">
                                 {formatVariantWhen(v.startTime)}
                               </p>
+                              {v.reason ? (
+                                <p className="mt-1 text-[11px] leading-snug text-zinc-700 dark:text-zinc-300">
+                                  {v.reason}
+                                </p>
+                              ) : null}
                             </div>
-                            <button
-                              type="button"
-                              disabled={approveLoading}
-                              onClick={() => void handleApproveVariant(v)}
-                              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-md shadow-blue-600/30 hover:bg-blue-500 disabled:opacity-50 dark:bg-blue-500 dark:shadow-blue-500/25 dark:hover:bg-blue-400"
-                              aria-label="Батлах"
-                            >
-                              {approveLoading ? (
-                                <Loader2 className="size-4 animate-spin" />
-                              ) : (
-                                <Play className="size-4 translate-x-0.5 fill-current" />
-                              )}
-                            </button>
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={approveLoading || rejectLoading}
+                                onClick={() => void handleApproveVariant(v)}
+                                className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
+                              >
+                                {approveLoading ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <Play className="size-4 translate-x-0.5 fill-current" />
+                                )}
+                                Батлах
+                              </button>
+                              <button
+                                type="button"
+                                disabled={approveLoading || rejectLoading}
+                                onClick={() => void handleRejectVariant(v)}
+                                className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-900 shadow-sm hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/40 dark:bg-rose-950/30 dark:text-rose-100 dark:hover:bg-rose-950/45"
+                              >
+                                {rejectLoading ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <Square className="size-4" aria-hidden />
+                                )}
+                                Татгалзах
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>

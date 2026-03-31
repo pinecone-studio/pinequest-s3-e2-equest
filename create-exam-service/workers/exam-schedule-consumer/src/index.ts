@@ -16,7 +16,8 @@ import { parseAiVariantsJson } from "../../../src/lib/exam-schedule-variants";
 
 export interface Env {
   DB: D1Database;
-  GEMINI_API_KEY: string;
+  GEMINI_API_KEY?: string;
+  GOOGLE_AI_API_KEY?: string;
   GEMINI_MODEL: string;
 }
 
@@ -109,14 +110,15 @@ async function runScheduler(
     return;
   }
 
-  const apiKey = env.GEMINI_API_KEY?.trim();
+  const apiKey = env.GOOGLE_AI_API_KEY?.trim() || env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     const now = new Date().toISOString();
     await db
       .update(examSchedules)
       .set({
         status: "failed",
-        aiReasoning: "GEMINI_API_KEY тохируулаагүй.",
+        aiReasoning:
+          "GOOGLE_AI_API_KEY эсвэл GEMINI_API_KEY тохируулаагүй.",
         updatedAt: now,
       })
       .where(eq(examSchedules.id, examId));

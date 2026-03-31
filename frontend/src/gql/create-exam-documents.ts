@@ -242,6 +242,34 @@ export const ApproveAiExamScheduleDocument = gql(`
 	}
 `);
 
+export const RejectAiExamScheduleVariantDocument = gql(`
+	mutation RejectAiExamScheduleVariant(
+		$examId: ID!
+		$variantId: String!
+		$reason: String
+	) {
+		rejectAiExamScheduleVariant(
+			examId: $examId
+			variantId: $variantId
+			reason: $reason
+		) {
+			id
+			startTime
+			endTime
+			roomId
+			status
+			aiReasoning
+			aiVariants {
+				id
+				label
+				startTime
+				roomId
+				reason
+			}
+		}
+	}
+`);
+
 export const RequestAiExamScheduleDocument = gql(`
 	mutation RequestAiExamSchedule(
 		$testId: ID!

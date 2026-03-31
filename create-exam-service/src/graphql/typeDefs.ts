@@ -365,6 +365,11 @@ export const typeDefs = /* GraphQL */ `
       preferredDate: String!
     ): RequestExamSchedulePayload!
     approveAiExamSchedule(examId: ID!, variantId: String!): ExamSchedule!
+    rejectAiExamScheduleVariant(
+      examId: ID!
+      variantId: String!
+      reason: String
+    ): ExamSchedule!
   }
 
   type NewMathExamSummary {
