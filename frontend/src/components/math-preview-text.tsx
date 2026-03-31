@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import "katex/dist/katex.min.css";
 import katex from "katex";
 
@@ -10,6 +10,7 @@ import {
   normalizeBackendMathText,
   normalizePreviewMathText,
 } from "@/lib/normalize-math-text";
+import { normalizeStructuredContent } from "@/lib/normalize-structured-content";
 
 type MathPreviewTextProps = {
   activeMathIndex?: number | null;
@@ -40,6 +41,19 @@ type MathSegment = {
 
 type Segment = MathSegment | TextSegment;
 
+type RenderBlock =
+  | {
+      type: "empty";
+    }
+  | {
+      segments: Segment[];
+      type: "line";
+    }
+  | {
+      lines: MathSegment[];
+      type: "system";
+    };
+
 export type MathPreviewMathSegment = {
   content: string;
   displayMode: boolean;
@@ -52,8 +66,6 @@ export type MathPreviewTextSegment = {
   raw: string;
   textIndex: number;
 };
-
-let katexAssetsPromise: Promise<void> | null = null;
 
 function containsBlockLatex(value: string) {
   return /\\begin\{(?:cases|aligned|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix)\}/.test(
@@ -102,6 +114,110 @@ function looksLikeLatexExpression(value: string) {
   return (
     /^[A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]+$/.test(trimmed) && /[=^_]/.test(trimmed)
   );
+}
+
+function looksLikeSystemRelationLine(value: string) {
+  const trimmed = stripOuterMathDelimiters(value).trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  return /(?:=|<|>|\\(?:leq|geq|neq|lt|gt)\b)/.test(trimmed);
+}
+
+function isSystemContinuationLine(value: string) {
+  const trimmed = stripOuterMathDelimiters(value).trim();
+
+  if (!trimmed) {
+    return true;
+  }
+
+  return looksLikeSystemRelationLine(value);
+}
+
+function getSystemLineContent(value: string) {
+  return stripOuterMathDelimiters(value)
+    .replace(/^(?:\\left\\\{|\\\{|[{⎧⎨⎩])\s*/u, "")
+    .replace(/\s*(?:\\right\.|\\right\\\}|[}⎫⎬⎭])$/u, "")
+    .replace(/\\\\$/u, "")
+    .trim();
+}
+
+function buildSystemBraceLatex(lines: MathSegment[]) {
+  const phantomLines = lines
+    .map((line) => {
+      const content = getSystemLineContent(line.content) || "\\quad";
+      return `\\vphantom{${content}}`;
+    })
+    .join("\\\\");
+
+  return `\\left\\{\\begin{array}{@{}l@{}}${phantomLines}\\end{array}\\right.`;
+}
+
+function groupRenderBlocks(lines: Segment[][]) {
+  const blocks: RenderBlock[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const currentLine = lines[index];
+
+    if (currentLine.length === 0) {
+      blocks.push({ type: "empty" });
+      index += 1;
+      continue;
+    }
+
+    const currentMathSegment =
+      currentLine.length === 1 && currentLine[0]?.type === "math"
+        ? currentLine[0]
+        : null;
+
+    if (
+      !currentMathSegment ||
+      !looksLikeSystemRelationLine(currentMathSegment.content)
+    ) {
+      blocks.push({
+        segments: currentLine,
+        type: "line",
+      });
+      index += 1;
+      continue;
+    }
+
+    const groupedLines: MathSegment[] = [currentMathSegment];
+    let nextIndex = index + 1;
+
+    while (nextIndex < lines.length) {
+      const nextLine = lines[nextIndex];
+      const nextMathSegment =
+        nextLine.length === 1 && nextLine[0]?.type === "math" ? nextLine[0] : null;
+
+      if (!nextMathSegment || !isSystemContinuationLine(nextMathSegment.content)) {
+        break;
+      }
+
+      groupedLines.push(nextMathSegment);
+      nextIndex += 1;
+    }
+
+    if (groupedLines.length >= 2) {
+      blocks.push({
+        lines: groupedLines,
+        type: "system",
+      });
+      index = nextIndex;
+      continue;
+    }
+
+    blocks.push({
+      segments: currentLine,
+      type: "line",
+    });
+    index += 1;
+  }
+
+  return blocks;
 }
 
 function tokenizeLine(
@@ -365,16 +481,18 @@ export default function MathPreviewText({
   renderActiveTextSegment,
 }: MathPreviewTextProps) {
   const sanitizedContent = useMemo(() => {
+    const structuredContent = normalizeStructuredContent(content);
+
     if (contentSource === "preview") {
-      return normalizePreviewMathText(content);
+      return normalizePreviewMathText(structuredContent);
     }
     // If the caller forces math, treat content as pure LaTeX (ex: answerLatex).
     // In that case we must NOT auto-wrap pieces with $...$, otherwise strings like
     // "x = 3,\\,-1" can be split into "$x = 3,$\\,-1" and render incorrectly.
     if (forceMath) {
-      return normalizeBackendLatexOnly(content);
+      return normalizeBackendLatexOnly(structuredContent);
     }
-    return normalizeBackendMathText(content);
+    return normalizeBackendMathText(structuredContent);
   }, [content, contentSource, forceMath]);
 
   const lines = useMemo(
@@ -387,6 +505,7 @@ export default function MathPreviewText({
       ),
     [sanitizedContent, displayMode, forceMath],
   );
+  const renderBlocks = useMemo(() => groupRenderBlocks(lines), [lines]);
   let mathCounter = 0;
   let textCounter = 0;
 
@@ -397,10 +516,121 @@ export default function MathPreviewText({
         className,
       )}
     >
-      {lines.map((segments, lineIndex) => {
-        if (segments.length === 0) {
+      {renderBlocks.map((block, lineIndex) => {
+        if (block.type === "empty") {
           return <div key={`line-${lineIndex}`} className="h-4" />;
         }
+
+        if (block.type === "system") {
+          let braceNode: ReactNode;
+
+          try {
+            const braceHtml = katex.renderToString(buildSystemBraceLatex(block.lines), {
+              displayMode: false,
+              throwOnError: false,
+            });
+
+            braceNode = (
+              <span
+                className="flex shrink-0 items-stretch pt-0.5 [&_.katex]:h-full [&_.katex-display]:my-0"
+                dangerouslySetInnerHTML={{ __html: braceHtml }}
+              />
+            );
+          } catch {
+            braceNode = (
+              <span
+                aria-hidden="true"
+                className="select-none font-light text-slate-500"
+                style={{
+                  fontSize: `${Math.max(2.8, block.lines.length * 1.65)}rem`,
+                  lineHeight: 0.78,
+                }}
+              >
+                {"{"}
+              </span>
+            );
+          }
+
+          const systemLineNodes = block.lines.map((segment, segmentIndex) => {
+            const currentMathIndex = mathCounter;
+            mathCounter += 1;
+            const mathSegment = {
+              content: segment.content,
+              displayMode: true,
+              mathIndex: currentMathIndex,
+              raw: segment.raw,
+            } satisfies MathPreviewMathSegment;
+
+            if (
+              activeMathIndex === currentMathIndex &&
+              renderActiveMathSegment
+            ) {
+              return (
+                <div key={`system-${lineIndex}-${segmentIndex}`} className="w-full">
+                  {renderActiveMathSegment(mathSegment)}
+                </div>
+              );
+            }
+
+            let mathNode: ReactNode;
+
+            try {
+              const html = katex.renderToString(getSystemLineContent(segment.content), {
+                displayMode: false,
+                throwOnError: false,
+              });
+
+              mathNode = (
+                <span dangerouslySetInnerHTML={{ __html: html }} />
+              );
+            } catch {
+              mathNode = <span>{segment.raw}</span>;
+            }
+
+            if (!onMathSegmentClick) {
+              return (
+                <div key={`system-${lineIndex}-${segmentIndex}`} className="w-full">
+                  {mathNode}
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={`system-${lineIndex}-${segmentIndex}`}
+                role="button"
+                tabIndex={0}
+                className="w-full cursor-text rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMathSegmentClick(mathSegment);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onMathSegmentClick(mathSegment);
+                }}
+              >
+                {mathNode}
+              </div>
+            );
+          });
+
+          return (
+            <div key={`line-${lineIndex}`} className="flex items-start gap-1.5">
+              {braceNode}
+              <div className="flex min-w-0 flex-1 flex-col gap-y-2 pt-1">
+                {systemLineNodes}
+              </div>
+            </div>
+          );
+        }
+
+        const segments = block.segments;
 
         const hasDisplaySegment = segments.some(
           (segment) => segment.type === "math" && segment.displayMode,

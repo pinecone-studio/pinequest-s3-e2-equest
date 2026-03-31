@@ -19,11 +19,14 @@ import {
   normalizeGeneratedQuestions,
   normalizeImportedQuestions,
   type ExamQuestion,
+  type GeneratorSettings,
+  type QuestionSectionState,
 } from "@/lib/math-exam-model";
 import {
   requestExtractedExam,
   requestGeneratedExam,
 } from "@/lib/math-exam-api";
+import type { ExtractExamEnhanceFocus } from "@/lib/math-exam-contract";
 import { SaveNewMathExamDocument } from "@/gql/create-exam-documents";
 import {
   GetNewMathExamDocument,
@@ -47,6 +50,18 @@ import {
   type ExamSessionSubject,
 } from "@/lib/exam-session-metadata";
 
+const EXAM_DRAFT_STORAGE_KEY = "pinequest-math-exam-draft";
+
+type StoredMathExamDraft = {
+  v: 1;
+  editorSections: QuestionSectionState;
+  examTitle: string;
+  generatorSettings: GeneratorSettings;
+  previewSections: QuestionSectionState;
+  questions: ExamQuestion[];
+  sessionMetadata: ExamSessionMetadata;
+};
+
 const SESSION_EXAM_TYPES: ExamSessionExamType[] = [
   "progress",
   "term",
@@ -58,6 +73,75 @@ const SESSION_SUBJECTS: ExamSessionSubject[] = [
   "physics",
   "mongolian",
 ];
+
+type AblyChannelLike = {
+  subscribe: (eventName: string, listener: () => void) => void;
+  unsubscribe: () => void;
+};
+
+type AblyRealtimeLike = {
+  channels: {
+    get: (channelName: string) => AblyChannelLike;
+  };
+  close: () => void;
+};
+
+type AblyModule = {
+  Realtime?: new (config: {
+    authMethod: string;
+    authUrl: string;
+  }) => AblyRealtimeLike;
+  default?: {
+    Realtime?: new (config: {
+      authMethod: string;
+      authUrl: string;
+    }) => AblyRealtimeLike;
+  };
+};
+
+type StoredBankExamQuestion = {
+  answerLatex?: string | null;
+  correctOption?: number | null;
+  id: string;
+  imageAlt?: string | null;
+  imageDataUrl?: string | null;
+  options?: string[] | null;
+  points: number;
+  prompt?: string | null;
+  responseGuide?: string | null;
+  type: MathExamQuestionType;
+};
+
+type StoredBankExam = {
+  examId: string;
+  generator?: {
+    difficulty?: string | null;
+    sourceContext?: string | null;
+    topics?: string | null;
+  } | null;
+  mathCount: number;
+  mcqCount: number;
+  questions?: StoredBankExamQuestion[] | null;
+  sessionMeta?: {
+    grade?: number | null;
+    groupClass?: string | null;
+    examType?: string | null;
+    subject?: string | null;
+    topics?: string[] | null;
+    teacherId?: string | null;
+    roomId?: string | null;
+    examDate?: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
+    durationMinutes?: number | null;
+    mixQuestions?: boolean | null;
+    withVariants?: boolean | null;
+    variantCount?: number | null;
+    description?: string | null;
+  } | null;
+  title: string;
+  totalPoints: number;
+};
 
 function sessionMetadataToGqlInput(
   meta: ExamSessionMetadata,
@@ -97,6 +181,100 @@ function parseStoredSubject(
     : null;
 }
 
+function importOptionalModule<T = unknown>(moduleName: string) {
+  return new Function(
+    "specifier",
+    "return import(specifier);",
+  )(moduleName) as Promise<T>;
+}
+
+function loadStoredMathExamDraft(): StoredMathExamDraft | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(EXAM_DRAFT_STORAGE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<StoredMathExamDraft>;
+
+    if (parsed.v !== 1 || !Array.isArray(parsed.questions)) {
+      return null;
+    }
+
+    return {
+      v: 1,
+      examTitle: typeof parsed.examTitle === "string" ? parsed.examTitle : "",
+      questions: parsed.questions.map((question) =>
+        question.type === "mcq"
+          ? createMcqQuestion({
+              ...question,
+              correctOption:
+                typeof question.correctOption === "number"
+                  ? question.correctOption
+                  : null,
+              options: Array.isArray(question.options)
+                ? question.options
+                : undefined,
+            })
+          : createMathQuestion(question),
+      ),
+      generatorSettings: {
+        ...createDefaultGeneratorSettings(),
+        ...(parsed.generatorSettings ?? {}),
+      },
+      sessionMetadata: {
+        ...createDefaultExamSessionMetadata(),
+        ...(parsed.sessionMetadata ?? {}),
+        topics: Array.isArray(parsed.sessionMetadata?.topics)
+          ? parsed.sessionMetadata.topics
+          : [],
+      },
+      editorSections: {
+        ...createDefaultSectionState(),
+        ...(parsed.editorSections ?? {}),
+      },
+      previewSections: {
+        ...createDefaultSectionState(),
+        ...(parsed.previewSections ?? {}),
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearStoredMathExamDraft() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(EXAM_DRAFT_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function isMathExamDraftEmpty(snapshot: Omit<StoredMathExamDraft, "v">) {
+  return (
+    !snapshot.examTitle.trim() &&
+    snapshot.questions.length === 0 &&
+    JSON.stringify(snapshot.generatorSettings) ===
+      JSON.stringify(createDefaultGeneratorSettings()) &&
+    JSON.stringify(snapshot.sessionMetadata) ===
+      JSON.stringify(createDefaultExamSessionMetadata()) &&
+    JSON.stringify(snapshot.editorSections) ===
+      JSON.stringify(createDefaultSectionState()) &&
+    JSON.stringify(snapshot.previewSections) ===
+      JSON.stringify(createDefaultSectionState())
+  );
+}
+
 export default function MathExam() {
   const apolloClient = useApolloClient();
   const [examTitle, setExamTitle] = useState("");
@@ -115,6 +293,7 @@ export default function MathExam() {
   );
   const [generatorError, setGeneratorError] = useState("");
   const [isExtractingSource, setIsExtractingSource] = useState(false);
+  const [isEnhancingSource, setIsEnhancingSource] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
@@ -124,6 +303,7 @@ export default function MathExam() {
   const [sessionMetadata, setSessionMetadata] = useState<ExamSessionMetadata>(
     createDefaultExamSessionMetadata,
   );
+  const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
 
   const [saveNewMathExamMutation] = useMutation(SaveNewMathExamDocument);
   const [fetchExamList] = useLazyQuery(ListNewMathExamsDocument, {
@@ -148,17 +328,37 @@ export default function MathExam() {
     generatorSettings.mcqCount + generatorSettings.mathCount;
 
   useEffect(() => {
+    const storedDraft = loadStoredMathExamDraft();
+
+    if (storedDraft) {
+      setExamTitle(storedDraft.examTitle);
+      setQuestions(storedDraft.questions);
+      setGeneratorSettings(storedDraft.generatorSettings);
+      setSessionMetadata(storedDraft.sessionMetadata);
+      setEditorSections(storedDraft.editorSections);
+      setPreviewSections(storedDraft.previewSections);
+    }
+
+    setHasLoadedDraft(true);
+  }, []);
+
+  useEffect(() => {
     const authUrl =
       process.env.NEXT_PUBLIC_ABLY_AUTH_URL ||
       "http://localhost:3001/api/ably/auth";
     let active = true;
     let cleanup: (() => void) | null = null;
 
-    void import("ably")
+    void importOptionalModule<AblyModule>("ably")
       .then((mod) => {
         if (!active) return;
-        const Ably = (mod.default ?? mod) as any;
-        const realtime = new Ably.Realtime({
+        const AblyRealtime = mod.default?.Realtime ?? mod.Realtime;
+
+        if (!AblyRealtime) {
+          return;
+        }
+
+        const realtime = new AblyRealtime({
           authUrl,
           authMethod: "POST",
         });
@@ -189,6 +389,46 @@ export default function MathExam() {
     };
   }, [apolloClient]);
 
+  useEffect(() => {
+    if (!hasLoadedDraft) {
+      return;
+    }
+
+    const snapshot = {
+      editorSections,
+      examTitle,
+      generatorSettings,
+      previewSections,
+      questions,
+      sessionMetadata,
+    };
+
+    if (isMathExamDraftEmpty(snapshot)) {
+      clearStoredMathExamDraft();
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        EXAM_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          v: 1,
+          ...snapshot,
+        } satisfies StoredMathExamDraft),
+      );
+    } catch {
+      // ignore
+    }
+  }, [
+    editorSections,
+    examTitle,
+    generatorSettings,
+    hasLoadedDraft,
+    previewSections,
+    questions,
+    sessionMetadata,
+  ]);
+
   const normalizeImportedText = (value: string) => normalizeBackendMathText(value);
 
   async function handleRequestBankExams() {
@@ -216,36 +456,7 @@ export default function MathExam() {
       const exam = (
         examResult.data as
           | {
-              getNewMathExam?: {
-                examId: string;
-                title: string;
-                mcqCount: number;
-                mathCount: number;
-                totalPoints: number;
-                generator?: {
-                  difficulty?: string | null;
-                  topics?: string | null;
-                  sourceContext?: string | null;
-                } | null;
-                sessionMeta?: {
-                  grade?: number | null;
-                  groupClass?: string | null;
-                  examType?: string | null;
-                  subject?: string | null;
-                  topics?: string[] | null;
-                  teacherId?: string | null;
-                  roomId?: string | null;
-                  examDate?: string | null;
-                  startTime?: string | null;
-                  endTime?: string | null;
-                  durationMinutes?: number | null;
-                  mixQuestions?: boolean | null;
-                  withVariants?: boolean | null;
-                  variantCount?: number | null;
-                  description?: string | null;
-                } | null;
-                questions?: any[] | null;
-              } | null;
+              getNewMathExam?: StoredBankExam | null;
             }
           | undefined
       )?.getNewMathExam;
@@ -293,7 +504,7 @@ export default function MathExam() {
         totalPoints: exam.totalPoints,
       }));
 
-      const nextQuestions: ExamQuestion[] = (exam.questions ?? []).map((q: any) =>
+      const nextQuestions: ExamQuestion[] = (exam.questions ?? []).map((q) =>
         q.type === MathExamQuestionType.Mcq
           ? createMcqQuestion({
               id: q.id,
@@ -396,6 +607,7 @@ export default function MathExam() {
     setGeneratorSettings(createDefaultGeneratorSettings());
     setIsGeneratorOpen(false);
     resetSectionState();
+    clearStoredMathExamDraft();
   }
 
   async function handleGenerateExam() {
@@ -432,12 +644,12 @@ export default function MathExam() {
   async function handleSourceFilesSelected(files: File[]) {
     setSourceFiles(files);
     setIsGeneratorOpen(false);
+    setGeneratorSettings((current) => ({
+      ...current,
+      sourceContext: "",
+    }));
 
     if (files.length === 0) {
-      setGeneratorSettings((current) => ({
-        ...current,
-        sourceContext: "",
-      }));
       return;
     }
 
@@ -445,16 +657,8 @@ export default function MathExam() {
     setIsExtractingSource(true);
 
     try {
-      const exam = await requestExtractedExam(files);
-      const normalizedImportedQuestions = normalizeImportedQuestions(exam);
-
-      if (normalizedImportedQuestions.length === 0) {
-        throw new Error("Файлаас танигдсан асуулт олдсонгүй.");
-      }
-
-      setQuestions(normalizedImportedQuestions);
-      setExamTitle(exam.title?.trim() || "Docs-оос импортолсон шалгалт");
-      resetSectionState();
+      const exam = await requestExtractedExam(files, { mode: "fast" });
+      applyImportedExam(exam, "Docs-оос импортолсон шалгалт");
     } catch (error) {
       setGeneratorError(
         error instanceof Error
@@ -463,6 +667,58 @@ export default function MathExam() {
       );
     } finally {
       setIsExtractingSource(false);
+    }
+  }
+
+  function applyImportedExam(exam: Awaited<ReturnType<typeof requestExtractedExam>>, fallbackTitle: string) {
+    const sourceImagesByName = Object.fromEntries(
+      (exam.sourceImages ?? [])
+        .filter(
+          (image): image is { dataUrl: string; name: string } =>
+            typeof image.name === "string" &&
+            image.name.trim().length > 0 &&
+            typeof image.dataUrl === "string" &&
+            image.dataUrl.trim().length > 0,
+        )
+        .map((image) => [image.name, image.dataUrl]),
+    );
+    const normalizedImportedQuestions = normalizeImportedQuestions(
+      exam,
+      sourceImagesByName,
+    );
+
+    if (normalizedImportedQuestions.length === 0) {
+      throw new Error("Файлаас танигдсан асуулт олдсонгүй.");
+    }
+
+    setQuestions(normalizedImportedQuestions);
+    setExamTitle(exam.title?.trim() || fallbackTitle);
+    resetSectionState();
+  }
+
+  async function handleEnhanceImportedExam(focus: ExtractExamEnhanceFocus) {
+    if (sourceFiles.length === 0) {
+      setGeneratorError("Эхлээд Docs file-аа fast import хийнэ үү.");
+      return;
+    }
+
+    setGeneratorError("");
+    setIsEnhancingSource(true);
+
+    try {
+      const exam = await requestExtractedExam(sourceFiles, {
+        enhanceFocus: focus,
+        mode: "enhance",
+      });
+      applyImportedExam(exam, "AI сайжруулсан импорт");
+    } catch (error) {
+      setGeneratorError(
+        error instanceof Error
+          ? error.message
+          : "AI сайжруулалт хийхэд алдаа гарлаа.",
+      );
+    } finally {
+      setIsEnhancingSource(false);
     }
   }
 
@@ -555,6 +811,7 @@ export default function MathExam() {
             examTitle={examTitle}
             generatorError={generatorError}
             generatorSettings={generatorSettings}
+            isEnhancingSource={isEnhancingSource}
             isExtractingSource={isExtractingSource}
             isGenerating={isGenerating}
             isGeneratorOpen={isGeneratorOpen}
@@ -565,6 +822,7 @@ export default function MathExam() {
             bankExams={bankExams}
             onRequestBankExams={handleRequestBankExams}
             onImportFromBank={handleImportFromBank}
+            onEnhanceImportedExam={handleEnhanceImportedExam}
             onReset={handleResetAll}
             onSourceFilesSelected={handleSourceFilesSelected}
             requestedQuestionCount={requestedQuestionCount}

@@ -1,6 +1,12 @@
 export type QuestionType = "mcq" | "math";
 
 export type DifficultyLevel = "easy" | "medium" | "advanced";
+export type ExtractExamEnhanceFocus =
+  | "all"
+  | "images"
+  | "incomplete"
+  | "math";
+export type ExtractExamMode = "enhance" | "fast";
 
 export type GeneratedExamQuestionPayload = {
   answerLatex?: string;
@@ -14,7 +20,15 @@ export type GeneratedExamQuestionPayload = {
   type?: QuestionType;
 };
 
+export type GeneratedExamSourceImagePayload = {
+  alt?: string;
+  dataUrl?: string;
+  mimeType?: string;
+  name: string;
+};
+
 export type GeneratedExamPayload = {
+  sourceImages?: GeneratedExamSourceImagePayload[];
   title?: string;
   questions?: GeneratedExamQuestionPayload[];
 };
@@ -38,6 +52,8 @@ export type GenerateExamRequest = {
 
 export type ExtractExamRequest = {
   attachments?: UploadAttachmentPayload[];
+  enhanceFocus?: ExtractExamEnhanceFocus;
+  mode?: ExtractExamMode;
 };
 
 export type ExamApiResponse = {

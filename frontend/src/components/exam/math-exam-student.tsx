@@ -60,9 +60,21 @@ function PreviewQuestion({
           {question.options.map((option, optionIndex) => (
             <div
               key={`${question.id}-preview-${optionIndex}`}
-              className="flex items-center gap-3 rounded-2xl border border-border/70 px-3 py-3"
+              className={cn(
+                "flex items-center gap-3 rounded-2xl border px-3 py-3",
+                question.correctOption === optionIndex
+                  ? "border-emerald-500/40 bg-emerald-500/5"
+                  : "border-border/70",
+              )}
             >
-              <div className="flex size-8 items-center justify-center rounded-full border border-border text-sm font-semibold text-muted-foreground">
+              <div
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-full border text-sm font-semibold",
+                  question.correctOption === optionIndex
+                    ? "border-emerald-500 bg-emerald-500 text-white"
+                    : "border-border text-muted-foreground",
+                )}
+              >
                 {String.fromCharCode(65 + optionIndex)}
               </div>
               <MathPreviewText

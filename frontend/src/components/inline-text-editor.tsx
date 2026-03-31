@@ -7,6 +7,7 @@ import {
   useRef,
 } from "react";
 
+import { sanitizeRichTextHtml } from "@/lib/sanitize-rich-text";
 import { cn } from "@/lib/utils";
 
 export type InlineTextEditorHandle = {
@@ -15,12 +16,17 @@ export type InlineTextEditorHandle = {
   insertText: (text: string) => void;
   moveLeft: () => void;
   moveRight: () => void;
+  toggleBold: () => void;
+  toggleBulletList: () => void;
+  toggleItalic: () => void;
+  toggleOrderedList: () => void;
 };
 
 type InlineTextEditorProps = {
   autoFocus?: boolean;
   className?: string;
   onChange: (value: string) => void;
+  richText?: boolean;
   value: string;
 };
 
@@ -36,6 +42,51 @@ function placeCaretAtEnd(element: HTMLElement) {
   range.collapse(false);
   selection.removeAllRanges();
   selection.addRange(range);
+}
+
+function getSelectionRangeWithin(element: HTMLElement) {
+  const selection = window.getSelection();
+
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0);
+
+  if (!element.contains(range.commonAncestorContainer)) {
+    return null;
+  }
+
+  return range.cloneRange();
+}
+
+function restoreSelectionRange(element: HTMLElement, range: Range | null) {
+  if (!range) {
+    return false;
+  }
+
+  const selection = window.getSelection();
+
+  if (!selection) {
+    return false;
+  }
+
+  try {
+    const nextRange = range.cloneRange();
+
+    if (
+      !element.contains(nextRange.startContainer) ||
+      !element.contains(nextRange.endContainer)
+    ) {
+      return false;
+    }
+
+    selection.removeAllRanges();
+    selection.addRange(nextRange);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function insertTextAtSelection(element: HTMLElement, text: string) {
@@ -64,14 +115,53 @@ function insertTextAtSelection(element: HTMLElement, text: string) {
   selection.addRange(range);
 }
 
+function syncRichTextChange(
+  element: HTMLElement | null,
+  onChange: (value: string) => void,
+) {
+  if (!element) {
+    return;
+  }
+
+  onChange(sanitizeRichTextHtml(element.innerHTML));
+}
+
 const InlineTextEditor = forwardRef<
   InlineTextEditorHandle,
   InlineTextEditorProps
 >(function InlineTextEditor(
-  { autoFocus = false, className, onChange, value },
+  { autoFocus = false, className, onChange, richText = false, value },
   ref,
 ) {
-  const editorRef = useRef<HTMLSpanElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const previousAutoFocusRef = useRef(false);
+  const savedSelectionRef = useRef<Range | null>(null);
+
+  function rememberSelection() {
+    const element = editorRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    savedSelectionRef.current = getSelectionRangeWithin(element);
+  }
+
+  function focusEditor() {
+    const element = editorRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    element.focus();
+
+    if (restoreSelectionRange(element, savedSelectionRef.current)) {
+      return;
+    }
+
+    placeCaretAtEnd(element);
+  }
 
   useEffect(() => {
     const element = editorRef.current;
@@ -80,15 +170,24 @@ const InlineTextEditor = forwardRef<
       return;
     }
 
-    if (element.textContent !== value) {
+    if (richText) {
+      const nextHtml = sanitizeRichTextHtml(value);
+      const isFocused = document.activeElement === element;
+
+      if (!isFocused && element.innerHTML !== nextHtml) {
+        element.innerHTML = nextHtml;
+        savedSelectionRef.current = null;
+      }
+    } else if (element.textContent !== value) {
       element.textContent = value;
     }
 
-    if (autoFocus) {
-      element.focus();
-      placeCaretAtEnd(element);
+    if (autoFocus && !previousAutoFocusRef.current) {
+      focusEditor();
     }
-  }, [autoFocus, value]);
+
+    previousAutoFocusRef.current = autoFocus;
+  }, [autoFocus, richText, value]);
 
   useImperativeHandle(
     ref,
@@ -101,19 +200,18 @@ const InlineTextEditor = forwardRef<
           return;
         }
 
-        element.textContent = "";
-        onChange("");
-        element.focus();
+        if (richText) {
+          element.innerHTML = "";
+          savedSelectionRef.current = null;
+          onChange("");
+        } else {
+          element.textContent = "";
+          onChange("");
+        }
+        focusEditor();
       },
       focus() {
-        const element = editorRef.current;
-
-        if (!element) {
-          return;
-        }
-
-        element.focus();
-        placeCaretAtEnd(element);
+        focusEditor();
       },
       insertText(text: string) {
         const element = editorRef.current;
@@ -123,39 +221,117 @@ const InlineTextEditor = forwardRef<
           return;
         }
 
-        element.focus();
-        insertTextAtSelection(element, text);
-        onChange(element.textContent ?? "");
+        focusEditor();
+        if (richText && typeof document.execCommand === "function") {
+          document.execCommand("insertText", false, text);
+          rememberSelection();
+          syncRichTextChange(element, onChange);
+        } else {
+          insertTextAtSelection(element, text);
+          rememberSelection();
+          onChange(element.textContent ?? "");
+        }
       },
       moveLeft() {
         const selection = window.getSelection();
 
-        editorRef.current?.focus();
+        focusEditor();
         selection?.modify?.("move", "backward", "character");
+        rememberSelection();
       },
       moveRight() {
         const selection = window.getSelection();
 
-        editorRef.current?.focus();
+        focusEditor();
         selection?.modify?.("move", "forward", "character");
+        rememberSelection();
+      },
+      toggleBold() {
+        if (!richText || typeof document.execCommand !== "function") {
+          return;
+        }
+
+        focusEditor();
+        document.execCommand("bold");
+        rememberSelection();
+        syncRichTextChange(editorRef.current, onChange);
+      },
+      toggleBulletList() {
+        if (!richText || typeof document.execCommand !== "function") {
+          return;
+        }
+
+        focusEditor();
+        document.execCommand("insertUnorderedList");
+        rememberSelection();
+        syncRichTextChange(editorRef.current, onChange);
+      },
+      toggleItalic() {
+        if (!richText || typeof document.execCommand !== "function") {
+          return;
+        }
+
+        focusEditor();
+        document.execCommand("italic");
+        rememberSelection();
+        syncRichTextChange(editorRef.current, onChange);
+      },
+      toggleOrderedList() {
+        if (!richText || typeof document.execCommand !== "function") {
+          return;
+        }
+
+        focusEditor();
+        document.execCommand("insertOrderedList");
+        rememberSelection();
+        syncRichTextChange(editorRef.current, onChange);
       },
     }),
-    [onChange, value],
+    [onChange, richText, value],
   );
 
   return (
-    <span
+    <div
       ref={editorRef}
       contentEditable
       suppressContentEditableWarning
       className={cn(
-        "inline-block min-w-[3rem] whitespace-pre-wrap break-words bg-transparent text-foreground outline-none",
+        richText
+          ? "block min-h-[4rem] w-full whitespace-pre-wrap break-words bg-transparent text-foreground outline-none"
+          : "inline-block min-w-[3rem] whitespace-pre-wrap break-words bg-transparent text-foreground outline-none",
         className,
       )}
       onClick={(event) => event.stopPropagation()}
+      onBlur={(event) => {
+        rememberSelection();
+
+        if (!richText) {
+          return;
+        }
+
+        const nextHtml = sanitizeRichTextHtml(event.currentTarget.innerHTML);
+
+        if (event.currentTarget.innerHTML !== nextHtml) {
+          event.currentTarget.innerHTML = nextHtml;
+          savedSelectionRef.current = null;
+        }
+
+        if (nextHtml !== value) {
+          onChange(nextHtml);
+        }
+      }}
       onInput={(event) => {
+        if (richText) {
+          rememberSelection();
+          syncRichTextChange(event.currentTarget, onChange);
+          return;
+        }
+
+        rememberSelection();
         onChange(event.currentTarget.textContent ?? "");
       }}
+      onKeyUp={rememberSelection}
+      onMouseUp={rememberSelection}
     />
   );
 });
