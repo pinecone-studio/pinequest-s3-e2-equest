@@ -37,7 +37,10 @@
 		"db:seed:groups:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/groups_seed.sql",
 		"db:seed:groups:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/groups_seed.sql",
 		"db:seed:curriculum:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/curriculum_seed.sql",
-		"db:seed:curriculum:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/curriculum_seed.sql"
+		"db:seed:curriculum:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/curriculum_seed.sql",
+		"db:seed:students:generate": "bun run scripts/generate-students-seed.ts",
+		"db:seed:students:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/students_seed.sql",
+		"db:seed:students:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/students_seed.sql"
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.1017.0",

@@ -62,4 +62,3 @@ export const schoolEvents = sqliteTable("school_events", {
     .notNull()
     .$defaultFn(() => new Date()),
 });
-

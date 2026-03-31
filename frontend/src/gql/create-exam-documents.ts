@@ -105,6 +105,97 @@ export const GetAiExamScheduleDocument = gql(`
 	}
 `);
 
+export const GetTeachersListDocument = gql(`
+	query GetTeachersList($grades: [Int!]) {
+		getTeachersList(grades: $grades) {
+			id
+			firstName
+			lastName
+			shortName
+			email
+			department
+			teachingLevel
+			role
+			workLoadLimit
+		}
+	}
+`);
+
+export const GetStudentsListDocument = gql(`
+	query GetStudentsList($grade: Int!, $group: String!) {
+		getStudentsList(grade: $grade, group: $group) {
+			id
+			firstName
+			lastName
+			studentCode
+			groupId
+			status
+		}
+	}
+`);
+
+export const GetStudentMainLessonsListDocument = gql(`
+	query GetStudentMainLessonsList(
+		$studentId: ID!
+		$semesterId: String = "2026-SPRING"
+		$includeDraft: Boolean = false
+	) {
+		getStudentMainLessonsList(
+			studentId: $studentId
+			semesterId: $semesterId
+			includeDraft: $includeDraft
+		) {
+			id
+			dayOfWeek
+			semesterId
+			isDraft
+			groupId
+			gradeLevel
+			subjectId
+			subjectName
+			teacherId
+			teacherShortName
+			classroomId
+			classroomRoomNumber
+			periodId
+			periodShift
+			periodNumber
+			startTime
+			endTime
+		}
+	}
+`);
+
+export const GetTeacherMainLessonsListDocument = gql(`
+	query GetTeacherMainLessonsList(
+		$teacherId: ID!
+		$semesterId: String = "2026-SPRING"
+		$includeDraft: Boolean = false
+	) {
+		getTeacherMainLessonsList(
+			teacherId: $teacherId
+			semesterId: $semesterId
+			includeDraft: $includeDraft
+		) {
+			id
+			dayOfWeek
+			semesterId
+			isDraft
+			groupId
+			gradeLevel
+			subjectId
+			subjectName
+			classroomId
+			classroomRoomNumber
+			periodId
+			periodShift
+			periodNumber
+			startTime
+			endTime
+		}
+	}
+`);
+
 export const ApproveAiExamScheduleDocument = gql(`
 	mutation ApproveAiExamSchedule($examId: ID!, $variantId: String!) {
 		approveAiExamSchedule(examId: $examId, variantId: $variantId) {

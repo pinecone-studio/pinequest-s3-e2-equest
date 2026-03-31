@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as schema from "./db/schema";
@@ -189,6 +189,29 @@ function extractModelIdsFromListModelsResponse(data: any): string[] {
     .filter(Boolean)
     .map((name: string) => name.replace(/^models\//, ""));
   return Array.from(new Set(ids));
+}
+
+function extractJsonArray(text: string): string {
+  const unfenced = (text ?? "").replace(/```json|```/g, "").trim();
+  const start = unfenced.indexOf("[");
+  const end = unfenced.lastIndexOf("]");
+  return start >= 0 && end >= 0 && end > start ? unfenced.slice(start, end + 1) : unfenced;
+}
+
+async function parseJsonArrayWithRepair(model: any, rawText: string): Promise<any[]> {
+  const jsonText = extractJsonArray(rawText);
+  try {
+    const parsed = JSON.parse(jsonText);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    const repairPrompt =
+      `Fix the following into STRICT valid JSON (no markdown, no trailing commas). ` +
+      `Output ONLY the JSON array.\n\n${jsonText}`;
+    const repaired = await model.generateContent(repairPrompt);
+    const repairedJson = extractJsonArray(repaired.response.text());
+    const parsed2 = JSON.parse(repairedJson);
+    return Array.isArray(parsed2) ? parsed2 : [];
+  }
 }
 
 export default {
@@ -510,6 +533,7 @@ export default {
           hoursPerSession: c.hoursPerSession,
           semesterId: c.semesterId,
         }));
+        const teacherIdsThisGroup = new Set(curriculum.map((c: any) => c.teacherId).filter(Boolean));
         const groups = [
           {
             id: group.id,
@@ -520,20 +544,33 @@ export default {
             homeClassroomId: group.homeClassroomId,
           },
         ];
+        // Reduce payload size: we mainly need valid IDs + types.
         const classrooms = allRooms.map((r: any) => ({
           id: r.id,
-          capacity: r.capacity,
           type: r.type,
-          status: r.status,
-          floor: r.floor,
+          capacity: r.capacity,
         }));
-        const periods = allPeriods.map((p: any) => ({
-          id: p.id,
-          shift: p.shift,
-          periodNumber: p.periodNumber,
-          startTime: p.startTime,
-          endTime: p.endTime,
-        }));
+        const shiftPeriods = allPeriods
+          .filter((p: any) => Number(p.shift) === Number(group.shift))
+          .map((p: any) => ({
+            id: p.id,
+            shift: p.shift,
+            periodNumber: p.periodNumber,
+          }));
+        // Keep legacy variable name used in retry prompts.
+        const periods = shiftPeriods;
+
+        const occupiedTeacherSlotsSmall = occupiedTeacherSlots.filter((s: any) =>
+          teacherIdsThisGroup.has(s.teacherId),
+        );
+        // Room conflicts are the most common reason for silent drops (ON CONFLICT DO NOTHING).
+        // Provide the full room occupancy so the model can avoid conflicts up-front.
+        const occupiedRoomSlotsFull = occupiedRoomSlots;
+        // Room conflicts can be enforced by DB unique index; keep a small hint set (LAB + home room only).
+        const candidateRoomIds = new Set<string>();
+        if (group.homeClassroomId) candidateRoomIds.add(String(group.homeClassroomId));
+        for (const r of classrooms) if (String(r.type).toUpperCase() === "LAB") candidateRoomIds.add(String(r.id));
+        const occupiedRoomSlotsSmall = occupiedRoomSlots.filter((s: any) => candidateRoomIds.has(String(s.classroomId)));
 
         // 3) AI PROMPT БЭЛДЭХ
         const prompt = `
@@ -544,9 +581,10 @@ export default {
           - Төлөвлөгөө (Curriculum): ${JSON.stringify(curriculum)}
           - Ангиуд (Groups): ${JSON.stringify(groups)}
           - Өрөөнүүд (Classrooms): ${JSON.stringify(classrooms)}
-          - Цаг (Periods): ${JSON.stringify(periods)}
-          - Бөглөрсөн багшийн слот (Other groups): ${JSON.stringify(occupiedTeacherSlots)}
-          - Бөглөрсөн өрөөний слот (All): ${JSON.stringify(occupiedRoomSlots)}
+          - Цаг (Periods): ${JSON.stringify(shiftPeriods)}
+          - Бөглөрсөн багшийн слот (This group's teachers): ${JSON.stringify(occupiedTeacherSlotsSmall)}
+          - Бөглөрсөн өрөөний слот (All): ${JSON.stringify(occupiedRoomSlotsFull)}
+          - Бөглөрсөн өрөөний слот (Hints only): ${JSON.stringify(occupiedRoomSlotsSmall)}
 
           ХАТУУ ДҮРЭМ:
           1. Энэ ангийн curriculum бүрийн weeklyHours-г бүрэн гүйцэт төлөвлө.
@@ -581,38 +619,20 @@ export default {
 
         // 4) AI-аас хариу авах
         const result = await model.generateContent(prompt);
-        const responseText = result.response.text().trim();
-        const unfenced = responseText.replace(/```json|```/g, "").trim();
-        const start = unfenced.indexOf("[");
-        const end = unfenced.lastIndexOf("]");
-        const jsonText =
-          start >= 0 && end >= 0 && end > start ? unfenced.slice(start, end + 1) : unfenced;
-
         let scheduleItems: any[];
         try {
-          scheduleItems = JSON.parse(jsonText);
-        } catch (e: any) {
-          // 2nd attempt: ask the model to repair into valid JSON only.
-          const repairPrompt = `Fix the following into STRICT valid JSON (no markdown, no trailing commas). Output ONLY the JSON array.\n\n${jsonText}`;
-          const repaired = await model.generateContent(repairPrompt);
-          const repairedText = repaired.response.text().replace(/```json|```/g, "").trim();
-          const rs = repairedText.indexOf("[");
-          const re = repairedText.lastIndexOf("]");
-          const repairedJson =
-            rs >= 0 && re >= 0 && re > rs ? repairedText.slice(rs, re + 1) : repairedText;
-          try {
-            scheduleItems = JSON.parse(repairedJson);
-          } catch (e2: any) {
-            return Response.json(
-              {
-                error: `AI returned invalid JSON: ${e2?.message ?? String(e2)}`,
-                model: env.GEMINI_MODEL ?? "gemini-2.5-flash",
-                rawHead: repairedJson.slice(0, 2000),
-                rawTail: repairedJson.slice(Math.max(0, repairedJson.length - 2000)),
-              },
-              { status: 500 }
-            );
-          }
+          scheduleItems = await parseJsonArrayWithRepair(model, result.response.text());
+        } catch (e2: any) {
+          const raw = extractJsonArray(result.response.text());
+          return Response.json(
+            {
+              error: `AI returned invalid JSON: ${e2?.message ?? String(e2)}`,
+              model: modelOverride ?? env.GEMINI_MODEL ?? "gemini-2.5-flash",
+              rawHead: raw.slice(0, 2000),
+              rawTail: raw.slice(Math.max(0, raw.length - 2000)),
+            },
+            { status: 500 },
+          );
         }
 
         // 4.5) Validate completeness (weeklyHours) and retry once if needed
@@ -620,24 +640,39 @@ export default {
         for (const c of curriculum) requiredByCurriculumId.set(c.id, Number(c.weeklyHours) || 0);
 
         const allowedCurriculumIds = new Set(curriculum.map((c: any) => c.id));
-        const normalized = Array.isArray(scheduleItems) ? scheduleItems : [];
-        scheduleItems = normalized.filter(
-          (it: any) => it && allowedCurriculumIds.has(it.curriculumId) && it.semesterId === semesterId,
-        );
+        const normalizeForCounting = (items: any[]) =>
+          items
+            .filter((it) => it && typeof it === "object")
+            .map((it) => ({
+              ...it,
+              curriculumId: (it as any).curriculumId,
+              // If model omitted semesterId, default it (we enforce later anyway).
+              semesterId: String((it as any).semesterId ?? semesterId),
+            }))
+            .filter((it) => allowedCurriculumIds.has(it.curriculumId) && it.semesterId === semesterId);
 
-        const countByCurriculumId = new Map<string, number>();
-        for (const it of scheduleItems) {
-          const k = String(it.curriculumId);
-          countByCurriculumId.set(k, (countByCurriculumId.get(k) ?? 0) + 1);
-        }
+        const computeMissing = (items: any[]) => {
+          const countByCurriculumId = new Map<string, number>();
+          for (const it of items) {
+            const k = String(it.curriculumId);
+            countByCurriculumId.set(k, (countByCurriculumId.get(k) ?? 0) + 1);
+          }
+          const missing: Array<{ curriculumId: string; required: number; got: number }> = [];
+          for (const [cid, required] of requiredByCurriculumId.entries()) {
+            const got = countByCurriculumId.get(cid) ?? 0;
+            if (required > 0 && got !== required) missing.push({ curriculumId: cid, required, got });
+          }
+          return missing;
+        };
 
-        const missing: Array<{ curriculumId: string; required: number; got: number }> = [];
-        for (const [cid, required] of requiredByCurriculumId.entries()) {
-          const got = countByCurriculumId.get(cid) ?? 0;
-          if (required > 0 && got !== required) missing.push({ curriculumId: cid, required, got });
-        }
+        // Retry a few times until weeklyHours counts match exactly.
+        let lastMissing: Array<{ curriculumId: string; required: number; got: number }> = [];
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          scheduleItems = normalizeForCounting(Array.isArray(scheduleItems) ? scheduleItems : []);
+          const missing = computeMissing(scheduleItems);
+          lastMissing = missing;
+          if (missing.length === 0) break;
 
-        if (missing.length > 0) {
           const retryPrompt = `
 You MUST return STRICT JSON array only.
 Goal: fix/extend the schedule for groupId=${groupId} semesterId=${semesterId}.
@@ -654,11 +689,147 @@ OccupiedRoomSlots: ${JSON.stringify(occupiedRoomSlots)}
 Return FULL corrected schedule array (not just diffs).
 `;
           const retry = await model.generateContent(retryPrompt);
-          const t = retry.response.text().replace(/```json|```/g, "").trim();
-          const s2 = t.indexOf("[");
-          const e2 = t.lastIndexOf("]");
-          const j2 = s2 >= 0 && e2 >= 0 && e2 > s2 ? t.slice(s2, e2 + 1) : t;
-          scheduleItems = JSON.parse(j2);
+          scheduleItems = await parseJsonArrayWithRepair(model, retry.response.text());
+        }
+
+        // If still incomplete after retries, fail clearly (avoid inserting partial schedules).
+        scheduleItems = normalizeForCounting(Array.isArray(scheduleItems) ? scheduleItems : []);
+        lastMissing = computeMissing(scheduleItems);
+        if (lastMissing.length > 0) {
+          // Fallback: greedy scheduler (no AI) to guarantee completeness.
+          const subjectIds = Array.from(new Set(groupCurriculum.map((c: any) => c.subjectId).filter(Boolean)));
+          const subjects = subjectIds.length
+            ? await db.query.subjects.findMany({
+                where: (s, { inArray }) => inArray(s.id, subjectIds as string[]),
+                columns: { id: true, requiresLab: true },
+              })
+            : [];
+          const requiresLabBySubjectId = new Map(subjects.map((s: any) => [s.id, Number(s.requiresLab) === 1]));
+
+          const shiftPeriodsSorted = allPeriods
+            .filter((p: any) => Number(p.shift) === Number(group.shift))
+            .slice()
+            .sort((a: any, b: any) => Number(a.periodNumber) - Number(b.periodNumber));
+
+          const teacherBusy = new Set<string>();
+          const roomBusy = new Set<string>();
+          for (const s of occupiedTeacherSlots) {
+            teacherBusy.add(`${s.teacherId}|${s.dayOfWeek}|${s.periodId}`);
+          }
+          for (const s of occupiedRoomSlots) {
+            roomBusy.add(`${s.classroomId}|${s.dayOfWeek}|${s.periodId}`);
+          }
+
+          const homeRoomId = group.homeClassroomId ? String(group.homeClassroomId) : undefined;
+          const labRoomIds = allRooms
+            .filter((r: any) => String(r.type).toUpperCase() === "LAB")
+            .map((r: any) => String(r.id));
+
+          const pickRoom = (subjectId: string) => {
+            const needsLab = requiresLabBySubjectId.get(subjectId) === true;
+            if (needsLab && labRoomIds.length > 0) return labRoomIds[0];
+            if (homeRoomId) return homeRoomId;
+            return allRooms[0] ? String(allRooms[0].id) : undefined;
+          };
+
+          const planned: any[] = [];
+          const days = [1, 2, 3, 4, 5];
+
+          const curriculaSorted = curriculum
+            .slice()
+            .sort((a: any, b: any) => Number(b.weeklyHours) - Number(a.weeklyHours));
+
+          const canPlace = (teacherId: string, roomId: string, day: number, periodId: number) =>
+            !teacherBusy.has(`${teacherId}|${day}|${periodId}`) && !roomBusy.has(`${roomId}|${day}|${periodId}`);
+
+          for (const c of curriculaSorted) {
+            const teacherId = String(c.teacherId);
+            const subjectId = String(c.subjectId);
+            const roomId = pickRoom(subjectId);
+            if (!roomId) continue;
+
+            const hoursPerSession = Math.max(1, Number(c.hoursPerSession) || 1);
+            const requiredSlots = Math.max(0, Number(c.weeklyHours) || 0);
+
+            if (hoursPerSession === 1) {
+              for (let k = 0; k < requiredSlots; k += 1) {
+                let placed = false;
+                for (const day of days) {
+                  for (const p of shiftPeriodsSorted) {
+                    if (canPlace(teacherId, roomId, day, Number(p.id))) {
+                      planned.push({
+                        curriculumId: c.id,
+                        dayOfWeek: day,
+                        periodId: Number(p.id),
+                        classroomId: roomId,
+                        semesterId,
+                      });
+                      teacherBusy.add(`${teacherId}|${day}|${p.id}`);
+                      roomBusy.add(`${roomId}|${day}|${p.id}`);
+                      placed = true;
+                      break;
+                    }
+                  }
+                  if (placed) break;
+                }
+                if (!placed) break;
+              }
+            } else {
+              // hoursPerSession=2 → place consecutive periodNumbers, counting as 2 slots.
+              const sessions = Math.floor(requiredSlots / 2);
+              for (let sIdx = 0; sIdx < sessions; sIdx += 1) {
+                let placed = false;
+                for (const day of days) {
+                  for (let i = 0; i < shiftPeriodsSorted.length - 1; i += 1) {
+                    const p1 = shiftPeriodsSorted[i];
+                    const p2 = shiftPeriodsSorted[i + 1];
+                    if (!p1 || !p2) continue;
+                    if (Number(p2.periodNumber) !== Number(p1.periodNumber) + 1) continue;
+                    const ok =
+                      canPlace(teacherId, roomId, day, Number(p1.id)) &&
+                      canPlace(teacherId, roomId, day, Number(p2.id));
+                    if (!ok) continue;
+                    planned.push(
+                      {
+                        curriculumId: c.id,
+                        dayOfWeek: day,
+                        periodId: Number(p1.id),
+                        classroomId: roomId,
+                        semesterId,
+                      },
+                      {
+                        curriculumId: c.id,
+                        dayOfWeek: day,
+                        periodId: Number(p2.id),
+                        classroomId: roomId,
+                        semesterId,
+                      },
+                    );
+                    teacherBusy.add(`${teacherId}|${day}|${p1.id}`);
+                    teacherBusy.add(`${teacherId}|${day}|${p2.id}`);
+                    roomBusy.add(`${roomId}|${day}|${p1.id}`);
+                    roomBusy.add(`${roomId}|${day}|${p2.id}`);
+                    placed = true;
+                    break;
+                  }
+                  if (placed) break;
+                }
+                if (!placed) break;
+              }
+            }
+          }
+
+          scheduleItems = planned;
+          return Response.json(
+            {
+              error: "AI could not generate a complete schedule after retries.",
+              missing: lastMissing,
+              count: scheduleItems.length,
+              groupId,
+              semesterId,
+            },
+            { status: 422 },
+          );
         }
 
         // 4.6) Validation + sanitization before DB (өдөр/цаг/өрөө)
@@ -700,11 +871,7 @@ OccupiedRoomSlots: ${JSON.stringify(occupiedRoomSlots)}
 Return FULL corrected schedule array (not just diffs).
 `;
           const retry2 = await model.generateContent(retryPrompt2);
-          const t2 = retry2.response.text().replace(/```json|```/g, "").trim();
-          const s3 = t2.indexOf("[");
-          const e3 = t2.lastIndexOf("]");
-          const j3 = s3 >= 0 && e3 >= 0 && e3 > s3 ? t2.slice(s3, e3 + 1) : t2;
-          scheduleItems = JSON.parse(j3);
+          scheduleItems = await parseJsonArrayWithRepair(model, retry2.response.text());
         }
 
         sanitized = sanitizeScheduleItems(scheduleItems, sanitizeCtx);
@@ -738,7 +905,7 @@ Return FULL corrected schedule array (not just diffs).
         let inserted = 0;
         if (scheduleItems.length > 0) {
           // D1/SQLite variable limits vary; keep chunks small to avoid "too many SQL variables"
-          const chunkSize = 25;
+          const chunkSize = 10;
           for (let i = 0; i < scheduleItems.length; i += chunkSize) {
             const chunk = scheduleItems.slice(i, i + chunkSize);
             const rows = chunk.map((item: any) => ({
@@ -763,15 +930,46 @@ Return FULL corrected schedule array (not just diffs).
                 ],
               });
 
-            inserted += Array.isArray(res) ? res.length : rows.length;
+            // D1 returns write meta; Drizzle may not return inserted rows. Count requested rows as "attempted",
+            // and compare with final DB counts if needed.
+            inserted += rows.length;
           }
         }
 
-        return Response.json({ 
-          success: true, 
+        // Compute actual inserted rows (after ON CONFLICT DO NOTHING) for accurate reporting.
+        const insertedActualRow = await db
+          .select({ n: sql<number>`count(*)` })
+          .from(schema.masterSchedules)
+          .where(
+            and(
+              eq(schema.masterSchedules.semesterId, semesterId),
+              inArray(schema.masterSchedules.curriculumId, curriculumIds),
+            ),
+          );
+        const insertedActual = Number(insertedActualRow?.[0]?.n ?? 0);
+
+        if (insertedActual !== scheduleItems.length) {
+        if (inserted !== scheduleItems.length) {
+          return Response.json(
+            {
+              success: false,
+              error:
+                "Schedule generation produced rows but not all could be inserted (likely room/time conflicts or DB constraints).",
+              count: scheduleItems.length,
+              inserted: insertedActual,
+              inserted,
+              groupId,
+              semesterId,
+            },
+            { status: 409 },
+          );
+        }
+
+        return Response.json({
+          success: true,
           message: "Хуваарь амжилттай үүсэж хадгалагдлаа.",
           count: scheduleItems.length,
-          inserted,
+          inserted: insertedActual,
           groupId,
           semesterId,
         });

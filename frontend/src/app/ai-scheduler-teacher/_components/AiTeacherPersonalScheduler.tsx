@@ -36,11 +36,15 @@ import {
 import {
   ApproveAiExamScheduleDocument,
   GetAiExamScheduleDocument,
+  GetTeachersListDocument,
+  GetTeacherMainLessonsListDocument,
   RequestAiExamScheduleDocument,
 } from "@/gql/create-exam-documents";
 import type {
   ExamSchedule,
   ExamScheduleVariant,
+  Teacher,
+  TeacherMainLesson,
   RequestExamSchedulePayload,
 } from "@/gql/graphql";
 import { cn } from "@/lib/utils";
@@ -141,8 +145,8 @@ function periodLengthMinutes(
  * хичээл/багшийн нэрийг карт дээр давтахгүй.
  */
 function primaryLessonCardModel(
-  lesson: MockPrimaryLesson,
-  opts?: { cabinetRoom?: string },
+  lesson: MockPrimaryLesson & { roomNumber?: string | null },
+  opts?: { cabinetRoom?: string; roomNumber?: string | null },
 ) {
   const v = lesson.slotVariant ?? "default";
   const mins = periodLengthMinutes(
@@ -172,7 +176,10 @@ function primaryLessonCardModel(
     };
   }
 
-  const room = roomBadgeForPrimaryLesson(lesson.title, opts?.cabinetRoom);
+  const room =
+    opts?.roomNumber?.trim?.() ||
+    lesson.roomNumber?.trim?.() ||
+    roomBadgeForPrimaryLesson(lesson.title, opts?.cabinetRoom);
   return {
     variant: v,
     headline: lesson.title,
@@ -212,10 +219,22 @@ const WEEKDAY_LETTER_MN: Record<number, string> = {
 
 const DEFAULT_TEST_ID = "a1000000-0000-4000-8000-000000000001";
 const DEFAULT_CLASS_ID = "10A";
+const DEFAULT_SEMESTER_ID = "2026-SPRING";
 
 const panelLight =
   "rounded-2xl border border-zinc-200/90 bg-white shadow-sm shadow-zinc-200/40 dark:border-zinc-600/80 dark:bg-zinc-900/95 dark:shadow-black/40";
 const textDim = "text-zinc-500 dark:text-zinc-400";
+
+function parseClockHHMM(s: string): { h: number; m: number } | null {
+  const v = String(s ?? "").trim();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(mm)) return null;
+  if (h < 0 || h > 23 || mm < 0 || mm > 59) return null;
+  return { h, m: mm };
+}
 
 function SchedulerAppearanceMenu() {
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -247,7 +266,10 @@ function SchedulerAppearanceMenu() {
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
           {""}
         </DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
+        <DropdownMenuRadioGroup
+          value={theme ?? "system"}
+          onValueChange={setTheme}
+        >
           <DropdownMenuRadioItem value="light" className="text-sm">
             <Sun className="size-4" aria-hidden />
             Цайвар
@@ -345,7 +367,8 @@ const CALENDAR_LAYERS: {
     label: "Дагалдах ажил (Confirmed)",
     role: "Анги удирдсан цаг, Зөвлөх цаг, Баталгаажсан давтлага, Секц. (дизайн mock)",
     swatch: "bg-indigo-400",
-    style: "ring-1 ring-indigo-300/80 dark:bg-indigo-800/40 dark:ring-indigo-600/60",
+    style:
+      "ring-1 ring-indigo-300/80 dark:bg-indigo-800/40 dark:ring-indigo-600/60",
   },
   {
     id: "confirmed_exam",
@@ -467,17 +490,14 @@ export function AiTeacherPersonalScheduler({
     personal: true,
     conflict: true,
   });
-  const [aiDraftIntent, setAiDraftIntent] = useState<AiDraftIntentKind>(
-    "exam_intent",
-  );
+  const [aiDraftIntent, setAiDraftIntent] =
+    useState<AiDraftIntentKind>("exam_intent");
   /** Хуанли + давхаргын зүүн панел нээгдсэн эсэх (rail-аас сэлгэнэ). */
   const [calendarSidebarOpen, setCalendarSidebarOpen] = useState(true);
   /** I = өглөөний ээлж (ахлах), II = өдрийн ээлж (бага анги) — анхны scroll төвлөрөлт. */
   const [teacherShift, setTeacherShift] =
     useState<TeacherShiftId>(defaultTeacherShift);
-  const [selectedTeacherId, setSelectedTeacherId] = useState(
-    DEFAULT_MOCK_TEACHER_ID,
-  );
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
   const [teacherPickerOpen, setTeacherPickerOpen] = useState(false);
   const calendarMainRef = useRef<HTMLElement>(null);
   const calendarFocusAnchorRef = useRef<HTMLDivElement>(null);
@@ -487,11 +507,116 @@ export function AiTeacherPersonalScheduler({
     setTeacherShift(defaultTeacherShift);
   }, [defaultTeacherShift]);
 
-  const selectedTeacher = useMemo(() => {
-    return getMockTeacherById(selectedTeacherId) ?? MOCK_I_SHIFT_TEACHERS[0];
-  }, [selectedTeacherId]);
+  type GetTeachersListData = { getTeachersList: Teacher[] };
+  type GetTeachersListVars = { grades?: number[] };
 
-  const activePrimaryLessons = selectedTeacher.lessons;
+  const { data: teacherData, loading: teacherLoading } = useQuery<
+    GetTeachersListData,
+    GetTeachersListVars
+  >(GetTeachersListDocument, {
+    variables: { grades: [9, 10, 11, 12] },
+    fetchPolicy: "cache-first",
+    notifyOnNetworkStatusChange: true,
+  });
+
+  const teacherOptions = useMemo(() => {
+    const rows = teacherData?.getTeachersList ?? [];
+    return rows.filter((t) => t.role === "TEACHER");
+  }, [teacherData?.getTeachersList]);
+
+  useEffect(() => {
+    // Teachers query дуусаагүй үед fallback руу бүү үсэр — header дээр hardcode мэт харагддаг.
+    if (teacherLoading) return;
+
+    const first = teacherOptions[0]?.id ?? "";
+    if (first) {
+      // Хэрэв өмнө нь fallback mock ID тавигдсан бол real жагсаалтын 1-р багш руу шилжүүлнэ.
+      if (!selectedTeacherId || selectedTeacherId === DEFAULT_MOCK_TEACHER_ID) {
+        setSelectedTeacherId(first);
+      }
+      return;
+    }
+
+    // Real багш олдохгүй үед л mock fallback (UI тасрахгүй, grid mock хэвээр).
+    if (!selectedTeacherId) {
+      setSelectedTeacherId(DEFAULT_MOCK_TEACHER_ID);
+    }
+  }, [selectedTeacherId, teacherOptions, teacherLoading]);
+
+  const selectedTeacherRow = useMemo(() => {
+    if (!selectedTeacherId) return null;
+    return teacherOptions.find((t) => t.id === selectedTeacherId) ?? null;
+  }, [teacherOptions, selectedTeacherId]);
+
+  type ListTeacherMainLessonsData = {
+    getTeacherMainLessonsList: TeacherMainLesson[];
+  };
+  type ListTeacherMainLessonsVars = {
+    teacherId: string;
+    semesterId?: string;
+    includeDraft?: boolean;
+  };
+
+  const { data: mainLessonsData } = useQuery<
+    ListTeacherMainLessonsData,
+    ListTeacherMainLessonsVars
+  >(GetTeacherMainLessonsListDocument, {
+    variables: {
+      teacherId: selectedTeacherId || DEFAULT_MOCK_TEACHER_ID,
+      semesterId: DEFAULT_SEMESTER_ID,
+      includeDraft: false,
+    },
+    skip: !selectedTeacherId,
+    fetchPolicy: "network-only",
+    notifyOnNetworkStatusChange: true,
+  });
+
+  const selectedTeacher = useMemo(() => {
+    const mock =
+      getMockTeacherById(DEFAULT_MOCK_TEACHER_ID) ?? MOCK_I_SHIFT_TEACHERS[0];
+    const displayName = selectedTeacherRow?.shortName?.trim()
+      ? selectedTeacherRow.shortName
+      : selectedTeacherRow
+        ? `${selectedTeacherRow.lastName} ${selectedTeacherRow.firstName}`
+        : mock.displayName;
+    const roleNote = selectedTeacherRow
+      ? `${selectedTeacherRow.department} · ${selectedTeacherRow.teachingLevel} · ${selectedTeacherRow.workLoadLimit}/өдөр`
+      : mock.roleNote;
+    return { ...mock, displayName, roleNote };
+  }, [selectedTeacherRow, selectedTeacherId]);
+
+  type PrimaryLesson = MockPrimaryLesson & { roomNumber?: string | null };
+
+  const activePrimaryLessons = useMemo(() => {
+    const rows = mainLessonsData?.getTeacherMainLessonsList ?? [];
+    if (!rows.length) {
+      return selectedTeacher.lessons.map((l) => ({ ...l })) as PrimaryLesson[];
+    }
+    const lessons: PrimaryLesson[] = [];
+    for (const r of rows) {
+      const start = parseClockHHMM(r.startTime);
+      const end = parseClockHHMM(r.endTime);
+      if (!start || !end) continue;
+      const colIdxRaw = (r.dayOfWeek ?? 1) - 1;
+      const colIdx = Number.isFinite(colIdxRaw)
+        ? Math.max(0, Math.min(6, Math.floor(colIdxRaw)))
+        : 0;
+      lessons.push({
+        colIdx,
+        title: r.groupId,
+        periodLabel: `${r.periodNumber}-р цаг`,
+        startH: start.h,
+        startM: start.m,
+        endH: end.h,
+        endM: end.m,
+        slotVariant: "default",
+        roomNumber: r.classroomRoomNumber ?? null,
+      });
+    }
+    return lessons.length
+      ? lessons
+      : (selectedTeacher.lessons.map((l) => ({ ...l })) as PrimaryLesson[]);
+  }, [mainLessonsData?.getTeacherMainLessonsList, selectedTeacher.lessons]);
 
   useLayoutEffect(() => {
     const main = calendarMainRef.current;
@@ -641,7 +766,10 @@ export function AiTeacherPersonalScheduler({
   /** Сургуулийн нэгдсэн календарийн mock — багшийн тор дээр дэвсгэр давхарга (GraphQL ирэхэд солино). */
   const teacherSchoolEventSegments = useMemo(
     () =>
-      buildSchoolCalendarSegmentsForWeek(REAL_WORLD_SCHOOL_CALENDAR_MOCK, weekDays),
+      buildSchoolCalendarSegmentsForWeek(
+        REAL_WORLD_SCHOOL_CALENDAR_MOCK,
+        weekDays,
+      ),
     [weekDays],
   );
 
@@ -668,7 +796,9 @@ export function AiTeacherPersonalScheduler({
     return cols;
   }, [activePrimaryLessons, teacherSchoolEventSegments]);
 
-  const scheduleStart = liveSchedule ? parseStart(liveSchedule.startTime) : null;
+  const scheduleStart = liveSchedule
+    ? parseStart(liveSchedule.startTime)
+    : null;
   const suggested = liveSchedule?.status === "suggested";
   const showJob =
     liveSchedule && liveSchedule.id === lastQueuedExamId ? liveSchedule : null;
@@ -718,9 +848,17 @@ export function AiTeacherPersonalScheduler({
                 >
                   <span className="sr-only">Хуанлын панел нээх, хаах</span>
                   {calendarSidebarOpen ? (
-                    <ChevronLeft className="size-5" strokeWidth={1.5} aria-hidden />
+                    <ChevronLeft
+                      className="size-5"
+                      strokeWidth={1.5}
+                      aria-hidden
+                    />
                   ) : (
-                    <ChevronRight className="size-5" strokeWidth={1.5} aria-hidden />
+                    <ChevronRight
+                      className="size-5"
+                      strokeWidth={1.5}
+                      aria-hidden
+                    />
                   )}
                 </button>
                 <button
@@ -761,15 +899,15 @@ export function AiTeacherPersonalScheduler({
                 <p className={cn("truncate text-[11px]", textDim)}>
                   {format(anchor, "yyyy MMMM", { locale: mn })}
                 </p>
-                <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-                  AI-Powered Operations Center · Cron · Linear · Reclaim · ирээдүйн шийдэл
-                </p>
               </div>
             </div>
           </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <SchedulerAppearanceMenu />
-            <Popover open={teacherPickerOpen} onOpenChange={setTeacherPickerOpen}>
+            <Popover
+              open={teacherPickerOpen}
+              onOpenChange={setTeacherPickerOpen}
+            >
               <PopoverTrigger asChild>
                 <Button
                   type="button"
@@ -779,8 +917,13 @@ export function AiTeacherPersonalScheduler({
                   aria-expanded={teacherPickerOpen}
                   aria-haspopup="dialog"
                 >
-                  <span className="truncate">{selectedTeacher.displayName}</span>
-                  <ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden />
+                  <span className="truncate">
+                    {selectedTeacher.displayName}
+                  </span>
+                  <ChevronDown
+                    className="size-4 shrink-0 opacity-60"
+                    aria-hidden
+                  />
                 </Button>
               </PopoverTrigger>
               <PopoverContent
@@ -789,13 +932,27 @@ export function AiTeacherPersonalScheduler({
                 className="w-[min(100vw-2rem,20rem)] border-zinc-200 p-2 shadow-lg dark:border-zinc-600"
               >
                 <p className="px-2 pb-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                  Багш сонгох (I / II ээлж · mock)
+                  Багш сонгох (9–12 · Математик)
                 </p>
                 <p className="mb-2 px-2 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-                  Дараа нь DB-аас ачаална. Одоо mock: I ээлж 5 + II ээлж 5 (нийт 10).
+                  {teacherLoading
+                    ? "Ачааллаж байна…"
+                    : teacherOptions.length
+                      ? `Нийт ${teacherOptions.length} багш`
+                      : "Багш олдсонгүй (fallback: mock)."}
                 </p>
                 <ul className="max-h-[min(60vh,16rem)] space-y-0.5 overflow-y-auto">
-                  {MOCK_I_SHIFT_TEACHERS.map((t) => {
+                  {(teacherOptions.length
+                    ? teacherOptions.map((t) => ({
+                        id: t.id,
+                        displayName: (t.shortName?.trim()
+                          ? t.shortName
+                          : `${t.lastName} ${t.firstName}`) as string,
+                        roleNote: `${t.department} · ${t.teachingLevel}`,
+                        shift: teacherShift,
+                      }))
+                    : MOCK_I_SHIFT_TEACHERS
+                  ).map((t) => {
                     const on = t.id === selectedTeacherId;
                     return (
                       <li key={t.id}>
@@ -803,7 +960,7 @@ export function AiTeacherPersonalScheduler({
                           type="button"
                           onClick={() => {
                             setSelectedTeacherId(t.id);
-                            setTeacherShift(t.shift);
+                            // schedule mock тул одоохондоо teacherShift-ийг өөрчлөхгүй.
                             setTeacherPickerOpen(false);
                           }}
                           className={cn(
@@ -822,10 +979,14 @@ export function AiTeacherPersonalScheduler({
                             )}
                             aria-hidden
                           >
-                            {on ? <Check className="size-2.5" strokeWidth={3} /> : null}
+                            {on ? (
+                              <Check className="size-2.5" strokeWidth={3} />
+                            ) : null}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block font-medium">{t.displayName}</span>
+                            <span className="block font-medium">
+                              {t.displayName}
+                            </span>
                             <span className="mt-0.5 block text-[11px] font-normal text-zinc-500 dark:text-zinc-400">
                               {t.roleNote}
                             </span>
@@ -861,12 +1022,20 @@ export function AiTeacherPersonalScheduler({
               </div>
               <div className="flex flex-1 flex-col gap-1 px-2 py-3">
                 <Link
-                  href={shellMode ? "/ai-scheduler?view=school" : "/ai-scheduler-school-event"}
+                  href={
+                    shellMode
+                      ? "/ai-scheduler?view=school"
+                      : "/ai-scheduler-school-event"
+                  }
                   title="Сургуулийн хуанли"
                   aria-label="Сургуулийн хуанли руу очих"
                   className="flex size-11 cursor-pointer items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-blue-200"
                 >
-                  <CalendarDays className="size-5" strokeWidth={1.5} aria-hidden />
+                  <CalendarDays
+                    className="size-5"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
                 </Link>
                 <button
                   type="button"
@@ -875,7 +1044,11 @@ export function AiTeacherPersonalScheduler({
                   aria-label="Багшийн хуанли (одоо)"
                   className="flex size-11 items-center justify-center rounded-xl bg-white/14 text-white shadow-sm ring-1 ring-white/12"
                 >
-                  <CalendarClock className="size-5" strokeWidth={1.75} aria-hidden />
+                  <CalendarClock
+                    className="size-5"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  />
                 </button>
               </div>
               <div className="border-t border-zinc-500/20 p-2">
@@ -883,7 +1056,11 @@ export function AiTeacherPersonalScheduler({
                   type="button"
                   onClick={() => setCalendarSidebarOpen((o) => !o)}
                   aria-expanded={calendarSidebarOpen}
-                  title={calendarSidebarOpen ? "Хуанлын панел хураах" : "Хуанлын панел дэлгэх"}
+                  title={
+                    calendarSidebarOpen
+                      ? "Хуанлын панел хураах"
+                      : "Хуанлын панел дэлгэх"
+                  }
                   className="flex size-11 w-full items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100"
                 >
                   {calendarSidebarOpen ? (
@@ -911,7 +1088,9 @@ export function AiTeacherPersonalScheduler({
             <div
               className={cn(
                 "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4",
-                shellMode ? "min-w-[min(100vw,272px)]" : "min-w-[min(100vw-68px,272px)]",
+                shellMode
+                  ? "min-w-[min(100vw,272px)]"
+                  : "min-w-[min(100vw-68px,272px)]",
               )}
             >
               <div className={cn(panelLight, "p-3")}>
@@ -931,7 +1110,12 @@ export function AiTeacherPersonalScheduler({
                 </div>
               </div>
 
-              <div className={cn(panelLight, "divide-y divide-zinc-100 dark:divide-zinc-800")}>
+              <div
+                className={cn(
+                  panelLight,
+                  "divide-y divide-zinc-100 dark:divide-zinc-800",
+                )}
+              >
                 <div className="px-3 py-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                     Давхарга · Ops Center ({CALENDAR_LAYERS.length})
@@ -962,7 +1146,9 @@ export function AiTeacherPersonalScheduler({
                         )}
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{layer.label}</span>
+                        <span className="block truncate text-sm font-medium">
+                          {layer.label}
+                        </span>
                         <span className="line-clamp-2 text-[10px] text-zinc-500 dark:text-zinc-400">
                           {layer.role}
                         </span>
@@ -1049,7 +1235,8 @@ export function AiTeacherPersonalScheduler({
                           Фокус цаг (жишээ)
                         </p>
                         <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-                          Reclaim / Linear-тай ижил төстэй: долоо хоногийн чухал ажилд цаг гаргах — Operations Center-ийн нэг хэсэг.
+                          Reclaim / Linear-тай ижил төстэй: долоо хоногийн чухал
+                          ажилд цаг гаргах — Operations Center-ийн нэг хэсэг.
                         </p>
                       </div>
                     </div>
@@ -1069,67 +1256,6 @@ export function AiTeacherPersonalScheduler({
                   </div>
                 </div>
 
-                <div
-                  className={cn(
-                    "mb-2 rounded-lg border border-zinc-200/80 bg-zinc-50/80 px-2.5 py-2 text-[10px] leading-snug text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-400",
-                  )}
-                >
-                  <p className="font-semibold text-zinc-800 dark:text-zinc-200">
-                    Цагийн муж (`constants/calendar.ts`)
-                  </p>
-                  <p className="mt-1">
-                    <span className="text-zinc-500 dark:text-zinc-500">Тор:</span>{" "}
-                    {CALENDAR_VIEW_CONFIG.dayVisible.start}–{CALENDAR_VIEW_CONFIG.dayVisible.end} ·{" "}
-                    <span className="text-zinc-500 dark:text-zinc-500">Critical:</span>{" "}
-                    {CALENDAR_VIEW_CONFIG.criticalFocus.start}–{CALENDAR_VIEW_CONFIG.criticalFocus.end}.{" "}
-                    <span className="text-rose-600/90 dark:text-rose-400/90">
-                      Улаан 07:30–07:50
-                    </span>{" "}
-                    (өглөөний бэлтгэл),{" "}
-                    <span className="text-rose-600/90 dark:text-rose-400/90">
-                      13:05–13:25
-                    </span>{" "}
-                    (ээлж солих).
-                  </p>
-                  <div className="mt-2 flex flex-col gap-1.5 border-t border-zinc-200/80 pt-2 dark:border-zinc-700/80 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-[9px] text-zinc-500 dark:text-zinc-500">
-                      I ээлж: ихэвчлэн 10–12 (өглөө). II ээлж: ихэвчлэн 1–5 (~13:15-аас). Сонголтоор хуанли 07:45 эсвэл 12:00 руу scroll хийнэ.
-                    </p>
-                    <div
-                      className="flex shrink-0 rounded-lg border border-zinc-200 bg-white p-0.5 dark:border-zinc-600 dark:bg-zinc-900"
-                      role="group"
-                      aria-label="Багшийн ээлж — хуанлийн анхны төвлөрөл"
-                    >
-                      <button
-                        type="button"
-                        aria-pressed={teacherShift === "I"}
-                        onClick={() => setTeacherShift("I")}
-                        className={cn(
-                          "rounded-md px-2 py-1 text-[9px] font-semibold transition-colors",
-                          teacherShift === "I"
-                            ? "bg-sky-600 text-white shadow-sm dark:bg-sky-500"
-                            : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800",
-                        )}
-                      >
-                        I · Өглөө
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={teacherShift === "II"}
-                        onClick={() => setTeacherShift("II")}
-                        className={cn(
-                          "rounded-md px-2 py-1 text-[9px] font-semibold transition-colors",
-                          teacherShift === "II"
-                            ? "bg-amber-600 text-white shadow-sm dark:bg-amber-600"
-                            : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800",
-                        )}
-                      >
-                        II · Өдөр
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="mb-2 grid grid-cols-[2.75rem_repeat(7,minmax(0,1fr))] gap-x-1 gap-y-0 border-b border-zinc-200 pb-2 dark:border-zinc-700 sm:grid-cols-[3.25rem_repeat(7,minmax(0,1fr))]">
                   <div
                     className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500"
@@ -1140,7 +1266,10 @@ export function AiTeacherPersonalScheduler({
                   {weekDays.map((d) => {
                     const isSel = isSameDay(d, anchor);
                     return (
-                      <div key={format(d, "yyyy-MM-dd")} className="text-center">
+                      <div
+                        key={format(d, "yyyy-MM-dd")}
+                        className="text-center"
+                      >
                         <div
                           className={cn(
                             "mx-auto flex size-8 items-center justify-center rounded-full text-[11px] font-medium sm:size-9 sm:text-xs",
@@ -1162,7 +1291,10 @@ export function AiTeacherPersonalScheduler({
 
                 <div className="relative min-h-0 flex-1">
                   <div className="grid min-h-0 flex-1 grid-cols-[2.75rem_repeat(7,minmax(0,1fr))] gap-x-1 sm:grid-cols-[3.25rem_repeat(7,minmax(0,1fr))]">
-                    <div className="relative shrink-0 text-right" style={{ minHeight: GRID_BODY_MIN_H }}>
+                    <div
+                      className="relative shrink-0 text-right"
+                      style={{ minHeight: GRID_BODY_MIN_H }}
+                    >
                       <div
                         ref={calendarFocusAnchorRef}
                         className="pointer-events-none absolute left-0 right-0 h-px opacity-0"
@@ -1202,8 +1334,11 @@ export function AiTeacherPersonalScheduler({
                     </div>
 
                     {weekDays.map((d, colIdx) => {
-                      const sameDay = scheduleStart && isSameDay(scheduleStart, d);
-                      const top = scheduleStart ? blockTopPercent(scheduleStart) : 28;
+                      const sameDay =
+                        scheduleStart && isSameDay(scheduleStart, d);
+                      const top = scheduleStart
+                        ? blockTopPercent(scheduleStart)
+                        : 28;
 
                       return (
                         <div
@@ -1280,6 +1415,7 @@ export function AiTeacherPersonalScheduler({
                               const v = lesson.slotVariant ?? "default";
                               const card = primaryLessonCardModel(lesson, {
                                 cabinetRoom: selectedTeacher.cabinetRoom,
+                                roomNumber: lesson.roomNumber ?? null,
                               });
                               return (
                                 <div
@@ -1329,7 +1465,8 @@ export function AiTeacherPersonalScheduler({
                                       <div
                                         className={cn(
                                           "shrink-0 truncate text-[13px] font-bold leading-tight tracking-tight",
-                                          v === "duty" && "text-[12px] leading-snug",
+                                          v === "duty" &&
+                                            "text-[12px] leading-snug",
                                         )}
                                       >
                                         {card.headline}
@@ -1402,7 +1539,8 @@ export function AiTeacherPersonalScheduler({
                             </div>
                           ) : null}
 
-                          {layerOn.conflict && teacherSchoolConflictColumns.has(colIdx) ? (
+                          {layerOn.conflict &&
+                          teacherSchoolConflictColumns.has(colIdx) ? (
                             <div
                               className="absolute left-1 right-1 top-[28%] z-4 rounded-xl border border-rose-300 bg-rose-50 px-2 py-1.5 text-[10px] font-medium leading-tight text-rose-950 shadow-md ring-1 ring-rose-200/80 dark:border-rose-700 dark:bg-rose-950/50 dark:text-rose-50"
                               style={{ minHeight: "48px" }}
@@ -1454,7 +1592,10 @@ export function AiTeacherPersonalScheduler({
                                 )}
                               </span>
                               <span className="mt-0.5 block text-[9px] font-normal text-violet-600/90 dark:text-violet-400/90">
-                                {AI_DRAFT_INTENT_META[aiDraftIntent].draftSubtitle}
+                                {
+                                  AI_DRAFT_INTENT_META[aiDraftIntent]
+                                    .draftSubtitle
+                                }
                               </span>
                             </div>
                           ) : null}
@@ -1465,14 +1606,15 @@ export function AiTeacherPersonalScheduler({
                                 className="absolute left-0.5 right-0.5 z-10 w-[calc(100%-4px)] -rotate-2 rounded-xl border-2 border-dashed border-violet-400 bg-violet-50 px-2 py-2 text-[10px] font-semibold leading-tight text-violet-950 shadow-md shadow-violet-200/60 ring-1 ring-violet-200/80 dark:border-violet-500 dark:bg-violet-950/50 dark:text-violet-100 dark:shadow-violet-900/40 dark:ring-violet-800/60"
                                 style={{ top: "18%", minHeight: "72px" }}
                               >
-                                {AI_DRAFT_INTENT_META[aiDraftIntent].draftTitle} — Slots
+                                {AI_DRAFT_INTENT_META[aiDraftIntent].draftTitle}{" "}
+                                — Slots
                                 <span className="mt-0.5 block font-normal text-violet-700 dark:text-violet-300">
                                   AI-ийн оновчтой цаг · тасархай хүрээ
                                 </span>
                                 <span className="mt-1 block text-[9px] font-normal text-violet-600/90 dark:text-violet-400/90">
                                   Confirm дарвал{" "}
-                                  {AI_DRAFT_INTENT_META[aiDraftIntent].confirmTarget ===
-                                  "confirmed_exam"
+                                  {AI_DRAFT_INTENT_META[aiDraftIntent]
+                                    .confirmTarget === "confirmed_exam"
                                     ? "ногоон (Confirmed Exam)"
                                     : "индиго (Confirmed Ancillary)"}{" "}
                                   болно
@@ -1548,7 +1690,10 @@ export function AiTeacherPersonalScheduler({
                             >
                               Баталгаажсан давтлага/удирдлага
                               <span className="mt-0.5 block font-normal text-indigo-700">
-                                {AI_DRAFT_INTENT_META[aiDraftIntent].ancillarySubtypeLabel}
+                                {
+                                  AI_DRAFT_INTENT_META[aiDraftIntent]
+                                    .ancillarySubtypeLabel
+                                }
                               </span>
                             </div>
                           ) : null}
@@ -1595,16 +1740,22 @@ export function AiTeacherPersonalScheduler({
                   </div>
                 </div>
 
-                <p className={cn("mt-2 text-center text-[10px] leading-relaxed", textDim)}>
+                <p
+                  className={cn(
+                    "mt-2 text-center text-[10px] leading-relaxed",
+                    textDim,
+                  )}
+                >
                   AI-Powered Operations Center: хуанлийн тор{" "}
-                  {CALENDAR_VIEW_CONFIG.dayVisible.start}–{CALENDAR_VIEW_CONFIG.dayVisible.end},
-                  critical {CALENDAR_VIEW_CONFIG.criticalFocus.start}–
-                  {CALENDAR_VIEW_CONFIG.criticalFocus.end}, улаан түгжрэлийн overlay
-                  constants/calendar.ts-аас. Усан цэнхэр үндсэн хичээл (I/II ээлж ·{" "}
-                  {LESSON_MINUTES} мин/цаг, завсар 5–15 мин), баталгаажсан шалгалт, AI
-                  Draft, хувийн синк. Сургуулийн эвент — amber дэвсгэр (mock жилийн
-                  хуанли), read-only; хичээлтэй давхцвал зөрчил. Жишээ + job; бүрэн
-                  sync биш.
+                  {CALENDAR_VIEW_CONFIG.dayVisible.start}–
+                  {CALENDAR_VIEW_CONFIG.dayVisible.end}, critical{" "}
+                  {CALENDAR_VIEW_CONFIG.criticalFocus.start}–
+                  {CALENDAR_VIEW_CONFIG.criticalFocus.end}, улаан түгжрэлийн
+                  overlay constants/calendar.ts-аас. Усан цэнхэр үндсэн хичээл
+                  (I/II ээлж · {LESSON_MINUTES} мин/цаг, завсар 5–15 мин),
+                  баталгаажсан шалгалт, AI Draft, хувийн синк. Сургуулийн эвент
+                  — amber дэвсгэр (mock жилийн хуанли), read-only; хичээлтэй
+                  давхцвал зөрчил. Жишээ + job; бүрэн sync биш.
                 </p>
               </div>
             </main>
@@ -1674,7 +1825,9 @@ export function AiTeacherPersonalScheduler({
                         <option value="extra_activity_club_intent">
                           Extra: Club (Секц)
                         </option>
-                        <option value="guidance_intent">Guidance (Зөвлөх/Анги уд)</option>
+                        <option value="guidance_intent">
+                          Guidance (Зөвлөх/Анги уд)
+                        </option>
                       </select>
                     </div>
                     <div className="space-y-2">
@@ -1751,7 +1904,9 @@ export function AiTeacherPersonalScheduler({
                     {showJob ? (
                       <div className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-600 dark:bg-zinc-900">
                         <div className="mb-2 flex items-center justify-between">
-                          <span className="text-xs text-zinc-500 dark:text-zinc-400">Төлөв</span>
+                          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                            Төлөв
+                          </span>
                           <Badge
                             variant="outline"
                             className="border-zinc-300 font-mono text-[10px] text-zinc-700 dark:border-zinc-600 dark:text-zinc-300"
@@ -1775,7 +1930,8 @@ export function AiTeacherPersonalScheduler({
                       </div>
                     )}
 
-                    {showJob?.status === "suggested" && showJob.aiVariants?.length ? (
+                    {showJob?.status === "suggested" &&
+                    showJob.aiVariants?.length ? (
                       <div className="space-y-2">
                         <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                           Сонгох
@@ -1817,11 +1973,16 @@ export function AiTeacherPersonalScheduler({
               <div className="border-t border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
                 <button
                   type="button"
-                  onClick={() => setRightTab((t) => (t === "form" ? "ai" : "form"))}
+                  onClick={() =>
+                    setRightTab((t) => (t === "form" ? "ai" : "form"))
+                  }
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 py-2.5 text-xs font-medium text-zinc-600 hover:border-zinc-300 hover:bg-white hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
                 >
                   <ChevronRight
-                    className={cn("size-4 transition-transform", rightTab === "form" && "-rotate-90")}
+                    className={cn(
+                      "size-4 transition-transform",
+                      rightTab === "form" && "-rotate-90",
+                    )}
                   />
                   {rightTab === "form" ? "Төлөв рүү" : "Тохиргоо нээх"}
                 </button>
@@ -1833,4 +1994,3 @@ export function AiTeacherPersonalScheduler({
     </div>
   );
 }
-

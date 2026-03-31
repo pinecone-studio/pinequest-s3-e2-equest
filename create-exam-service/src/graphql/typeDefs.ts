@@ -248,10 +248,81 @@ export const typeDefs = /* GraphQL */ `
     updatedAt: String!
   }
 
+  type Teacher {
+    id: ID!
+    firstName: String!
+    lastName: String!
+    shortName: String
+    email: String
+    department: String!
+    teachingLevel: String!
+    role: String!
+    workLoadLimit: Int!
+  }
+
+  type Student {
+    id: ID!
+    firstName: String!
+    lastName: String!
+    studentCode: String!
+    groupId: String!
+    status: String!
+  }
+
+  type StudentMainLesson {
+    id: ID!
+    dayOfWeek: Int!
+    semesterId: String!
+    isDraft: Boolean!
+    groupId: String!
+    gradeLevel: Int!
+    subjectId: String!
+    subjectName: String!
+    teacherId: ID!
+    teacherShortName: String
+    classroomId: String!
+    classroomRoomNumber: String!
+    periodId: Int!
+    periodShift: Int!
+    periodNumber: Int!
+    startTime: String!
+    endTime: String!
+  }
+
+  type TeacherMainLesson {
+    id: ID!
+    dayOfWeek: Int!
+    semesterId: String!
+    isDraft: Boolean!
+    groupId: String!
+    gradeLevel: Int!
+    subjectId: String!
+    subjectName: String!
+    classroomId: String!
+    classroomRoomNumber: String!
+    periodId: Int!
+    periodShift: Int!
+    periodNumber: Int!
+    startTime: String!
+    endTime: String!
+  }
+
   type Query {
     listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
     getNewMathExam(examId: ID!): NewMathExam
     getAiExamSchedule(examId: ID!): ExamSchedule
+    getTeachersList(grades: [Int!] = [9, 10, 11, 12]): [Teacher!]!
+    getStudentsList(grade: Int!, group: String!): [Student!]!
+    getStudentMainLessonsList(
+      studentId: ID!
+      semesterId: String = "2026-SPRING"
+      includeDraft: Boolean = false
+    ): [StudentMainLesson!]!
+    getTeacherMainLessonsList(
+      teacherId: ID!
+      semesterId: String = "2026-SPRING"
+      includeDraft: Boolean = false
+    ): [TeacherMainLesson!]!
   }
 
   type Mutation {
@@ -261,7 +332,9 @@ export const typeDefs = /* GraphQL */ `
     # AI-аар шинжлүүлэх
     analyzeQuestion(prompt: String!): QuestionAnalysisResult!
     # AI-аар үүсгэсэн загварыг хадгалах
-    createAiExamTemplate(input: CreateAiExamTemplateInput!): AiExamTemplatePayload!
+    createAiExamTemplate(
+      input: CreateAiExamTemplateInput!
+    ): AiExamTemplatePayload!
     # Шалгалтын хуваарь: D1-д pending үүсгээд Queue руу — AI consumer дараа нь батална
     requestAiExamSchedule(
       testId: ID!

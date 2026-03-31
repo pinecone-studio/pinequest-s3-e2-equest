@@ -15,6 +15,7 @@ export * from "./tables/teacherAvailability";
 export * from "./tables/teacherSubjects";
 export * from "./tables/users";
 export * from "./tables/groups";
+export * from "./tables/students";
 export * from "./tables/periods";
 export * from "./tables/subjects";
 export * from "./tables/curriculum";

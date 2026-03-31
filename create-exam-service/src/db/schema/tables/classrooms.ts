@@ -10,6 +10,12 @@ export const classrooms = sqliteTable("classrooms", {
    */
   id: text("id").primaryKey(),
 
+  /**
+   * Legacy (хуучин migration-уудтай нийцүүлэх зорилготой).
+   * Зарим орчинд `room_number` NOT NULL хэвээр байгаа тул schema-д тусгав.
+   */
+  roomNumber: text("room_number").notNull(),
+
   /** Танхимын нэр (нэмэлт). Ж: 'Математикийн кабинет'. */
   name: text("name"),
 
@@ -33,6 +39,9 @@ export const classrooms = sqliteTable("classrooms", {
   // Дундаа ашиглах боломжтой эсвэл олон зорилгоор ашиглагддаг
   isShared: integer("is_shared").notNull().default(0),
 
+  /** Legacy boolean (хуучин migration-уудын `is_lab`). */
+  isLab: integer("is_lab", { mode: "boolean" }).notNull().default(false),
+
   /**
    * Танхимын төлөв:
    * 'AVAILABLE' | 'MAINTENANCE' | 'RESERVED'
@@ -46,8 +55,4 @@ export const classrooms = sqliteTable("classrooms", {
     .notNull()
     .$onUpdateFn(() => new Date()),
 
-  /**
-   * Legacy (одоогийн seed/migration эвдэхгүй байлгахын тулд түр хадгалж байна).
-   * Дараа нь бүрэн migrate хийнэ.
-   */
 });

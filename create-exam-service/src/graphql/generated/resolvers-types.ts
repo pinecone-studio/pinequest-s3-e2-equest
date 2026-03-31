@@ -320,6 +320,14 @@ export type Query = {
   /** AI scheduler: нэг мөрийн төлөв (polling-д ашиглана) */
   getAiExamSchedule?: Maybe<ExamSchedule>;
   getNewMathExam?: Maybe<NewMathExam>;
+  /** ai-scheduler-student: сонгосон сурагчийн үндсэн хуваарь (ангиар нь) */
+  getStudentMainLessonsList: Array<StudentMainLesson>;
+  /** ai-scheduler-student: 10A гэх мэт ангид харьяалагдах сурагчдын жагсаалт */
+  getStudentsList: Array<Student>;
+  /** ai-scheduler-teacher: тухайн багшийн үндсэн хичээлийн (primary) хуваарь */
+  getTeacherMainLessonsList: Array<TeacherMainLesson>;
+  /** ai-scheduler-teacher: 9–12-р ангийн Math (MATH_HS) ордог багш нар */
+  getTeachersList: Array<Teacher>;
   listNewMathExams: Array<NewMathExamSummary>;
 };
 
@@ -334,10 +342,34 @@ export type QueryGetNewMathExamArgs = {
 };
 
 
+export type QueryGetStudentMainLessonsListArgs = {
+  includeDraft?: InputMaybe<Scalars['Boolean']['input']>;
+  semesterId?: InputMaybe<Scalars['String']['input']>;
+  studentId: Scalars['ID']['input'];
+};
+
+
+export type QueryGetStudentsListArgs = {
+  grade: Scalars['Int']['input'];
+  group: Scalars['String']['input'];
+};
+
+
+export type QueryGetTeacherMainLessonsListArgs = {
+  includeDraft?: InputMaybe<Scalars['Boolean']['input']>;
+  semesterId?: InputMaybe<Scalars['String']['input']>;
+  teacherId: Scalars['ID']['input'];
+};
+
+
+export type QueryGetTeachersListArgs = {
+  grades?: InputMaybe<Array<Scalars['Int']['input']>>;
+};
+
+
 export type QueryListNewMathExamsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
-
 
 export type QuestionAnalysisResult = {
   __typename?: 'QuestionAnalysisResult';
@@ -411,6 +443,71 @@ export type SaveNewMathExamPayload = {
   examId: Scalars['ID']['output'];
   title: Scalars['String']['output'];
   updatedAt: Scalars['String']['output'];
+};
+
+/** ai-scheduler-student: ангид харьяалагдах сурагч (minimal fields) */
+export type Student = {
+  __typename?: 'Student';
+  firstName: Scalars['String']['output'];
+  groupId: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  lastName: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  studentCode: Scalars['String']['output'];
+};
+
+/** ai-scheduler-student: сурагчийн үндсэн хичээлийн хуваарь (class timetable) */
+export type StudentMainLesson = {
+  __typename?: 'StudentMainLesson';
+  classroomId: Scalars['String']['output'];
+  classroomRoomNumber: Scalars['String']['output'];
+  dayOfWeek: Scalars['Int']['output'];
+  endTime: Scalars['String']['output'];
+  gradeLevel: Scalars['Int']['output'];
+  groupId: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  isDraft: Scalars['Boolean']['output'];
+  periodId: Scalars['Int']['output'];
+  periodNumber: Scalars['Int']['output'];
+  periodShift: Scalars['Int']['output'];
+  semesterId: Scalars['String']['output'];
+  startTime: Scalars['String']['output'];
+  subjectId: Scalars['String']['output'];
+  subjectName: Scalars['String']['output'];
+  teacherId: Scalars['ID']['output'];
+  teacherShortName?: Maybe<Scalars['String']['output']>;
+};
+
+export type Teacher = {
+  __typename?: 'Teacher';
+  department: Scalars['String']['output'];
+  email?: Maybe<Scalars['String']['output']>;
+  firstName: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  lastName: Scalars['String']['output'];
+  role: Scalars['String']['output'];
+  shortName?: Maybe<Scalars['String']['output']>;
+  teachingLevel: Scalars['String']['output'];
+  workLoadLimit: Scalars['Int']['output'];
+};
+
+export type TeacherMainLesson = {
+  __typename?: 'TeacherMainLesson';
+  classroomId: Scalars['String']['output'];
+  classroomRoomNumber: Scalars['String']['output'];
+  dayOfWeek: Scalars['Int']['output'];
+  endTime: Scalars['String']['output'];
+  gradeLevel: Scalars['Int']['output'];
+  groupId: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  isDraft: Scalars['Boolean']['output'];
+  periodId: Scalars['Int']['output'];
+  periodNumber: Scalars['Int']['output'];
+  periodShift: Scalars['Int']['output'];
+  semesterId: Scalars['String']['output'];
+  startTime: Scalars['String']['output'];
+  subjectId: Scalars['String']['output'];
+  subjectName: Scalars['String']['output'];
 };
 
 export type WithIndex<TObject> = TObject & Record<string, any>;
@@ -525,6 +622,10 @@ export type ResolversTypes = ResolversObject<{
   SaveNewMathExamInput: SaveNewMathExamInput;
   SaveNewMathExamPayload: ResolverTypeWrapper<SaveNewMathExamPayload>;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
+  Student: ResolverTypeWrapper<Student>;
+  StudentMainLesson: ResolverTypeWrapper<StudentMainLesson>;
+  Teacher: ResolverTypeWrapper<Teacher>;
+  TeacherMainLesson: ResolverTypeWrapper<TeacherMainLesson>;
 }>;
 
 /** Mapping between all available schema types and the resolvers parents */
@@ -561,6 +662,10 @@ export type ResolversParentTypes = ResolversObject<{
   SaveNewMathExamInput: SaveNewMathExamInput;
   SaveNewMathExamPayload: SaveNewMathExamPayload;
   String: Scalars['String']['output'];
+  Student: Student;
+  StudentMainLesson: StudentMainLesson;
+  Teacher: Teacher;
+  TeacherMainLesson: TeacherMainLesson;
 }>;
 
 export type AiExamTemplatePayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['AiExamTemplatePayload'] = ResolversParentTypes['AiExamTemplatePayload']> = ResolversObject<{
@@ -681,6 +786,10 @@ export type NewMathExamSummaryResolvers<ContextType = GraphQLContext, ParentType
 export type QueryResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = ResolversObject<{
   getAiExamSchedule?: Resolver<Maybe<ResolversTypes['ExamSchedule']>, ParentType, ContextType, RequireFields<QueryGetAiExamScheduleArgs, 'examId'>>;
   getNewMathExam?: Resolver<Maybe<ResolversTypes['NewMathExam']>, ParentType, ContextType, RequireFields<QueryGetNewMathExamArgs, 'examId'>>;
+  getStudentMainLessonsList?: Resolver<Array<ResolversTypes['StudentMainLesson']>, ParentType, ContextType, RequireFields<QueryGetStudentMainLessonsListArgs, 'includeDraft' | 'semesterId' | 'studentId'>>;
+  getStudentsList?: Resolver<Array<ResolversTypes['Student']>, ParentType, ContextType, RequireFields<QueryGetStudentsListArgs, 'grade' | 'group'>>;
+  getTeacherMainLessonsList?: Resolver<Array<ResolversTypes['TeacherMainLesson']>, ParentType, ContextType, RequireFields<QueryGetTeacherMainLessonsListArgs, 'includeDraft' | 'semesterId' | 'teacherId'>>;
+  getTeachersList?: Resolver<Array<ResolversTypes['Teacher']>, ParentType, ContextType, RequireFields<QueryGetTeachersListArgs, 'grades'>>;
   listNewMathExams?: Resolver<Array<ResolversTypes['NewMathExamSummary']>, ParentType, ContextType, RequireFields<QueryListNewMathExamsArgs, 'limit'>>;
 }>;
 
@@ -717,6 +826,65 @@ export type SaveNewMathExamPayloadResolvers<ContextType = GraphQLContext, Parent
   updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 }>;
 
+export type StudentResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Student'] = ResolversParentTypes['Student']> = ResolversObject<{
+  firstName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  groupId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  lastName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  studentCode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+}>;
+
+export type StudentMainLessonResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['StudentMainLesson'] = ResolversParentTypes['StudentMainLesson']> = ResolversObject<{
+  classroomId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  classroomRoomNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  dayOfWeek?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  endTime?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  gradeLevel?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  groupId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  isDraft?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  periodId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  periodNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  periodShift?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  semesterId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  startTime?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  subjectId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  subjectName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  teacherId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  teacherShortName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+}>;
+
+export type TeacherResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Teacher'] = ResolversParentTypes['Teacher']> = ResolversObject<{
+  department?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  email?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  firstName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  lastName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  role?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  shortName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  teachingLevel?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  workLoadLimit?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+}>;
+
+export type TeacherMainLessonResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['TeacherMainLesson'] = ResolversParentTypes['TeacherMainLesson']> = ResolversObject<{
+  classroomId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  classroomRoomNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  dayOfWeek?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  endTime?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  gradeLevel?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  groupId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  isDraft?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  periodId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  periodNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  periodShift?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  semesterId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  startTime?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  subjectId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  subjectName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+}>;
+
 export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   AiExamTemplatePayload?: AiExamTemplatePayloadResolvers<ContextType>;
   ExamGenerationResult?: ExamGenerationResultResolvers<ContextType>;
@@ -734,5 +902,9 @@ export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   RequestExamSchedulePayload?: RequestExamSchedulePayloadResolvers<ContextType>;
   SaveExamPayload?: SaveExamPayloadResolvers<ContextType>;
   SaveNewMathExamPayload?: SaveNewMathExamPayloadResolvers<ContextType>;
+  Student?: StudentResolvers<ContextType>;
+  StudentMainLesson?: StudentMainLessonResolvers<ContextType>;
+  Teacher?: TeacherResolvers<ContextType>;
+  TeacherMainLesson?: TeacherMainLessonResolvers<ContextType>;
 }>;
 

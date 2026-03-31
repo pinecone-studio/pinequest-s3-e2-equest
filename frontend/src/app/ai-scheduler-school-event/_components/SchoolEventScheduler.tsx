@@ -142,7 +142,10 @@ function ReclaimLightBackdrop() {
 
 type SchoolSidebarLayerKey = SchoolEventLayerKind | "teacherExams";
 
-function defaultSchoolLayerVisibility(): Record<SchoolSidebarLayerKey, boolean> {
+function defaultSchoolLayerVisibility(): Record<
+  SchoolSidebarLayerKey,
+  boolean
+> {
   return {
     HOLIDAY: true,
     ADMIN_FIXED: true,
@@ -185,9 +188,9 @@ export function SchoolEventScheduler({
 }: SchoolEventSchedulerProps) {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [calendarSidebarOpen, setCalendarSidebarOpen] = useState(true);
-  const [layerOn, setLayerOn] = useState<Record<SchoolSidebarLayerKey, boolean>>(
-    defaultSchoolLayerVisibility,
-  );
+  const [layerOn, setLayerOn] = useState<
+    Record<SchoolSidebarLayerKey, boolean>
+  >(defaultSchoolLayerVisibility);
   const [rightTab, setRightTab] = useState<"list" | "about">("list");
 
   const anchor = date ?? new Date();
@@ -218,8 +221,7 @@ export function SchoolEventScheduler({
         return s.getTime() < we.getTime() && e.getTime() > ws.getTime();
       })
       .sort(
-        (a, b) =>
-          parseISO(a.startAt).getTime() - parseISO(b.startAt).getTime(),
+        (a, b) => parseISO(a.startAt).getTime() - parseISO(b.startAt).getTime(),
       );
   }, [mergedSchoolCalendarEvents, weekStart, weekEnd]);
 
@@ -229,7 +231,8 @@ export function SchoolEventScheduler({
     for (const ev of events) {
       const start = parseISO(ev.startAt);
       const end = parseISO(ev.endAt);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
+        continue;
 
       weekDays.forEach((day, colIdx) => {
         const seg = segmentForDay(day, start, end);
@@ -301,9 +304,17 @@ export function SchoolEventScheduler({
                 >
                   <span className="sr-only">Хуанлын панел нээх, хаах</span>
                   {calendarSidebarOpen ? (
-                    <ChevronLeft className="size-5" strokeWidth={1.5} aria-hidden />
+                    <ChevronLeft
+                      className="size-5"
+                      strokeWidth={1.5}
+                      aria-hidden
+                    />
                   ) : (
-                    <ChevronRight className="size-5" strokeWidth={1.5} aria-hidden />
+                    <ChevronRight
+                      className="size-5"
+                      strokeWidth={1.5}
+                      aria-hidden
+                    />
                   )}
                 </button>
                 <button
@@ -338,14 +349,19 @@ export function SchoolEventScheduler({
               </div>
               <div className="flex min-w-0 items-center gap-2">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">
-                  <CalendarClock className="size-4" strokeWidth={2} aria-hidden />
+                  <CalendarClock
+                    className="size-4"
+                    strokeWidth={2}
+                    aria-hidden
+                  />
                 </span>
                 <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
                   Сургуулийн хуанли
                 </h1>
               </div>
               <p className={cn("truncate text-xs", textDim)}>
-                Нийтлэг үйл явдал · {format(anchor, "yyyy MMMM", { locale: mn })}
+                Нийтлэг үйл явдал ·{" "}
+                {format(anchor, "yyyy MMMM", { locale: mn })}
               </p>
             </div>
           </div>
@@ -434,48 +450,24 @@ export function SchoolEventScheduler({
                     <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                       Сургуулийн хуанли
                     </p>
-                    <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-                      Өдөр сонгох
-                    </p>
                   </div>
-                  <p className="mb-2 px-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                    {selectedLabel}
-                  </p>
-                  <div
-                    className={cn(
-                      "flex justify-center rounded-xl border border-zinc-100 bg-zinc-50/90 p-1 dark:border-zinc-700 dark:bg-zinc-900/60",
-                      "[&_button[data-selected-single=true]]:rounded-full! [&_button[data-selected-single=true]]:bg-blue-600! [&_button[data-selected-single=true]]:text-white!",
-                      "[&_button[data-selected-single=true]]:shadow-md [&_button[data-selected-single=true]]:shadow-blue-500/25",
-                    )}
-                    aria-label="Өдөр сонгох хуанли"
-                  >
+                  <div className="flex justify-center" aria-label="Өдөр сонгох хуанли">
                     <Calendar
                       mode="single"
                       selected={date}
                       onSelect={setDate}
                       locale={mn}
-                      buttonVariant="ghost"
-                      className="text-zinc-800 [--cell-size:2rem] scale-[0.92] origin-top dark:text-zinc-100"
-                      classNames={{
-                        caption_label:
-                          "text-[13px] font-semibold text-zinc-900 dark:text-zinc-100",
-                        button_previous:
-                          "rounded-lg border border-zinc-200 bg-white text-zinc-700 size-8 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700",
-                        button_next:
-                          "rounded-lg border border-zinc-200 bg-white text-zinc-700 size-8 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700",
-                        weekday:
-                          "text-[10px] font-medium uppercase text-zinc-500 dark:text-zinc-400",
-                        day: "text-zinc-700 dark:text-zinc-200",
-                        today:
-                          "text-blue-700 [&:not([data-selected])_button]:ring-2 [&:not([data-selected])_button]:ring-blue-400/50 [&:not([data-selected])_button]:rounded-full dark:text-blue-300",
-                        outside: "text-zinc-400 opacity-60",
-                        disabled: "opacity-30",
-                      }}
+                      className="w-fit"
                     />
                   </div>
                 </div>
 
-                <div className={cn(panelLight, "divide-y divide-zinc-100 dark:divide-zinc-800")}>
+                <div
+                  className={cn(
+                    panelLight,
+                    "divide-y divide-zinc-100 dark:divide-zinc-800",
+                  )}
+                >
                   <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                     Харагдац
                   </p>
@@ -521,7 +513,8 @@ export function SchoolEventScheduler({
                             className="mt-0.5 block truncate text-[9px] text-zinc-400 dark:text-zinc-500"
                             title={meta.impactMn}
                           >
-                            {constraintLabelMn(meta.constraint)} · {meta.impactMn}
+                            {constraintLabelMn(meta.constraint)} ·{" "}
+                            {meta.impactMn}
                           </span>
                         </span>
                         <span
@@ -660,21 +653,6 @@ export function SchoolEventScheduler({
                   </div>
                 </div>
 
-                <div className="mb-3 rounded-xl border border-blue-100/90 bg-linear-to-r from-blue-50/90 to-white px-3 py-2.5 dark:border-blue-900/50 dark:from-blue-950/50 dark:to-zinc-900/80">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                        Цагийн муж (`constants/calendar.ts`)
-                      </p>
-                      <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-                        Багшийн хуанлитай ижил тор: {CALENDAR_VIEW_CONFIG.dayVisible.start}–
-                        {CALENDAR_VIEW_CONFIG.dayVisible.end}. Улаан бүсүүд нь шалгалт төлөвлөхөд
-                        тохиромжгүй үе.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="mb-2 grid grid-cols-[2.75rem_repeat(7,minmax(0,1fr))] gap-x-1 border-b border-zinc-200 pb-2 dark:border-zinc-700 sm:grid-cols-[3.25rem_repeat(7,minmax(0,1fr))]">
                   <div
                     className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500"
@@ -685,7 +663,10 @@ export function SchoolEventScheduler({
                   {weekDays.map((d) => {
                     const isSel = isSameDay(d, anchor);
                     return (
-                      <div key={format(d, "yyyy-MM-dd")} className="text-center">
+                      <div
+                        key={format(d, "yyyy-MM-dd")}
+                        className="text-center"
+                      >
                         <div
                           className={cn(
                             "mx-auto flex size-8 items-center justify-center rounded-full text-[11px] font-medium sm:size-9 sm:text-xs",
@@ -780,8 +761,7 @@ export function SchoolEventScheduler({
                         {eventSegments
                           .filter(
                             (seg) =>
-                              seg.colIdx === colIdx &&
-                              layerOn[seg.layerKind],
+                              seg.colIdx === colIdx && layerOn[seg.layerKind],
                           )
                           .map((seg) => {
                             const meta = SCHOOL_EVENT_LAYER_UI[seg.layerKind];
@@ -839,8 +819,11 @@ export function SchoolEventScheduler({
                     textDim,
                   )}
                 >
-                  Зөвхөн mock: <code className="text-zinc-600 dark:text-zinc-300">schoolCalendarRealWorldMock.ts</code> · D1
-                  бэлэн болоход GraphQL query дахин нээнэ.
+                  Зөвхөн mock:{" "}
+                  <code className="text-zinc-600 dark:text-zinc-300">
+                    schoolCalendarRealWorldMock.ts
+                  </code>{" "}
+                  · D1 бэлэн болоход GraphQL query дахин нээнэ.
                 </p>
               </div>
             </main>
@@ -894,40 +877,42 @@ export function SchoolEventScheduler({
                           </span>
                         </div>
                         <p className="pl-6 text-[9px] leading-snug text-zinc-500 dark:text-zinc-400">
-                          Жилийн mock (2026) — энэ 7 хоногт давхцах эвент (GraphQL түр унтраасан)
+                          Жилийн mock (2026) — энэ 7 хоногт давхцах эвент
+                          (GraphQL түр унтраасан)
                         </p>
                       </div>
                       <div className="max-h-[280px] space-y-2 overflow-y-auto px-3 py-3">
                         {schoolEventsList.length === 0 ? (
                           <p className="text-center text-xs text-zinc-500 dark:text-zinc-400">
-                            Энэ долоо хоногт mock эвенттай давхцахгүй байна — долоо хоногийг шилжүүл.
+                            Энэ долоо хоногт mock эвенттай давхцахгүй байна —
+                            долоо хоногийг шилжүүл.
                           </p>
                         ) : (
                           schoolEventsList.map((ev) => {
                             const meta = SCHOOL_EVENT_LAYER_UI[ev.layerKind];
                             return (
-                            <div
-                              key={ev.id}
-                              className={cn(
-                                "rounded-lg border px-2.5 py-2 text-left text-[11px] leading-snug",
-                                meta.cardClass,
-                              )}
-                            >
-                              <p className="font-semibold">{ev.title}</p>
-                              <p className="mt-0.5 text-[10px] opacity-90">
-                                {meta.labelMn}
-                                {ev.subcategory ? ` · ${ev.subcategory}` : ""}
-                              </p>
-                              <p className="mt-1 tabular-nums text-[10px] opacity-90">
-                                {format(parseISO(ev.startAt), "MMM d HH:mm", {
-                                  locale: mn,
-                                })}{" "}
-                                –{" "}
-                                {format(parseISO(ev.endAt), "MMM d HH:mm", {
-                                  locale: mn,
-                                })}
-                              </p>
-                            </div>
+                              <div
+                                key={ev.id}
+                                className={cn(
+                                  "rounded-lg border px-2.5 py-2 text-left text-[11px] leading-snug",
+                                  meta.cardClass,
+                                )}
+                              >
+                                <p className="font-semibold">{ev.title}</p>
+                                <p className="mt-0.5 text-[10px] opacity-90">
+                                  {meta.labelMn}
+                                  {ev.subcategory ? ` · ${ev.subcategory}` : ""}
+                                </p>
+                                <p className="mt-1 tabular-nums text-[10px] opacity-90">
+                                  {format(parseISO(ev.startAt), "MMM d HH:mm", {
+                                    locale: mn,
+                                  })}{" "}
+                                  –{" "}
+                                  {format(parseISO(ev.endAt), "MMM d HH:mm", {
+                                    locale: mn,
+                                  })}
+                                </p>
+                              </div>
                             );
                           })
                         )}
@@ -967,9 +952,9 @@ export function SchoolEventScheduler({
                       <strong className="font-semibold text-zinc-800 dark:text-zinc-100">
                         дөрвөн дэд давхарга
                       </strong>
-                      : амралт/баяр (ягаан), захиргаа/хурал (шар), нөөцийн түгжээ
-                      (саарал), deadline/академик (улбар шар). Нэг өнгөөр бүгдийг
-                      харуулахгүй.{" "}
+                      : амралт/баяр (ягаан), захиргаа/хурал (шар), нөөцийн
+                      түгжээ (саарал), deadline/академик (улбар шар). Нэг өнгөөр
+                      бүгдийг харуулахгүй.{" "}
                       <strong className="font-semibold text-zinc-800 dark:text-zinc-100">
                         Даваа–нямын
                       </strong>{" "}
