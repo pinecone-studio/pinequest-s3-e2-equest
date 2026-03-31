@@ -129,6 +129,8 @@ export const GetStudentsListDocument = gql(`
 			lastName
 			studentCode
 			groupId
+			gradeLevel
+			homeRoomNumber
 			status
 		}
 	}
@@ -162,6 +164,30 @@ export const GetStudentMainLessonsListDocument = gql(`
 			periodNumber
 			startTime
 			endTime
+		}
+	}
+`);
+
+export const GetSchoolEventsDocument = gql(`
+	query GetSchoolEvents($startDate: String!, $endDate: String!) {
+		getSchoolEvents(startDate: $startDate, endDate: $endDate) {
+			id
+			title
+			description
+			eventType
+			priority
+			urgencyLevel
+			targetType
+			isSchoolWide
+			isFullLock
+			repeatPattern
+			startDate
+			endDate
+			startPeriodId
+			endPeriodId
+			colorCode
+			groupIds
+			teacherIds
 		}
 	}
 `);

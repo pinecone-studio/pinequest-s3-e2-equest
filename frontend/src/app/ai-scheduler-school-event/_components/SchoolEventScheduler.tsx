@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@apollo/client/react";
 import { useTheme } from "next-themes";
 import {
   addDays,
@@ -25,14 +26,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { SchoolEventLayerKind } from "@/types/schoolCalendar";
 import { cn } from "@/lib/utils";
-import {
-  SCHOOL_EVENT_LAYER_ORDER,
-  SCHOOL_EVENT_LAYER_UI,
-  constraintLabelMn,
-} from "@/constants/calendarLayerTaxonomy";
-import { REAL_WORLD_SCHOOL_CALENDAR_MOCK } from "@/constants/schoolCalendarRealWorldMock";
+import { GetSchoolEventsDocument } from "@/gql/create-exam-documents";
+import type { SchoolEvent } from "@/gql/graphql";
 import {
   CALENDAR_BUFFER_BANDS,
   CALENDAR_OVERLAY_LAYOUTS,
@@ -76,6 +72,103 @@ const WEEKDAY_LETTER_MN: Record<number, string> = {
   6: "Б",
   7: "Н",
 };
+
+type SchoolEventType =
+  | "HOLIDAY"
+  | "EXAM"
+  | "TEACHER_DEVELOPMENT"
+  | "EXTRACURRICULAR"
+  | "PARENT_MEETING"
+  | "MAINTENANCE"
+  | "TRIP"
+  | "EVENT";
+
+const SCHOOL_EVENT_TYPE_META: Record<
+  SchoolEventType,
+  {
+    labelMn: string;
+    examplesMn: string;
+    impactMn: string;
+    swatch: string;
+    cardClass: string;
+  }
+> = {
+  HOLIDAY: {
+    labelMn: "Амралт",
+    examplesMn: "Нийтийн амралт, баярын өдөр",
+    impactMn: "Хичээл төлөвлөхгүй (ихэвчлэн)",
+    swatch: "bg-rose-500",
+    cardClass:
+      "border-rose-200 bg-rose-50 text-rose-950 dark:border-rose-800/70 dark:bg-rose-950/45 dark:text-rose-50",
+  },
+  EXAM: {
+    labelMn: "Шалгалт",
+    examplesMn: "Улсын/улирлын шалгалт, олимпиад",
+    impactMn: "Hard lock (EXAM)",
+    swatch: "bg-red-600",
+    cardClass:
+      "border-red-200 bg-red-50 text-red-950 dark:border-red-800/70 dark:bg-red-950/45 dark:text-red-50",
+  },
+  TEACHER_DEVELOPMENT: {
+    labelMn: "Багш нар",
+    examplesMn: "Сургалт, заах арга зүй, шуурхай",
+    impactMn: "Teacher lock",
+    swatch: "bg-sky-500",
+    cardClass:
+      "border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-800/70 dark:bg-sky-950/45 dark:text-sky-50",
+  },
+  EXTRACURRICULAR: {
+    labelMn: "Дугуйлан/секц",
+    examplesMn: "Спорт, секц, тэмцээн",
+    impactMn: "Partial lock (сонгосон анги)",
+    swatch: "bg-emerald-500",
+    cardClass:
+      "border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-800/70 dark:bg-emerald-950/45 dark:text-emerald-50",
+  },
+  PARENT_MEETING: {
+    labelMn: "Эцэг эх",
+    examplesMn: "Эцэг эхийн хурал, уулзалт",
+    impactMn: "Ихэвчлэн мэдээллийн",
+    swatch: "bg-amber-500",
+    cardClass:
+      "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800/70 dark:bg-amber-950/45 dark:text-amber-50",
+  },
+  MAINTENANCE: {
+    labelMn: "Засвар/тасалдал",
+    examplesMn: "Ариутгал, засвар, интернет тасрах",
+    impactMn: "Нөөцийн түгжээ",
+    swatch: "bg-zinc-500",
+    cardClass:
+      "border-zinc-200 bg-zinc-50 text-zinc-950 dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:text-zinc-50",
+  },
+  TRIP: {
+    labelMn: "Аялал",
+    examplesMn: "Музей, аялал, гадаад арга хэмжээ",
+    impactMn: "Full/partial lock (анги)",
+    swatch: "bg-pink-500",
+    cardClass:
+      "border-pink-200 bg-pink-50 text-pink-950 dark:border-pink-800/70 dark:bg-pink-950/45 dark:text-pink-50",
+  },
+  EVENT: {
+    labelMn: "Арга хэмжээ",
+    examplesMn: "Уулзалт, тэмдэглэлт өдөр",
+    impactMn: "Soft/Flexible байж болно",
+    swatch: "bg-blue-500",
+    cardClass:
+      "border-blue-200 bg-blue-50 text-blue-950 dark:border-blue-800/70 dark:bg-blue-950/45 dark:text-blue-50",
+  },
+};
+
+const SCHOOL_EVENT_TYPES: SchoolEventType[] = [
+  "EXAM",
+  "HOLIDAY",
+  "TEACHER_DEVELOPMENT",
+  "EXTRACURRICULAR",
+  "PARENT_MEETING",
+  "MAINTENANCE",
+  "TRIP",
+  "EVENT",
+];
 
 function SchedulerAppearanceMenu() {
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -140,7 +233,7 @@ function ReclaimLightBackdrop() {
   );
 }
 
-type SchoolSidebarLayerKey = SchoolEventLayerKind | "teacherExams";
+type SchoolSidebarLayerKey = SchoolEventType | "teacherExams";
 
 function defaultSchoolLayerVisibility(): Record<
   SchoolSidebarLayerKey,
@@ -148,9 +241,13 @@ function defaultSchoolLayerVisibility(): Record<
 > {
   return {
     HOLIDAY: true,
-    ADMIN_FIXED: true,
-    RESOURCE_LOCK: true,
-    ACADEMIC_MILESTONE: true,
+    EXAM: true,
+    TEACHER_DEVELOPMENT: true,
+    EXTRACURRICULAR: true,
+    PARENT_MEETING: true,
+    MAINTENANCE: true,
+    TRIP: true,
+    EVENT: true,
     teacherExams: true,
   };
 }
@@ -158,7 +255,7 @@ function defaultSchoolLayerVisibility(): Record<
 type DaySegment = {
   eventId: string;
   title: string;
-  layerKind: SchoolEventLayerKind;
+  eventType: SchoolEventType;
   subcategory?: string | null;
   colIdx: number;
   allDay: boolean;
@@ -205,23 +302,39 @@ export function SchoolEventScheduler({
   );
   const weekRangeLabel = `${format(weekStart, "MMM d", { locale: mn })} – ${format(weekEnd, "MMM d, yyyy", { locale: mn })}`;
 
-  /** D1 хоосон үед GraphQL `schoolCalendarEvents` түр хаасан — зөвхөн mock. Дахин асаахад нэгтгэнэ. */
-  const mergedSchoolCalendarEvents = useMemo(
-    () => REAL_WORLD_SCHOOL_CALENDAR_MOCK,
-    [],
-  );
+  type GetSchoolEventsData = { getSchoolEvents: SchoolEvent[] };
+  type GetSchoolEventsVars = { startDate: string; endDate: string };
+
+  const { data: schoolData } = useQuery<
+    GetSchoolEventsData,
+    GetSchoolEventsVars
+  >(GetSchoolEventsDocument, {
+    variables: {
+      startDate: startOfDay(weekStart).toISOString(),
+      endDate: endOfDay(weekEnd).toISOString(),
+    },
+    fetchPolicy: "cache-first",
+    notifyOnNetworkStatusChange: true,
+  });
+
+  const mergedSchoolCalendarEvents = useMemo(() => {
+    const rows = schoolData?.getSchoolEvents ?? [];
+    // Backend нь ms -> ISO болгож өгсөн; энэ component нь ISO parseISO-оор ашиглана.
+    return rows;
+  }, [schoolData?.getSchoolEvents]);
 
   const schoolEventsList = useMemo(() => {
     const ws = startOfDay(weekStart);
     const we = endOfDay(weekEnd);
     return mergedSchoolCalendarEvents
       .filter((ev) => {
-        const s = parseISO(ev.startAt);
-        const e = parseISO(ev.endAt);
+        const s = parseISO(ev.startDate);
+        const e = parseISO(ev.endDate);
         return s.getTime() < we.getTime() && e.getTime() > ws.getTime();
       })
       .sort(
-        (a, b) => parseISO(a.startAt).getTime() - parseISO(b.startAt).getTime(),
+        (a, b) =>
+          parseISO(a.startDate).getTime() - parseISO(b.startDate).getTime(),
       );
   }, [mergedSchoolCalendarEvents, weekStart, weekEnd]);
 
@@ -229,20 +342,26 @@ export function SchoolEventScheduler({
     const events = mergedSchoolCalendarEvents;
     const out: DaySegment[] = [];
     for (const ev of events) {
-      const start = parseISO(ev.startAt);
-      const end = parseISO(ev.endAt);
+      const start = parseISO(ev.startDate);
+      const end = parseISO(ev.endDate);
       if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
         continue;
 
       weekDays.forEach((day, colIdx) => {
         const seg = segmentForDay(day, start, end);
         if (!seg) return;
-        if (ev.allDay) {
+        const type = String(ev.eventType) as SchoolEventType;
+        const allDay =
+          ev.isFullLock &&
+          (type === "HOLIDAY" || type === "TRIP") &&
+          end.getTime() - start.getTime() >= 20 * 60 * 60 * 1000;
+
+        if (allDay) {
           out.push({
             eventId: ev.id,
             title: ev.title,
-            layerKind: ev.layerKind,
-            subcategory: ev.subcategory,
+            eventType: type,
+            subcategory: ev.description,
             colIdx,
             allDay: true,
             topPct: 0,
@@ -257,8 +376,8 @@ export function SchoolEventScheduler({
         out.push({
           eventId: ev.id,
           title: ev.title,
-          layerKind: ev.layerKind,
-          subcategory: ev.subcategory,
+          eventType: type,
+          subcategory: ev.description,
           colIdx,
           allDay: false,
           topPct: slotTopPercent(sh, sm),
@@ -341,12 +460,6 @@ export function SchoolEventScheduler({
               </button>
             )}
             <div className="min-w-0">
-              <div className="mb-0.5 flex flex-wrap items-center gap-2">
-                <Badge className="rounded-md border-0 bg-blue-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white dark:bg-blue-500">
-                  <Building2 className="mr-1 inline size-3" />
-                  Сургууль
-                </Badge>
-              </div>
               <div className="flex min-w-0 items-center gap-2">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">
                   <CalendarClock
@@ -355,14 +468,12 @@ export function SchoolEventScheduler({
                     aria-hidden
                   />
                 </span>
-                <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
-                  Сургуулийн хуанли
-                </h1>
+                <div>
+                  <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
+                    Сургуулийн хуанли
+                  </h1>
+                </div>
               </div>
-              <p className={cn("truncate text-xs", textDim)}>
-                Нийтлэг үйл явдал ·{" "}
-                {format(anchor, "yyyy MMMM", { locale: mn })}
-              </p>
             </div>
           </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
@@ -448,10 +559,13 @@ export function SchoolEventScheduler({
                 <div className={cn(panelLight, "p-3")}>
                   <div className="mb-2 space-y-0.5 px-1">
                     <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                      Сургуулийн хуанли
+                      Календарь
                     </p>
                   </div>
-                  <div className="flex justify-center" aria-label="Өдөр сонгох хуанли">
+                  <div
+                    className="flex justify-center"
+                    aria-label="Өдөр сонгох хуанли"
+                  >
                     <Calendar
                       mode="single"
                       selected={date}
@@ -479,8 +593,8 @@ export function SchoolEventScheduler({
                       Дэд давхарга — ачааллын эрэмбэ (өөр өнгө)
                     </p>
                   </div>
-                  {SCHOOL_EVENT_LAYER_ORDER.map((kind) => {
-                    const meta = SCHOOL_EVENT_LAYER_UI[kind];
+                  {SCHOOL_EVENT_TYPES.map((kind) => {
+                    const meta = SCHOOL_EVENT_TYPE_META[kind];
                     const on = layerOn[kind];
                     return (
                       <button
@@ -513,7 +627,6 @@ export function SchoolEventScheduler({
                             className="mt-0.5 block truncate text-[9px] text-zinc-400 dark:text-zinc-500"
                             title={meta.impactMn}
                           >
-                            {constraintLabelMn(meta.constraint)} ·{" "}
                             {meta.impactMn}
                           </span>
                         </span>
@@ -761,10 +874,10 @@ export function SchoolEventScheduler({
                         {eventSegments
                           .filter(
                             (seg) =>
-                              seg.colIdx === colIdx && layerOn[seg.layerKind],
+                              seg.colIdx === colIdx && layerOn[seg.eventType],
                           )
                           .map((seg) => {
-                            const meta = SCHOOL_EVENT_LAYER_UI[seg.layerKind];
+                            const meta = SCHOOL_EVENT_TYPE_META[seg.eventType];
                             return (
                               <div
                                 key={`${seg.eventId}-${colIdx}-${seg.topPct}`}
@@ -834,7 +947,7 @@ export function SchoolEventScheduler({
                   <Building2 className="size-4" strokeWidth={2} />
                 </div>
                 <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                  Сургуулийн мэдээлэл
+                  Сургуулийн туслах
                 </span>
               </div>
 
@@ -889,7 +1002,10 @@ export function SchoolEventScheduler({
                           </p>
                         ) : (
                           schoolEventsList.map((ev) => {
-                            const meta = SCHOOL_EVENT_LAYER_UI[ev.layerKind];
+                            const meta =
+                              SCHOOL_EVENT_TYPE_META[
+                                String(ev.eventType) as SchoolEventType
+                              ];
                             return (
                               <div
                                 key={ev.id}
@@ -901,14 +1017,18 @@ export function SchoolEventScheduler({
                                 <p className="font-semibold">{ev.title}</p>
                                 <p className="mt-0.5 text-[10px] opacity-90">
                                   {meta.labelMn}
-                                  {ev.subcategory ? ` · ${ev.subcategory}` : ""}
+                                  {ev.description ? ` · ${ev.description}` : ""}
                                 </p>
                                 <p className="mt-1 tabular-nums text-[10px] opacity-90">
-                                  {format(parseISO(ev.startAt), "MMM d HH:mm", {
-                                    locale: mn,
-                                  })}{" "}
+                                  {format(
+                                    parseISO(ev.startDate),
+                                    "MMM d HH:mm",
+                                    {
+                                      locale: mn,
+                                    },
+                                  )}{" "}
                                   –{" "}
-                                  {format(parseISO(ev.endAt), "MMM d HH:mm", {
+                                  {format(parseISO(ev.endDate), "MMM d HH:mm", {
                                     locale: mn,
                                   })}
                                 </p>

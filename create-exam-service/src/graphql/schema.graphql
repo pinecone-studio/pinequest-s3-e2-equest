@@ -273,6 +273,8 @@ type Student {
   lastName: String!
   studentCode: String!
   groupId: String!
+  gradeLevel: Int!
+  homeRoomNumber: String
   status: String!
 }
 
@@ -317,6 +319,29 @@ type TeacherMainLesson {
   endTime: String!
 }
 
+"""
+ai-scheduler-school-event: сургуулийн эвент (D1 school_events)
+"""
+type SchoolEvent {
+  id: ID!
+  title: String!
+  description: String
+  eventType: String!
+  priority: Int!
+  urgencyLevel: String!
+  targetType: String!
+  isSchoolWide: Boolean!
+  isFullLock: Boolean!
+  repeatPattern: String!
+  startDate: String!
+  endDate: String!
+  startPeriodId: Int
+  endPeriodId: Int
+  colorCode: String
+  groupIds: [String!]!
+  teacherIds: [String!]!
+}
+
 type Query {
   listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
   getNewMathExam(examId: ID!): NewMathExam
@@ -348,6 +373,9 @@ type Query {
     semesterId: String = "2026-SPRING"
     includeDraft: Boolean = false
   ): [TeacherMainLesson!]!
+
+  """ai-scheduler-school-event: өгөгдсөн хугацааны мужид давхцах эвентүүд"""
+  getSchoolEvents(startDate: String!, endDate: String!): [SchoolEvent!]!
 }
 
 type RequestExamSchedulePayload {

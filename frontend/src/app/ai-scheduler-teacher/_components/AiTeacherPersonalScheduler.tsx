@@ -88,6 +88,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  GraduationCap,
   Loader2,
   Menu,
   Monitor,
@@ -99,6 +100,7 @@ import {
   Square,
   Circle,
   Triangle,
+  Sparkles,
 } from "lucide-react";
 
 /** I/II ээлж: хичээл 40 мин, завсар 5–15 мин (давхаргын тайлбарт дундаж). */
@@ -224,6 +226,39 @@ const DEFAULT_SEMESTER_ID = "2026-SPRING";
 const panelLight =
   "rounded-2xl border border-zinc-200/90 bg-white shadow-sm shadow-zinc-200/40 dark:border-zinc-600/80 dark:bg-zinc-900/95 dark:shadow-black/40";
 const textDim = "text-zinc-500 dark:text-zinc-400";
+
+const DEPARTMENT_LABELS: Record<string, string> = {
+  MATH: "Математик",
+  PHYSICS: "Физик",
+  CHEMISTRY: "Хими",
+  BIOLOGY: "Биологи",
+  HISTORY: "Түүх",
+  GEOGRAPHY: "Газарзүй",
+  LANGUAGE: "Хэл",
+  ENGLISH: "Англи хэл",
+  IT: "Мэдээлэл зүй",
+  ART: "Урлаг",
+  MUSIC: "Хөгжим",
+  SPORTS: "Биеийн тамир",
+  PRIMARY: "Бага анги",
+};
+
+const TEACHING_LEVEL_LABELS: Record<string, string> = {
+  PRIMARY: "Бага",
+  MIDDLE: "Дунд",
+  HIGH: "Ахлах",
+  ALL: "Бүх түвшин",
+};
+
+function teacherDepartmentLabel(value?: string | null) {
+  const key = String(value ?? "").trim().toUpperCase();
+  return DEPARTMENT_LABELS[key] ?? value ?? "Тэнхим";
+}
+
+function teacherTeachingLevelLabel(value?: string | null) {
+  const key = String(value ?? "").trim().toUpperCase();
+  return TEACHING_LEVEL_LABELS[key] ?? value ?? "Түвшин";
+}
 
 function parseClockHHMM(s: string): { h: number; m: number } | null {
   const v = String(s ?? "").trim();
@@ -580,7 +615,7 @@ export function AiTeacherPersonalScheduler({
         ? `${selectedTeacherRow.lastName} ${selectedTeacherRow.firstName}`
         : mock.displayName;
     const roleNote = selectedTeacherRow
-      ? `${selectedTeacherRow.department} · ${selectedTeacherRow.teachingLevel} · ${selectedTeacherRow.workLoadLimit}/өдөр`
+      ? `${teacherDepartmentLabel(selectedTeacherRow.department)} · ${teacherTeachingLevelLabel(selectedTeacherRow.teachingLevel)} · ${selectedTeacherRow.workLoadLimit}/өдөр`
       : mock.roleNote;
     return { ...mock, displayName, roleNote };
   }, [selectedTeacherRow, selectedTeacherId]);
@@ -896,9 +931,6 @@ export function AiTeacherPersonalScheduler({
                   {selectedTeacher.displayName} · {selectedTeacher.roleNote} · I
                   ээлж
                 </p>
-                <p className={cn("truncate text-[11px]", textDim)}>
-                  {format(anchor, "yyyy MMMM", { locale: mn })}
-                </p>
               </div>
             </div>
           </div>
@@ -948,7 +980,7 @@ export function AiTeacherPersonalScheduler({
                         displayName: (t.shortName?.trim()
                           ? t.shortName
                           : `${t.lastName} ${t.firstName}`) as string,
-                        roleNote: `${t.department} · ${t.teachingLevel}`,
+                        roleNote: `${teacherDepartmentLabel(t.department)} · ${teacherTeachingLevelLabel(t.teachingLevel)}`,
                         shift: teacherShift,
                       }))
                     : MOCK_I_SHIFT_TEACHERS
@@ -1037,6 +1069,18 @@ export function AiTeacherPersonalScheduler({
                     aria-hidden
                   />
                 </Link>
+                <Link
+                  href="/ai-scheduler-student"
+                  title="Сурагчийн хуанли"
+                  aria-label="Сурагчийн хуанли руу очих"
+                  className="flex size-11 cursor-pointer items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-blue-200"
+                >
+                  <GraduationCap
+                    className="size-5"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                </Link>
                 <button
                   type="button"
                   title="Багшийн хуанли"
@@ -1118,7 +1162,7 @@ export function AiTeacherPersonalScheduler({
               >
                 <div className="px-3 py-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Давхарга · Ops Center ({CALENDAR_LAYERS.length})
+                    Эвэнт ({CALENDAR_LAYERS.length})
                   </p>
                 </div>
                 {CALENDAR_LAYERS.map((layer) => {
@@ -1221,38 +1265,6 @@ export function AiTeacherPersonalScheduler({
                     >
                       <ChevronRight className="size-4" strokeWidth={2} />
                     </button>
-                  </div>
-                </div>
-
-                <div className="mb-3 rounded-xl border border-blue-100/90 bg-linear-to-r from-blue-50/90 to-white px-3 py-2.5 dark:border-blue-900/50 dark:from-blue-950/50 dark:to-zinc-900/80">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                        <Target className="size-4" strokeWidth={2} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                          Фокус цаг (жишээ)
-                        </p>
-                        <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-                          Reclaim / Linear-тай ижил төстэй: долоо хоногийн чухал
-                          ажилд цаг гаргах — Operations Center-ийн нэг хэсэг.
-                        </p>
-                      </div>
-                    </div>
-                    <span className="shrink-0 tabular-nums text-[10px] font-semibold text-blue-700 dark:text-blue-300">
-                      6ц / 10ц
-                    </span>
-                  </div>
-                  <div
-                    className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100/80 dark:bg-blue-950/80"
-                    role="progressbar"
-                    aria-valuenow={60}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label="Фокус цагийн явц (жишээ)"
-                  >
-                    <div className="h-full w-[60%] rounded-full bg-blue-400 dark:bg-blue-500" />
                   </div>
                 </div>
 
@@ -1764,12 +1776,10 @@ export function AiTeacherPersonalScheduler({
             <aside className="flex w-full shrink-0 flex-col border-zinc-200/90 bg-white shadow-[inset_1px_0_0_0_rgba(228,228,231,0.6)] dark:border-zinc-700/90 dark:bg-zinc-950 dark:shadow-[inset_1px_0_0_0_rgba(39,39,42,0.8)] xl:w-[320px] xl:border-l">
               <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/90">
                 <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
-                  <Square className="size-2.5 fill-current" />
-                  <Circle className="size-2 fill-current" />
-                  <Triangle className="size-2.5 fill-current" />
+                  <Sparkles className="size-4" strokeWidth={2} aria-hidden />
                 </div>
                 <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-                  PineQuest AI
+                  Багшийн туслах
                 </span>
               </div>
 

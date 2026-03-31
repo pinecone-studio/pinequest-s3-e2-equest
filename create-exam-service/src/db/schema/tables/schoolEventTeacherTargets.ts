@@ -1,5 +1,4 @@
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { v4 as uuidv4 } from "uuid";
+import { primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { users } from "./users";
 import { schoolEvents } from "./schoolEvents";
 
@@ -10,10 +9,6 @@ import { schoolEvents } from "./schoolEvents";
 export const schoolEventTeacherTargets = sqliteTable(
   "school_event_teacher_targets",
   {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => uuidv4()),
-
     eventId: text("event_id")
       .notNull()
       .references(() => schoolEvents.id, { onDelete: "cascade" }),
@@ -22,5 +17,8 @@ export const schoolEventTeacherTargets = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
   },
+  (table) => ({
+    pk: primaryKey({ columns: [table.eventId, table.teacherId] }),
+  }),
 );
 
