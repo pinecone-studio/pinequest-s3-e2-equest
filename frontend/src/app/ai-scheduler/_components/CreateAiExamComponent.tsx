@@ -43,7 +43,7 @@ import {
   type CreateAiExamFormValues,
 } from "@/lib/ai-exam-form-validation";
 
-import { AiExamAnalyzePromptField } from "./AiExamAnalyzePromptField";
+import { AiExamAnalyzePromptField } from "@/app/ai-scheduler/_components/AiExamAnalyzePromptField";
 
 const BLOOM_SKILL_LEVELS = [
   "Мэдлэг",
@@ -353,9 +353,6 @@ export function CreateAiExamComponent() {
                   <CardTitle className="text-lg">
                     Шалгалтын толгой мэдээлэл
                   </CardTitle>
-                  <CardDescription>
-                    Гарчиг, хичээл, анги, багш, хугацаа
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2 sm:col-span-2">
@@ -429,14 +426,6 @@ export function CreateAiExamComponent() {
                   <CardTitle className="text-lg text-primary">
                     AI-аар асуулт шинжлүүлэх
                   </CardTitle>
-                  <CardDescription>
-                    Бодлого / асуултаа бичээд доорх товчоор шинжлүүлнэ. Хариу нь
-                    сервер дээрх{" "}
-                    <span className="font-medium text-foreground">
-                      Google Gemini
-                    </span>{" "}
-                    (эх сурвалжийг вэбээс татах grounding-тай).
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <AiExamAnalyzePromptField

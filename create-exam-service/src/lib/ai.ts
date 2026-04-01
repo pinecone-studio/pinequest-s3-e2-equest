@@ -84,6 +84,20 @@ export function classifyGeminiError(e: unknown): GeminiErrorInfo {
     };
   }
 
+  // Missing/invalid API key (often returned as 400 by Google APIs)
+  if (
+    msg.includes("api key not found") ||
+    msg.includes("api_key_invalid") ||
+    (msg.includes("400") && msg.includes("api key"))
+  ) {
+    return {
+      kind: "auth",
+      userMessage:
+        "Gemini API түлхүүр буруу эсвэл дамжуулагдаагүй байна. Cloudflare secret/local `.dev.vars` дахь `GOOGLE_AI_API_KEY` эсвэл `GEMINI_API_KEY`-г шалгана уу.",
+      rawMessage,
+    };
+  }
+
   // Quota/rate limiting
   if (msg.includes("quota") || msg.includes("exceeded your current quota")) {
     return {

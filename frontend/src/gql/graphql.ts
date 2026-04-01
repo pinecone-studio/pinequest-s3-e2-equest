@@ -149,6 +149,24 @@ export type FormatDistributionInput = {
   written: Scalars['Int']['input'];
 };
 
+export type GenerateQuestionAnswerInput = {
+  difficulty?: InputMaybe<Difficulty>;
+  format?: InputMaybe<QuestionFormat>;
+  points?: InputMaybe<Scalars['Int']['input']>;
+  prompt: Scalars['String']['input'];
+};
+
+export type GenerateQuestionAnswerResult = {
+  __typename?: 'GenerateQuestionAnswerResult';
+  correctAnswer: Scalars['String']['output'];
+  difficulty: Difficulty;
+  explanation: Scalars['String']['output'];
+  format: QuestionFormat;
+  options?: Maybe<Array<Scalars['String']['output']>>;
+  points: Scalars['Int']['output'];
+  questionText: Scalars['String']['output'];
+};
+
 export type GeneratedQuestion = {
   __typename?: 'GeneratedQuestion';
   correctAnswer?: Maybe<Scalars['String']['output']>;
@@ -172,6 +190,7 @@ export type Mutation = {
   approveAiExamSchedule: ExamSchedule;
   createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
+  generateQuestionAnswer: GenerateQuestionAnswerResult;
   /**
    * Багш AI-ийн санал (variant)-аас татгалзана. Үлдсэн санал байвал suggested хэвээр,
    * бүгд татгалзвал status = rejected болно.
@@ -201,6 +220,11 @@ export type MutationCreateAiExamTemplateArgs = {
 
 export type MutationGenerateExamQuestionsArgs = {
   input: ExamGenerationInput;
+};
+
+
+export type MutationGenerateQuestionAnswerArgs = {
+  input: GenerateQuestionAnswerInput;
 };
 
 

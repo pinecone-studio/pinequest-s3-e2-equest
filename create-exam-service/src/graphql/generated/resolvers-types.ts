@@ -151,6 +151,24 @@ export type FormatDistributionInput = {
   written: Scalars['Int']['input'];
 };
 
+export type GenerateQuestionAnswerInput = {
+  difficulty?: InputMaybe<Difficulty>;
+  format?: InputMaybe<QuestionFormat>;
+  points?: InputMaybe<Scalars['Int']['input']>;
+  prompt: Scalars['String']['input'];
+};
+
+export type GenerateQuestionAnswerResult = {
+  __typename?: 'GenerateQuestionAnswerResult';
+  correctAnswer: Scalars['String']['output'];
+  difficulty: Difficulty;
+  explanation: Scalars['String']['output'];
+  format: QuestionFormat;
+  options?: Maybe<Array<Scalars['String']['output']>>;
+  points: Scalars['Int']['output'];
+  questionText: Scalars['String']['output'];
+};
+
 export type GeneratedQuestion = {
   __typename?: 'GeneratedQuestion';
   correctAnswer?: Maybe<Scalars['String']['output']>;
@@ -174,6 +192,7 @@ export type Mutation = {
   approveAiExamSchedule: ExamSchedule;
   createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
+  generateQuestionAnswer: GenerateQuestionAnswerResult;
   /**
    * Багш AI-ийн санал (variant)-аас татгалзана. Үлдсэн санал байвал suggested хэвээр,
    * бүгд татгалзвал status = rejected болно.
@@ -203,6 +222,11 @@ export type MutationCreateAiExamTemplateArgs = {
 
 export type MutationGenerateExamQuestionsArgs = {
   input: ExamGenerationInput;
+};
+
+
+export type MutationGenerateQuestionAnswerArgs = {
+  input: GenerateQuestionAnswerInput;
 };
 
 
@@ -644,6 +668,8 @@ export type ResolversTypes = ResolversObject<{
   ExamStatus: ExamStatus;
   ExamType: ExamType;
   FormatDistributionInput: FormatDistributionInput;
+  GenerateQuestionAnswerInput: GenerateQuestionAnswerInput;
+  GenerateQuestionAnswerResult: ResolverTypeWrapper<GenerateQuestionAnswerResult>;
   GeneratedQuestion: ResolverTypeWrapper<GeneratedQuestion>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
@@ -688,6 +714,8 @@ export type ResolversParentTypes = ResolversObject<{
   ExamSchedule: ExamSchedule;
   ExamScheduleVariant: ExamScheduleVariant;
   FormatDistributionInput: FormatDistributionInput;
+  GenerateQuestionAnswerInput: GenerateQuestionAnswerInput;
+  GenerateQuestionAnswerResult: GenerateQuestionAnswerResult;
   GeneratedQuestion: GeneratedQuestion;
   ID: Scalars['ID']['output'];
   Int: Scalars['Int']['output'];
@@ -754,6 +782,16 @@ export type ExamScheduleVariantResolvers<ContextType = GraphQLContext, ParentTyp
   startTime?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 }>;
 
+export type GenerateQuestionAnswerResultResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['GenerateQuestionAnswerResult'] = ResolversParentTypes['GenerateQuestionAnswerResult']> = ResolversObject<{
+  correctAnswer?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  difficulty?: Resolver<ResolversTypes['Difficulty'], ParentType, ContextType>;
+  explanation?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  format?: Resolver<ResolversTypes['QuestionFormat'], ParentType, ContextType>;
+  options?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
+  points?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  questionText?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+}>;
+
 export type GeneratedQuestionResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['GeneratedQuestion'] = ResolversParentTypes['GeneratedQuestion']> = ResolversObject<{
   correctAnswer?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficulty?: Resolver<ResolversTypes['Difficulty'], ParentType, ContextType>;
@@ -769,6 +807,7 @@ export type MutationResolvers<ContextType = GraphQLContext, ParentType extends R
   approveAiExamSchedule?: Resolver<ResolversTypes['ExamSchedule'], ParentType, ContextType, RequireFields<MutationApproveAiExamScheduleArgs, 'examId' | 'variantId'>>;
   createAiExamTemplate?: Resolver<ResolversTypes['AiExamTemplatePayload'], ParentType, ContextType, RequireFields<MutationCreateAiExamTemplateArgs, 'input'>>;
   generateExamQuestions?: Resolver<ResolversTypes['ExamGenerationResult'], ParentType, ContextType, RequireFields<MutationGenerateExamQuestionsArgs, 'input'>>;
+  generateQuestionAnswer?: Resolver<ResolversTypes['GenerateQuestionAnswerResult'], ParentType, ContextType, RequireFields<MutationGenerateQuestionAnswerArgs, 'input'>>;
   rejectAiExamScheduleVariant?: Resolver<ResolversTypes['ExamSchedule'], ParentType, ContextType, RequireFields<MutationRejectAiExamScheduleVariantArgs, 'examId' | 'variantId'>>;
   requestAiExamSchedule?: Resolver<ResolversTypes['RequestExamSchedulePayload'], ParentType, ContextType, RequireFields<MutationRequestAiExamScheduleArgs, 'classId' | 'preferredDate' | 'testId'>>;
   saveExam?: Resolver<ResolversTypes['SaveExamPayload'], ParentType, ContextType, RequireFields<MutationSaveExamArgs, 'input'>>;
@@ -962,6 +1001,7 @@ export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   ExamGenerationResult?: ExamGenerationResultResolvers<ContextType>;
   ExamSchedule?: ExamScheduleResolvers<ContextType>;
   ExamScheduleVariant?: ExamScheduleVariantResolvers<ContextType>;
+  GenerateQuestionAnswerResult?: GenerateQuestionAnswerResultResolvers<ContextType>;
   GeneratedQuestion?: GeneratedQuestionResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
   NewMathExam?: NewMathExamResolvers<ContextType>;

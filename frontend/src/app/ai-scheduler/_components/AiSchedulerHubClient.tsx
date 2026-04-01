@@ -1,22 +1,26 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
-import { CalendarClock, CalendarDays, FileQuestion } from "lucide-react";
+import { CalendarClock, CalendarDays, FileQuestion, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AiTeacherPersonalScheduler } from "@/app/ai-scheduler-teacher/_components/AiTeacherPersonalScheduler";
-import { SchoolEventScheduler } from "@/app/ai-scheduler-school-event/_components/SchoolEventScheduler";
+import { AiTeacherPersonalScheduler } from "@/app/ai-scheduler/_components/AiTeacherPersonalScheduler";
+import { AiStudentPersonalScheduler } from "@/app/ai-scheduler/_components/AiStudentPersonalScheduler";
+import GenerateExamPage from "@/app/ai-scheduler/_components/GenerateExamPage";
+import { SchoolEventScheduler } from "@/app/ai-scheduler/_components/SchoolEventScheduler";
 
 export function AiSchedulerHubClient() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
-	const view = searchParams.get("view") === "school" ? "school" : "personal";
+	const rawView = searchParams.get("view");
+	const view =
+		rawView === "school" || rawView === "student" || rawView === "generate"
+			? rawView
+			: "teacher";
 
 	const setView = useCallback(
-		(next: "personal" | "school") => {
-			const url =
-				next === "school" ? "/ai-scheduler?view=school" : "/ai-scheduler";
+		(next: "teacher" | "student" | "school" | "generate") => {
+			const url = next === "teacher" ? "/ai-scheduler" : `/ai-scheduler?view=${next}`;
 			router.replace(url, { scroll: false });
 		},
 		[router],
@@ -57,31 +61,49 @@ export function AiSchedulerHubClient() {
 					</button>
 					<button
 						type="button"
-						onClick={() => setView("personal")}
+						onClick={() => setView("teacher")}
 						className={cn(
 							navBtn,
-							view === "personal" ? navActive : navInactive,
+							view === "teacher" ? navActive : navInactive,
 						)}
-						aria-current={view === "personal" ? "page" : undefined}
+						aria-current={view === "teacher" ? "page" : undefined}
 					>
 						<CalendarClock className="size-5 shrink-0 text-emerald-600" strokeWidth={1.75} />
 						<span className="min-w-0">Багшийн хувийн хуваарь</span>
 					</button>
-					<Link
-						href="/ai-exam"
+					<button
+						type="button"
+						onClick={() => setView("student")}
 						className={cn(
 							navBtn,
-							"text-zinc-600 no-underline hover:bg-zinc-100 hover:text-zinc-900",
+							view === "student" ? navActive : navInactive,
 						)}
+						aria-current={view === "student" ? "page" : undefined}
+					>
+						<GraduationCap className="size-5 shrink-0 text-violet-600" strokeWidth={1.75} />
+						<span className="min-w-0">Сурагчийн хувийн хуваарь</span>
+					</button>
+					<button
+						type="button"
+						onClick={() => setView("generate")}
+						className={cn(
+							navBtn,
+							view === "generate" ? navActive : navInactive,
+						)}
+						aria-current={view === "generate" ? "page" : undefined}
 					>
 						<FileQuestion className="size-5 shrink-0 text-amber-600" strokeWidth={1.75} />
 						<span className="min-w-0">Шалгалт үүсгэх</span>
-					</Link>
+					</button>
 				</nav>
 			</aside>
 			<div className="min-h-screen min-w-0 flex-1">
 				{view === "school" ? (
 					<SchoolEventScheduler shellMode />
+				) : view === "generate" ? (
+					<GenerateExamPage />
+				) : view === "student" ? (
+					<AiStudentPersonalScheduler shellMode />
 				) : (
 					<AiTeacherPersonalScheduler shellMode />
 				)}

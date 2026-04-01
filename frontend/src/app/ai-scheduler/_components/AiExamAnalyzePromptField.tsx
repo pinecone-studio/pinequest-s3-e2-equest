@@ -75,12 +75,6 @@ export function AiExamAnalyzePromptField({
           />
         </div>
       ) : null}
-      <p className="text-muted-foreground text-xs">
-        Word/PDF-аас буулгахад зөвхөн энгийн текст авна; урагшлах зай, ухаалаг
-        ташуу зэргийг энгийн тэмдэг болгоно. Томьёонд{" "}
-        <span className="font-mono">\\frac{"{}"}</span>,{" "}
-        <span className="font-mono">$...$</span> хэрэглээрэй.
-      </p>
     </div>
   );
 }

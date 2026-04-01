@@ -134,6 +134,23 @@ export const typeDefs = /* GraphQL */ `
     skillLevel: String
   }
 
+  input GenerateQuestionAnswerInput {
+    prompt: String!
+    points: Int
+    difficulty: Difficulty
+    format: QuestionFormat
+  }
+
+  type GenerateQuestionAnswerResult {
+    questionText: String!
+    format: QuestionFormat!
+    difficulty: Difficulty!
+    points: Int!
+    options: [String!]
+    correctAnswer: String!
+    explanation: String!
+  }
+
   input CreateAiExamTemplateInput {
     title: String!
     subject: String!
@@ -349,6 +366,7 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
+    generateQuestionAnswer(input: GenerateQuestionAnswerInput!): GenerateQuestionAnswerResult!
     generateExamQuestions(input: ExamGenerationInput!): ExamGenerationResult!
     saveExam(input: SaveExamInput!): SaveExamPayload!
     saveNewMathExam(input: SaveNewMathExamInput!): SaveNewMathExamPayload!

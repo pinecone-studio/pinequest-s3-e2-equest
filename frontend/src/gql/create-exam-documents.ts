@@ -64,6 +64,20 @@ export const AnalyzeQuestionDocument = gql(`
 	}
 `);
 
+export const GenerateQuestionAnswerDocument = gql(`
+	mutation GenerateQuestionAnswer($input: GenerateQuestionAnswerInput!) {
+		generateQuestionAnswer(input: $input) {
+			questionText
+			format
+			difficulty
+			points
+			options
+			correctAnswer
+			explanation
+		}
+	}
+`);
+
 export const CreateAiExamTemplateDocument = gql(`
 	mutation CreateAiExamTemplate($input: CreateAiExamTemplateInput!) {
 		createAiExamTemplate(input: $input) {

@@ -579,7 +579,7 @@ export function SchoolEventScheduler({
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <SchedulerAppearanceMenu />
             <Link
-              href={shellMode ? "/ai-scheduler" : "/ai-scheduler-teacher"}
+              href="/ai-scheduler"
               className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
             >
               Багшийн хуваарь
@@ -1115,7 +1115,7 @@ export function SchoolEventScheduler({
                       </strong>{" "}
                       тусдаа давхаргаар сонгогдоно. Багшийн хуанли —{" "}
                       <Link
-                        href="/ai-scheduler-teacher"
+                        href="/ai-scheduler"
                         className="font-medium text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                       >
                         Багшийн хуваарь

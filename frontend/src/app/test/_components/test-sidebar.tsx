@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   BarChart3,
+  CalendarClock,
   ClipboardCheck,
+  FileQuestion,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,8 +43,13 @@ const navigationItems: NavigationItem[] = [
   },
   {
     href: "/test/material-builder",
-    icon: ClipboardCheck,
+    icon: FileQuestion,
     label: "Шалгалтын материал үүсгэх",
+  },
+  {
+    href: "/ai-scheduler",
+    icon: CalendarClock,
+    label: "Шалгалт товлох",
   },
 ];
 
@@ -51,28 +58,25 @@ export function TestSidebar() {
 
   return (
     <aside className="row-start-2 col-start-1 overflow-y-auto border-r border-slate-200 bg-[#f3f6f9] p-2">
-      <nav className="space-y-1">
+      <nav className="space-y-2">
         {navigationItems.map((item) => {
           const isActive =
             !item.disabled &&
             Boolean(
               item.href &&
-                (pathname === item.href || pathname.startsWith(`${item.href}/`)),
+              (pathname === item.href || pathname.startsWith(`${item.href}/`)),
             );
 
-          const count =
-            item.label === "Шалгалтын тайлан"
-              ? "12"
-              : item.label === "Шалгалтын материал үүсгэх"
-                ? "3"
-                : undefined;
+          const count = item.label === "Шалгалтын тайлан" ? "12" : undefined;
+          const iconClassName =
+            item.label === "Шалгалтын материал үүсгэх" ? "h-5 w-5" : "h-4 w-4";
 
-          const className = `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+          const className = `flex w-full items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-left text-sm font-medium transition-all duration-200 ${
             isActive
-              ? "bg-[#e6f5fd] text-[#1287c7]"
+              ? "border-[#d6ebfb] bg-[#e6f5fd] text-[#1287c7] shadow-sm"
               : item.disabled
                 ? "cursor-not-allowed text-slate-400 opacity-70"
-                : "text-slate-700 hover:bg-slate-100"
+                : "text-slate-700 hover:-translate-y-0.5 hover:border-slate-200 hover:bg-slate-100 hover:shadow-sm"
           }`;
 
           if (item.disabled) {
@@ -83,7 +87,7 @@ export function TestSidebar() {
                 disabled
                 className={className}
               >
-                <item.icon className="h-4 w-4" />
+                <item.icon className={iconClassName} />
                 <span>{item.label}</span>
               </button>
             );
@@ -91,7 +95,7 @@ export function TestSidebar() {
 
           return (
             <Link key={item.label} href={item.href} className={className}>
-              <item.icon className="h-4 w-4" />
+              <item.icon className={iconClassName} />
               <span>{item.label}</span>
               {count ? (
                 <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-200 px-1 text-[11px] font-semibold text-slate-700">

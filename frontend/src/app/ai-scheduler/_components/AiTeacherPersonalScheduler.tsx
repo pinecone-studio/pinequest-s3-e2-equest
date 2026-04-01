@@ -1546,11 +1546,7 @@ export function AiTeacherPersonalScheduler({
               </div>
               <div className="flex flex-1 flex-col gap-1 px-2 py-3">
                 <Link
-                  href={
-                    shellMode
-                      ? "/ai-scheduler?view=school"
-                      : "/ai-scheduler-school-event"
-                  }
+                  href="/ai-scheduler?view=school"
                   title="Сургуулийн хуанли"
                   aria-label="Сургуулийн хуанли руу очих"
                   className="flex size-11 cursor-pointer items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-blue-200"
@@ -1562,7 +1558,7 @@ export function AiTeacherPersonalScheduler({
                   />
                 </Link>
                 <Link
-                  href="/ai-scheduler-student"
+                  href="/ai-scheduler?view=student"
                   title="Сурагчийн хуанли"
                   aria-label="Сурагчийн хуанли руу очих"
                   className="flex size-11 cursor-pointer items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-blue-200"
