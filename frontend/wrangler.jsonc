@@ -9,22 +9,17 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "frontend",
-  "main": ".open-next/worker.js",
+  "main": "src/worker.ts",
   "workers_dev": true,
   "compatibility_date": "2026-03-17",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "binding": "ASSETS",
-    "directory": ".open-next/assets",
+    "directory": "out",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"],
   },
-  "services": [
-    {
-      // Self-reference service binding, the service name must match the worker name
-      // see https://opennext.js.org/cloudflare/caching
-      "binding": "WORKER_SELF_REFERENCE",
-      "service": "frontend",
-    },
-  ],
   "observability": {
     "enabled": true,
   },
@@ -52,8 +47,11 @@
     "NEXT_PUBLIC_CREATE_EXAM_GRAPHQL_URL": "https://create-exam-service.tsetsegulziiocherdene.workers.dev/api/graphql",
     "OLLAMA_BASE_URL": "https://fax-guides-draw-minority.trycloudflare.com",
     "OLLAMA_MODEL": "llama3.1:latest",
+    "GEMINI_MODEL": "gemini-2.5-flash",
   },
-  // Secret example:
+  // Secret examples:
+  // wrangler secret put ABLY_API_KEY
+  // wrangler secret put GEMINI_API_KEY
   // wrangler secret put OLLAMA_API_KEY
   //
   // Stable public URL setup:

@@ -7,10 +7,15 @@ import type {
   ExtractExamRequest,
   GeneratedExamPayload,
   GeneratedExamSourceImagePayload,
-} from "@/lib/math-exam-contract";
-import { parseLocalExamPayload } from "@/lib/local-exam-parser";
-import { parseGeminiJson } from "@/lib/parse-gemini-json";
-import { buildGeminiErrorResponse } from "@/lib/gemini-error";
+} from "../lib/math-exam-contract";
+import { parseLocalExamPayload } from "../lib/local-exam-parser";
+import { parseGeminiJson } from "../lib/parse-gemini-json";
+import { buildGeminiErrorResponse } from "../lib/gemini-error";
+
+export type GeminiExtractWorkerEnv = {
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
+};
 
 const DOCX_MIME_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -1500,7 +1505,10 @@ async function normalizeAttachments(attachments: AttachmentPayload[]) {
   };
 }
 
-export async function POST(request: Request) {
+export async function handleGeminiExtractPost(
+  request: Request,
+  env: GeminiExtractWorkerEnv,
+) {
   try {
     const body = (await request.json()) as ExtractExamRequest;
     const attachments = Array.isArray(body.attachments) ? body.attachments : [];
@@ -1540,7 +1548,7 @@ export async function POST(request: Request) {
       return Response.json({ exam: localExam });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = env.GEMINI_API_KEY?.trim();
 
     if (!apiKey) {
       return Response.json(
@@ -1549,7 +1557,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+    const model = env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
     const uploadedFiles = await Promise.all(
       binaryAttachments.map((attachment) =>
         uploadGeminiFile({

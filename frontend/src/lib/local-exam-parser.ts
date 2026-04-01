@@ -2,7 +2,7 @@ import type {
   GeneratedExamPayload,
   GeneratedExamQuestionPayload,
   GeneratedExamSourceImagePayload,
-} from "@/lib/math-exam-contract";
+} from "./math-exam-contract";
 
 type LocalExamTextSource = {
   answerKeyHints?: string[];

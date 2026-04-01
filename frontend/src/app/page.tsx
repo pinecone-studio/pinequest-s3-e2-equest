@@ -1,5 +1,14 @@
-import MathExam from "@/components/exam/math-exam";
+"use client";
 
-export default function Home() {
-  return <MathExam />;
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export default function HomePage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/test/live-dashboard");
+  }, [router]);
+
+  return null;
 }

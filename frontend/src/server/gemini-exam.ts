@@ -2,9 +2,14 @@ import type {
   DifficultyLevel,
   GenerateExamRequest,
   GeneratedExamPayload,
-} from "@/lib/math-exam-contract";
-import { buildGeminiErrorResponse } from "@/lib/gemini-error";
-import { parseGeminiJson } from "@/lib/parse-gemini-json";
+} from "../lib/math-exam-contract";
+import { buildGeminiErrorResponse } from "../lib/gemini-error";
+import { parseGeminiJson } from "../lib/parse-gemini-json";
+
+export type GeminiWorkerEnv = {
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
+};
 
 function difficultyLabel(level: DifficultyLevel) {
   if (level === "easy") {
@@ -82,7 +87,10 @@ async function uploadGeminiFile({
   };
 }
 
-export async function POST(request: Request) {
+export async function handleGeminiExamPost(
+  request: Request,
+  env: GeminiWorkerEnv,
+) {
   try {
     const body = (await request.json()) as GenerateExamRequest;
     const mcqCount = Math.max(0, Number(body.mcqCount ?? 0));
@@ -107,7 +115,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = env.GEMINI_API_KEY?.trim();
 
     if (!apiKey) {
       return Response.json(
@@ -116,7 +124,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+    const model = env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
     const textAttachments = attachments.filter((attachment) => attachment.text?.trim());
     const binaryAttachments = attachments.filter((attachment) => attachment.data?.trim());
     const uploadedFiles = await Promise.all(
