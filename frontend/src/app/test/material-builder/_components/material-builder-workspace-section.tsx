@@ -12,6 +12,7 @@ import {
   FileText,
   GripVertical,
   Keyboard,
+  Lightbulb,
   Loader2,
   Plus,
   RefreshCcw,
@@ -49,6 +50,7 @@ import {
   sourceOptions,
   type MaterialSourceId,
 } from "./material-builder-config";
+import { normalizeBackendMathText } from "@/lib/normalize-math-text";
 import {
   materialBuilderDemoQuestions,
   type MaterialBuilderDemoQuestion,
@@ -70,18 +72,36 @@ export type PreviewQuestion = {
   id: string;
   index: number;
   question: string;
+  questionType: "single-choice" | "written";
   answers: string[];
   correct: number;
   points: number;
   source: string;
+  explanation?: string;
 };
 
 const initialPreviewQuestions: PreviewQuestion[] = [];
 const mathAssistFieldClassName =
-  "rounded-[20px]! border-[#b8e5d7]! bg-[#edf8f4]! px-4! py-3! hover:border-[#98d4c3]! focus-visible:border-[#89cab8]! focus-visible:ring-[#89cab8]/20";
+  "rounded-[20px]! border-[#b8e5d7]! bg-[#edf8f4]! px-3! py-2.5! hover:border-[#98d4c3]! focus-visible:border-[#89cab8]! focus-visible:ring-[#89cab8]/20";
 const answerMathAssistFieldClassName = `${mathAssistFieldClassName} h-11! min-h-11!`;
 const mathAssistFieldContentClassName =
-  "pl-1.5 font-sans text-[14px] leading-[1.6] font-normal tracking-normal text-slate-800 [&_.katex]:text-inherit";
+  "pl-3 font-sans text-[14px] leading-[1.6] font-normal tracking-normal text-slate-800 [&_.katex]:text-inherit";
+
+function normalizeGeneratedExplanationText(value: string) {
+  return normalizeBackendMathText(value)
+    .replace(/\\\$/g, "$")
+    .replace(/\$([^$]+)\$/g, "$1")
+    .replace(/\\([(){}[\]])/g, "$1")
+    .replace(/\\times/g, " x ")
+    .replace(/\\circ/g, "°")
+    .replace(/\\cdot/g, " x ")
+    .replace(/\\sqrt\{([^}]+)\}/g, "sqrt($1)")
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, "($1)/($2)")
+    .replace(/\$/g, "")
+    .replace(/\\/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 
 const workspaceSourceOptions = sourceOptions.filter(
   (
@@ -208,13 +228,17 @@ function QuestionBankPanel({
   const [questionTypeValue, setQuestionTypeValue] = useState("single-choice");
   const [difficultyValue, setDifficultyValue] = useState("medium");
   const isAiWorking = generating || regenerating;
+  const isWrittenQuestion = questionTypeValue === "written";
   const minimumRequiredAnswers = questionTypeValue === "written" ? 1 : 2;
   const filledAnswersCount = answers.filter(
     (answer) => answer.trim().length > 0,
   ).length;
   const canAppendQuestion =
     questionText.trim().length > 0 &&
-    filledAnswersCount >= minimumRequiredAnswers;
+    filledAnswersCount >= minimumRequiredAnswers &&
+    (isWrittenQuestion ||
+      (selectedAnswerIndex !== null &&
+        Boolean(answers[selectedAnswerIndex]?.trim())));
 
   function handleAddAnswer() {
     setAnswers((prev) => [...prev, ""]);
@@ -266,7 +290,7 @@ function QuestionBankPanel({
     setSelectedAnswerIndex(
       matchedCorrectAnswerIndex >= 0 ? matchedCorrectAnswerIndex : null,
     );
-    setGeneratedExplanation(payload.explanation);
+    setGeneratedExplanation(normalizeGeneratedExplanationText(payload.explanation));
     setShowCorrectAnswerError(false);
     setShowAnswerCountError(false);
     setScoreValue(String(payload.points ?? 1));
@@ -431,7 +455,10 @@ function QuestionBankPanel({
       setShowAnswerCountError(false);
     }
 
-    if (selectedAnswerIndex === null || !answers[selectedAnswerIndex]?.trim()) {
+    if (
+      !isWrittenQuestion &&
+      (selectedAnswerIndex === null || !answers[selectedAnswerIndex]?.trim())
+    ) {
       setShowCorrectAnswerError(true);
     } else {
       setShowCorrectAnswerError(false);
@@ -440,18 +467,22 @@ function QuestionBankPanel({
     if (
       !trimmedQuestion ||
       normalizedAnswers.length < minimumRequiredAnswers ||
-      selectedAnswerIndex === null ||
-      !answers[selectedAnswerIndex]?.trim()
+      (!isWrittenQuestion &&
+        (selectedAnswerIndex === null || !answers[selectedAnswerIndex]?.trim()))
     ) {
       return;
     }
 
     onAppendQuestion({
       question: trimmedQuestion,
+      questionType: isWrittenQuestion ? "written" : "single-choice",
       answers: normalizedAnswers,
-      correct: normalizedAnswers.indexOf(answers[selectedAnswerIndex].trim()),
+      correct: isWrittenQuestion
+        ? 0
+        : normalizedAnswers.indexOf(answers[selectedAnswerIndex!].trim()),
       points: scoreValue ? Number(scoreValue) : 1,
       source: "Гараар",
+      explanation: isWrittenQuestion ? generatedExplanation.trim() || undefined : undefined,
     });
 
     setQuestionText("");
@@ -641,7 +672,7 @@ function QuestionBankPanel({
           placeholder="Асуултаа энд бичнэ үү..."
         />
         {showQuestionError ? (
-          <p className="mt-2 text-[12px] text-red-500">Асуултаа оруулна уу</p>
+          <p className="text-[12px] text-red-500">Асуултаа оруулна уу</p>
         ) : null}
       </div>
       <Button
@@ -660,100 +691,134 @@ function QuestionBankPanel({
       </Button>
 
       <div className="space-y-3 rounded-[16px] border border-[#e2e8f0] bg-white p-4">
-        <div className="flex items-center justify-between">
-          <p className="text-[14px] font-semibold text-slate-900">Хариултууд</p>
-          <button
-            type="button"
-            onClick={handleAddAnswer}
-            className="inline-flex cursor-pointer items-center gap-1 text-[13px] font-medium text-[#0b5cab]"
-          >
-            <Plus className="h-4 w-4" />
-            Хариулт нэмэх
-          </button>
-        </div>
-        {answers.map((label, index) => (
-          <div key={`answer-${index}`} className="space-y-2">
-            <div className="grid grid-cols-[24px_minmax(0,1fr)_24px] items-center gap-3">
+        {isWrittenQuestion ? (
+          <>
+            <div className="space-y-1">
+              <p className="text-[14px] font-semibold text-slate-900">
+                Нээлттэй асуултын хариулт
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Textarea
+                value={answers[0] ?? ""}
+                onChange={(event) => handleAnswerChange(0, event.target.value)}
+                placeholder="Хариултыг энд бичнэ үү..."
+                className="min-h-[20px] resize-y rounded-[16px] border-[#b8e5d7] bg-[#edf8f4] px-4 py-3 text-[14px] leading-6 text-slate-800 placeholder:text-slate-400 focus-visible:border-[#89cab8] focus-visible:ring-[#89cab8]/20"
+              />
+              {showAnswerCountError ? (
+                <p className="text-[12px] text-red-500">Хариултаа оруулна уу</p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <p className="text-[14px] font-semibold text-slate-900">
+                Бодолт / Тайлбар
+              </p>
+              <Textarea
+                value={generatedExplanation}
+                onChange={(event) =>
+                  setGeneratedExplanation(event.target.value)
+                }
+                placeholder="Бодолт, тайлбараа энд бичнэ үү..."
+                className="min-h-[120px] resize-y rounded-[16px] border-[#b8e5d7] bg-[#edf8f4] px-4 py-3 text-[14px] leading-6 text-slate-800 placeholder:text-slate-400 focus-visible:border-[#89cab8] focus-visible:ring-[#89cab8]/20"
+              />
+            </div>
+            <div className="flex items-center gap-2 rounded-[14px] border border-[#d8e7ff] bg-[#eef5ff] px-4 py-3 text-[14px] leading-6 text-[#365fc7]">
+              <Lightbulb className="h-4 w-4 shrink-0 text-[#f2c94c]" />
+              <p>Нээлттэй асуултыг гараар шалгах шаардлагатай.</p>
+            </div>
+            {generatedExplanation ? (
               <button
                 type="button"
-                role="button"
-                onClick={() => {
-                  setSelectedAnswerIndex(index);
-                  setShowCorrectAnswerError(false);
-                }}
-                className={cn(
-                  "flex h-6 w-6 place-self-center cursor-pointer items-center justify-center rounded-full border transition",
-                  index === selectedAnswerIndex
-                    ? "border-[#0b5cab] bg-[#e8f1ff] shadow-[0_0_0_3px_rgba(11,92,171,0.08)]"
-                    : "border-[#cbd9ee] bg-white hover:border-[#9fbae3]",
+                onClick={() => void handleRegenerateAnswer()}
+                disabled={isAiWorking}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-transparent px-3 py-2 text-[14px] font-medium text-slate-700 transition hover:border-[#dbe4f3] hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {regenerating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4" />
                 )}
-                aria-label={`Хариулт ${index + 1}-ийг зөв гэж сонгох`}
-              >
-                <span
-                  className={cn(
-                    "h-2.5 w-2.5 rounded-full transition",
-                    index === selectedAnswerIndex
-                      ? "bg-[#0b5cab]"
-                      : "bg-transparent",
-                  )}
-                />
+                {regenerating ? "Дахин үүсгэж байна..." : "Дахин үүсгүүлэх"}
               </button>
-              <div className="min-w-0">
-                <MathAssistField
-                  className={answerMathAssistFieldClassName}
-                  contentClassName={mathAssistFieldContentClassName}
-                  value={label}
-                  onChange={(nextValue) => handleAnswerChange(index, nextValue)}
-                  placeholder={`Хариулт ${index + 1}`}
-                />
-              </div>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between">
+              <p className="text-[14px] font-semibold text-slate-900">
+                Хариултууд
+              </p>
               <button
                 type="button"
-                onClick={() => handleRemoveAnswer(index)}
-                className="flex h-6 w-6 place-self-center cursor-pointer items-center justify-center text-slate-500 transition hover:text-slate-700"
-                aria-label="Хариулт устгах"
+                onClick={handleAddAnswer}
+                className="inline-flex cursor-pointer items-center gap-1 text-[13px] font-medium text-[#0b5cab]"
               >
-                <X className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
+                Хариулт нэмэх
               </button>
             </div>
-          </div>
-        ))}
-        {showCorrectAnswerError ? (
-          <p
-            className={cn(
-              "text-[12px]",
-              showCorrectAnswerError ? "text-red-500" : "text-slate-500",
-            )}
-          >
-            Зөв хариултыг сонгоно уу
-          </p>
-        ) : null}
-        {questionTypeValue === "written" && generatedExplanation ? (
-          <div className="space-y-2">
-            <p className="text-[14px] font-semibold text-slate-900">
-              Бодолт / Тайлбар
-            </p>
-            <Textarea
-              value={generatedExplanation}
-              readOnly
-              className={explanationClassName}
-            />
-            <button
-              type="button"
-              onClick={() => void handleRegenerateAnswer()}
-              disabled={isAiWorking}
-              className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-transparent px-3 py-2 text-[14px] font-medium text-slate-700 transition hover:border-[#dbe4f3] hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {regenerating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCcw className="h-4 w-4" />
-              )}
-              {regenerating ? "Дахин үүсгэж байна..." : "Дахин үүсгүүлэх"}
-            </button>
-          </div>
-        ) : null}
-        {showAnswerCountError ? (
+            {answers.map((label, index) => (
+              <div key={`answer-${index}`} className="space-y-2">
+                <div className="grid grid-cols-[24px_minmax(0,1fr)_24px] items-center gap-3">
+                  <button
+                    type="button"
+                    role="button"
+                    onClick={() => {
+                      setSelectedAnswerIndex(index);
+                      setShowCorrectAnswerError(false);
+                    }}
+                    className={cn(
+                      "flex h-6 w-6 place-self-center cursor-pointer items-center justify-center rounded-full border transition",
+                      index === selectedAnswerIndex
+                        ? "border-[#0b5cab] bg-[#e8f1ff] shadow-[0_0_0_3px_rgba(11,92,171,0.08)]"
+                        : "border-[#cbd9ee] bg-white hover:border-[#9fbae3]",
+                    )}
+                    aria-label={`Хариулт ${index + 1}-ийг зөв гэж сонгох`}
+                  >
+                    <span
+                      className={cn(
+                        "h-2.5 w-2.5 rounded-full transition",
+                        index === selectedAnswerIndex
+                          ? "bg-[#0b5cab]"
+                          : "bg-transparent",
+                      )}
+                    />
+                  </button>
+                  <div className="min-w-0">
+                    <MathAssistField
+                      className={answerMathAssistFieldClassName}
+                      contentClassName={mathAssistFieldContentClassName}
+                      value={label}
+                      onChange={(nextValue) =>
+                        handleAnswerChange(index, nextValue)
+                      }
+                      placeholder={`Хариулт ${index + 1}`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAnswer(index)}
+                    className="flex h-6 w-6 place-self-center cursor-pointer items-center justify-center text-slate-500 transition hover:text-slate-700"
+                    aria-label="Хариулт устгах"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {showCorrectAnswerError ? (
+              <p
+                className={cn(
+                  "text-[12px]",
+                  showCorrectAnswerError ? "text-red-500" : "text-slate-500",
+                )}
+              >
+                Зөв хариултыг сонгоно уу
+              </p>
+            ) : null}
+          </>
+        )}
+        {!isWrittenQuestion && showAnswerCountError ? (
           <p className="text-[12px] text-red-500">
             {minimumRequiredAnswers >= 2
               ? "2-оос дээш хариулт оруулна уу"
@@ -1046,6 +1111,8 @@ function PreviewQuestionCard({
   onDropOnTarget: () => void;
 }) {
   const sourceBadge = getQuestionSourceBadge(question.source);
+  const isWrittenQuestion = question.questionType === "written";
+  const [isExplanationExpanded, setIsExplanationExpanded] = useState(false);
 
   return (
     <div
@@ -1134,28 +1201,80 @@ function PreviewQuestionCard({
               </div>
             </div>
           </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            {question.answers.map((answer, index) => (
-              <div
-                key={`${answer}-${index}`}
-                className={cn(
-                  "rounded-[14px] px-4 py-3 text-[14px] text-slate-700",
-                  index === question.correct
-                    ? "border border-[#a8ddd0] bg-[#d8f2ea] text-[#167e61]"
-                    : "bg-[#eef2f6]",
-                )}
-              >
-                <div className="flex items-start gap-1.5">
-                  <span>{String.fromCharCode(65 + index)}.</span>
+          {isWrittenQuestion ? (
+            <div className="mt-3 space-y-3">
+              {(question.answers[0] ?? "").trim() ? (
+                <div className="rounded-[14px] border border-[#a8ddd0] bg-[#d8f2ea] px-4 py-3 text-[14px] text-[#167e61]">
+                  <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#167e61]/80">
+                    Жишиг хариулт
+                  </p>
                   <MathPreviewText
-                    content={answer}
+                    content={question.answers[0] ?? ""}
                     contentSource="preview"
-                    className="min-w-0 text-[14px] leading-relaxed"
+                    className="text-[14px] leading-relaxed"
                   />
                 </div>
-              </div>
-            ))}
-          </div>
+              ) : null}
+              {question.explanation?.trim() ? (
+                <div className="rounded-[14px] bg-[#f5f8fc] px-4 py-3 text-[14px] text-slate-700">
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                      Бодолт / Тайлбар
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setIsExplanationExpanded((current) => !current)
+                      }
+                      className="inline-flex cursor-pointer items-center gap-1 text-[12px] font-semibold text-slate-500 transition hover:text-slate-700"
+                    >
+                      {isExplanationExpanded ? (
+                        <>
+                          <ChevronUp className="h-3.5 w-3.5" />
+                          Хураах
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-3.5 w-3.5" />
+                          Дэлгэх
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {isExplanationExpanded ? (
+                    <MathPreviewText
+                      content={question.explanation}
+                      contentSource="preview"
+                      className="text-[14px] leading-relaxed"
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              {question.answers.map((answer, index) => (
+                <div
+                  key={`${answer}-${index}`}
+                  className={cn(
+                    "rounded-[14px] px-4 py-3 text-[14px] text-slate-700",
+                    index === question.correct
+                      ? "border border-[#a8ddd0] bg-[#d8f2ea] text-[#167e61]"
+                      : "bg-[#eef2f6]",
+                  )}
+                >
+                  <div className="flex items-start gap-1.5">
+                    <span>{String.fromCharCode(65 + index)}.</span>
+                    <MathPreviewText
+                      content={answer}
+                      contentSource="preview"
+                      className="min-w-0 text-[14px] leading-relaxed"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge
               className={cn(
@@ -1375,68 +1494,69 @@ export function MaterialBuilderWorkspaceSection({
 
           <div
             className={cn(
-              previewQuestions.length > 5 && "min-h-0 flex-1 overflow-y-auto pr-2",
+              previewQuestions.length > 5 &&
+                "min-h-0 flex-1 overflow-y-auto pr-2",
             )}
           >
-          {previewQuestions.length === 0 ? (
-            <div className="flex min-h-[340px] flex-col items-center justify-center rounded-[20px] border border-dashed border-[#dbe4f3] bg-[#fcfdff] px-6 text-center">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#eef3f9] text-slate-500">
-                <FileText className="h-9 w-9" />
+            {previewQuestions.length === 0 ? (
+              <div className="flex min-h-[340px] flex-col items-center justify-center rounded-[20px] border border-dashed border-[#dbe4f3] bg-[#fcfdff] px-6 text-center">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#eef3f9] text-slate-500">
+                  <FileText className="h-9 w-9" />
+                </div>
+                <p className="mt-6 text-[18px] font-semibold text-slate-900">
+                  Асуулт байхгүй байна
+                </p>
+                <div className="mt-3 space-y-0 text-[14px] leading-6 text-slate-500">
+                  <p>Зүүн талын 3 аргын аль нэгийг ашиглан асуулт нэмнэ үү.</p>
+                  <p>Олон арга хольж ашиглаж болно.</p>
+                </div>
               </div>
-              <p className="mt-6 text-[18px] font-semibold text-slate-900">
-                Асуулт байхгүй байна
-              </p>
-              <div className="mt-3 space-y-0 text-[14px] leading-6 text-slate-500">
-                <p>Зүүн талын 3 аргын аль нэгийг ашиглан асуулт нэмнэ үү.</p>
-                <p>Олон арга хольж ашиглаж болно.</p>
+            ) : (
+              <div className="space-y-4">
+                {previewQuestions.map((question) => (
+                  <PreviewQuestionCard
+                    key={question.id}
+                    question={question}
+                    onDelete={() => handleDeleteQuestion(question.id)}
+                    onMoveUp={() => handleMoveQuestion(question.id, "up")}
+                    onMoveDown={() => handleMoveQuestion(question.id, "down")}
+                    canMoveUp={question.index > 1}
+                    canMoveDown={question.index < previewQuestions.length}
+                    isDragging={draggedQuestionId === question.id}
+                    isDragTarget={
+                      dragTargetQuestionId === question.id &&
+                      draggedQuestionId !== question.id
+                    }
+                    onDragHandleStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      setDraggedQuestionId(question.id);
+                      setDragTargetQuestionId(question.id);
+                    }}
+                    onDragHandleEnd={() => {
+                      setDraggedQuestionId(null);
+                      setDragTargetQuestionId(null);
+                    }}
+                    onDragTargetEnter={() => {
+                      if (!draggedQuestionId) return;
+                      setDragTargetQuestionId(question.id);
+                    }}
+                    onDragTargetOver={(event) => {
+                      event.preventDefault();
+                      if (!draggedQuestionId) return;
+                      event.dataTransfer.dropEffect = "move";
+                      setDragTargetQuestionId(question.id);
+                    }}
+                    onDropOnTarget={() => handleDropQuestion(question.id)}
+                  />
+                ))}
               </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {previewQuestions.map((question) => (
-                <PreviewQuestionCard
-                  key={question.id}
-                  question={question}
-                  onDelete={() => handleDeleteQuestion(question.id)}
-                  onMoveUp={() => handleMoveQuestion(question.id, "up")}
-                  onMoveDown={() => handleMoveQuestion(question.id, "down")}
-                  canMoveUp={question.index > 1}
-                  canMoveDown={question.index < previewQuestions.length}
-                  isDragging={draggedQuestionId === question.id}
-                  isDragTarget={
-                    dragTargetQuestionId === question.id &&
-                    draggedQuestionId !== question.id
-                  }
-                  onDragHandleStart={(event) => {
-                    event.dataTransfer.effectAllowed = "move";
-                    setDraggedQuestionId(question.id);
-                    setDragTargetQuestionId(question.id);
-                  }}
-                  onDragHandleEnd={() => {
-                    setDraggedQuestionId(null);
-                    setDragTargetQuestionId(null);
-                  }}
-                  onDragTargetEnter={() => {
-                    if (!draggedQuestionId) return;
-                    setDragTargetQuestionId(question.id);
-                  }}
-                  onDragTargetOver={(event) => {
-                    event.preventDefault();
-                    if (!draggedQuestionId) return;
-                    event.dataTransfer.dropEffect = "move";
-                    setDragTargetQuestionId(question.id);
-                  }}
-                  onDropOnTarget={() => handleDropQuestion(question.id)}
-                />
-              ))}
-            </div>
-          )}
+            )}
 
-          {appendedContent ? (
-            <div className="mt-6 border-t border-[#e6edf7] pt-5">
-              {appendedContent}
-            </div>
-          ) : null}
+            {appendedContent ? (
+              <div className="mt-6 border-t border-[#e6edf7] pt-5">
+                {appendedContent}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

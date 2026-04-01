@@ -118,12 +118,18 @@ function mapVariantToPreviewQuestions(
       id: `variant-${variant.id}-${question.id}-${index + 1}`,
       index: index + 1,
       question: question.prompt,
+      questionType: question.type === "written" ? "written" : "single-choice",
       answers: options,
       correct: matchedCorrectIndex >= 0 ? matchedCorrectIndex : 0,
       points: 1,
       source: `AI хувилбар ${variant.variantNumber}`,
+      explanation: question.explanation ?? undefined,
     };
   });
+}
+
+function getDisplayVariantTitle(variant: GeneratedVariant) {
+  return `Хувилбар ${variant.variantNumber}`;
 }
 
 function buildBaseExamInput(args: {
@@ -133,11 +139,18 @@ function buildBaseExamInput(args: {
   hasGeneratedVariants: boolean;
   generatedVariantsCount: number;
 }) {
+  const mcqQuestions = args.previewQuestions.filter(
+    (question) => question.questionType !== "written",
+  );
+  const writtenQuestions = args.previewQuestions.filter(
+    (question) => question.questionType === "written",
+  );
+
   return {
     examId: args.examId,
     title: args.generalInfo.examName.trim(),
-    mcqCount: args.previewQuestions.length,
-    mathCount: 0,
+    mcqCount: mcqQuestions.length,
+    mathCount: writtenQuestions.length,
     totalPoints: args.previewQuestions.length,
     sessionMeta: {
       grade: Number(args.generalInfo.grade),
@@ -148,11 +161,24 @@ function buildBaseExamInput(args: {
       variantCount: args.hasGeneratedVariants ? args.generatedVariantsCount : 0,
     },
     questions: args.previewQuestions.map((question) => ({
-      type: MathExamQuestionType.Mcq,
+      type:
+        question.questionType === "written"
+          ? MathExamQuestionType.Math
+          : MathExamQuestionType.Mcq,
       prompt: question.question,
-      points: 1,
-      options: question.answers,
-      correctOption: question.correct,
+      points: question.points,
+      options:
+        question.questionType === "written" ? undefined : question.answers,
+      correctOption:
+        question.questionType === "written" ? undefined : question.correct,
+      answerLatex:
+        question.questionType === "written"
+          ? (question.answers[0] ?? "").trim() || undefined
+          : undefined,
+      responseGuide:
+        question.questionType === "written"
+          ? question.explanation?.trim() || undefined
+          : undefined,
     })),
   };
 }
@@ -266,7 +292,9 @@ export default function MaterialBuilderPageContent() {
   const shouldShowVariantViewerButton = hasGeneratedVariants;
   const checkedVariants = useMemo(
     () =>
-      generatedVariants.filter((variant) => checkedVariantIds.includes(variant.id)),
+      generatedVariants.filter((variant) =>
+        checkedVariantIds.includes(variant.id),
+      ),
     [checkedVariantIds, generatedVariants],
   );
 
@@ -389,10 +417,17 @@ export default function MaterialBuilderPageContent() {
             questions: previewQuestions.map((question) => ({
               order: question.index,
               prompt: question.question,
-              type: "single-choice",
-              options: question.answers,
-              correctAnswer: question.answers[question.correct] ?? null,
-              explanation: null,
+              type: question.questionType,
+              options:
+                question.questionType === "written" ? [] : question.answers,
+              correctAnswer:
+                question.questionType === "written"
+                  ? (question.answers[0] ?? null)
+                  : (question.answers[question.correct] ?? null),
+              explanation:
+                question.questionType === "written"
+                  ? (question.explanation ?? null)
+                  : null,
             })),
           },
         },
@@ -604,7 +639,9 @@ export default function MaterialBuilderPageContent() {
 
   function toggleCheckedVariant(variantId: string, checked: boolean) {
     setCheckedVariantIds((prev) =>
-      checked ? [...new Set([...prev, variantId])] : prev.filter((id) => id !== variantId),
+      checked
+        ? [...new Set([...prev, variantId])]
+        : prev.filter((id) => id !== variantId),
     );
   }
 
@@ -674,6 +711,7 @@ export default function MaterialBuilderPageContent() {
           Array.from(new Set([...prev, ...confirmedMap.keys()])),
         );
         setCheckedVariantIds([]);
+        setVariantViewerOpen(false);
         toast.success(
           payload.message ||
             `${confirmedMap.size} AI хувилбарыг амжилттай баталлаа.`,
@@ -733,7 +771,9 @@ export default function MaterialBuilderPageContent() {
         }
 
         const savedMap = new Map(
-          payload.variants.filter(Boolean).map((variant) => [variant!.id, variant!]),
+          payload.variants
+            .filter(Boolean)
+            .map((variant) => [variant!.id, variant!]),
         );
         setGeneratedVariants((prev) =>
           prev.map((variant) =>
@@ -806,7 +846,7 @@ export default function MaterialBuilderPageContent() {
       }
 
       setSavedExamId(examId);
-      toast.success("Шалгалт үндсэн санд амжилттай хадгалагдлаа.");
+      toast.success("Шалгалт өгөгдлийн санд амжилттай хадгалагдлаа.");
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -851,7 +891,7 @@ export default function MaterialBuilderPageContent() {
                       <div className="rounded-[14px] border border-[#e6edf7] bg-[#f8fbff] px-4 py-3">
                         <div>
                           <p className="text-[15px] font-semibold text-slate-900">
-                            {variant.title}
+                            {getDisplayVariantTitle(variant)}
                           </p>
                           <p className="mt-1 text-[12px] text-slate-500">
                             {variant.questions.length} асуулт
@@ -1006,14 +1046,16 @@ export default function MaterialBuilderPageContent() {
                                               : "bg-[#eef2f6] text-slate-700"
                                           }`}
                                         >
-                                          <span className="mr-1">
-                                            {String.fromCharCode(65 + index)}.
-                                          </span>
-                                          <MathPreviewText
-                                            content={option}
-                                            contentSource="backend"
-                                            className="inline text-[14px] leading-relaxed"
-                                          />
+                                          <div className="flex items-start gap-1.5">
+                                            <span className="shrink-0">
+                                              {String.fromCharCode(65 + index)}.
+                                            </span>
+                                            <MathPreviewText
+                                              content={option}
+                                              contentSource="backend"
+                                              className="min-w-0 flex-1 text-[14px] leading-relaxed"
+                                            />
+                                          </div>
                                         </div>
                                       );
                                     },
@@ -1143,7 +1185,7 @@ export default function MaterialBuilderPageContent() {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden lg:grid-cols-[180px_minmax(0,1fr)] lg:grid-rows-1 xl:grid-cols-[200px_minmax(0,1fr)]">
+            <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden lg:grid-cols-[230px_minmax(0,1fr)] lg:grid-rows-1 xl:grid-cols-[250px_minmax(0,1fr)]">
               <div className="max-h-56 overflow-y-auto border-b border-[#e9eef6] bg-[#f8fbff] p-4 lg:max-h-none lg:border-b-0 lg:border-r">
                 <div className="space-y-3">
                   {generatedVariants.map((variant) => {
@@ -1161,7 +1203,7 @@ export default function MaterialBuilderPageContent() {
                             toggleCheckedVariant(variant.id, checked === true)
                           }
                           className="h-5 w-5 cursor-pointer rounded-[6px] border-[#b9cbe4] data-[state=checked]:border-[#0b5cab] data-[state=checked]:bg-[#0b5cab]"
-                          aria-label={`${variant.title}-ийг action-д сонгох`}
+                          aria-label={`${getDisplayVariantTitle(variant)}-ийг action-д сонгох`}
                         />
                         <button
                           type="button"
@@ -1178,7 +1220,7 @@ export default function MaterialBuilderPageContent() {
                           <div className="flex items-center justify-between gap-3">
                             <div>
                               <p className="text-[16px] font-semibold text-slate-900">
-                                {variant.title}
+                                {getDisplayVariantTitle(variant)}
                               </p>
                               <p className="mt-1 text-[12px] text-slate-500">
                                 {variant.questions.length} асуулт
@@ -1204,7 +1246,7 @@ export default function MaterialBuilderPageContent() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <p className="truncate text-[16px] font-semibold text-slate-900">
-                          {selectedVariant.title}
+                          {getDisplayVariantTitle(selectedVariant)}
                         </p>
                       </div>
                       <Button
@@ -1421,6 +1463,13 @@ export default function MaterialBuilderPageContent() {
                                     ),
                                   )}
                                 </div>
+                              ) : question.type === "written" ? (
+                                <Textarea
+                                  value=""
+                                  readOnly
+                                  placeholder="Хариултаа энд бичнэ үү..."
+                                  className="min-h-[120px] resize-none rounded-[14px] border-[#d7e3f5] bg-white text-[14px] leading-6 text-slate-700 placeholder:text-slate-400"
+                                />
                               ) : null}
                             </div>
                           )}
@@ -1459,18 +1508,13 @@ export default function MaterialBuilderPageContent() {
                     Шинэ шалгалт болгож хадгалж байна...
                   </>
                 ) : (
-                  checkedVariants.length > 1
-                    ? `${checkedVariants.length} хувилбарыг шинэ шалгалт болгох`
-                    : "Шинэ шалгалт болгож хадгалах"
+                  "Шинэ шалгалт болгож хадгалах"
                 )}
               </Button>
               <Button
                 type="button"
                 onClick={handleConfirmVariant}
-                disabled={
-                  checkedVariants.length === 0 ||
-                  isPersistingVariant
-                }
+                disabled={checkedVariants.length === 0 || isPersistingVariant}
                 className="cursor-pointer rounded-[12px] bg-[#0b5cab] px-5 hover:bg-[#0a4f96]"
               >
                 {confirmingVariants ? (
@@ -1479,9 +1523,7 @@ export default function MaterialBuilderPageContent() {
                     Баталж байна...
                   </>
                 ) : (
-                  checkedVariants.length > 1
-                    ? `${checkedVariants.length} хувилбар батлах`
-                    : "Хувилбар батлах"
+                  "Хувилбар батлах"
                 )}
               </Button>
             </DialogFooter>
