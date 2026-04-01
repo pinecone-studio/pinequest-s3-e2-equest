@@ -25,32 +25,16 @@ export function TestShell({
 }: TestShellProps) {
   return (
     <TooltipProvider delayDuration={150}>
-      <SidebarProvider defaultOpen>
-        <TestSidebar />
-        <SidebarInset className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f4f7fb_100%)]">
-          <header className="sticky top-0 z-20 bg-[rgba(248,251,255,0.92)] backdrop-blur">
-            <div className="px-4 pb-3 pt-6 sm:px-6 lg:px-8">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex items-start gap-3">
-                    <SidebarTrigger className="mt-1 shrink-0 lg:hidden" />
-                    <div className="min-w-0">
-                      <h1 className="truncate text-3xl font-semibold tracking-tight text-slate-900">
-                        {title}
-                      </h1>
-                      {description ? (
-                        <p className="mt-1 text-sm text-slate-500">
-                          {description}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                  {meta ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 pl-11 text-xs text-slate-500 lg:pl-0">
-                      {meta}
-                    </div>
-                  ) : null}
-                </div>
+      <div className="h-screen overflow-hidden bg-[#eceff3] px-4">
+        <div className="mx-auto grid h-full w-full max-w-[1440px] grid-cols-[228px_1fr] grid-rows-[58px_1fr]">
+          <aside className="row-start-1 col-start-1 flex items-center gap-3 border-r border-b border-slate-200 bg-white px-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#16a4e5] text-white">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+            <p className="truncate text-xl font-semibold text-slate-900">
+              Багш
+            </p>
+          </aside>
 
           {hideHeader ? null : (
             <header className="row-start-1 col-start-2 flex items-center justify-between border-b border-slate-200 bg-white px-6">
