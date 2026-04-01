@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { fetchRuntimeJson } from "@/lib/runtime-api";
+import { fetchTakeExamDashboard } from "@/lib/take-exam-dashboard-api";
 import { TestShell } from "../_components/test-shell";
 import { ExamSelector } from "./_components/exam-selector";
 import { ExamDashboard } from "./_components/exam-dashboard";
@@ -42,18 +44,11 @@ export default function ExamMonitoringApp() {
 
   const loadOllamaStatus = useCallback(async () => {
     try {
-      const response = await fetch("/api/ollama-teacher-feedback", {
+      const nextStatus = await fetchRuntimeJson<
+        OllamaConnectionStatus & { message?: string }
+      >("/api/ollama-teacher-feedback", {
         cache: "no-store",
       });
-      const nextStatus = (await response.json()) as OllamaConnectionStatus & {
-        message?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(
-          nextStatus.message ?? "Ollama AI төлөв шалгаж чадсангүй.",
-        );
-      }
 
       setOllamaStatus(nextStatus);
     } catch (nextError) {
@@ -83,18 +78,10 @@ export default function ExamMonitoringApp() {
           params.set("testId", selectedExamId);
         }
 
-        const response = await fetch(`/api/take-exam-dashboard?${params}`, {
-          cache: "no-store",
-        });
-        const nextPayload = (await response.json()) as DashboardApiPayload & {
-          message?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(
-            nextPayload.message ?? "Dashboard өгөгдөл ачаалж чадсангүй.",
-          );
-        }
+        const nextPayload = await fetchTakeExamDashboard(
+          40,
+          selectedExamId ?? null,
+        );
 
         setPayload(nextPayload);
         setError(null);
@@ -376,23 +363,15 @@ export default function ExamMonitoringApp() {
       setFocusAnalysisError(null);
 
       try {
-        const response = await fetch("/api/take-exam-focus-analysis", {
+        const nextAnalysis = await fetchRuntimeJson<
+          ExamFocusAnalysis & { message?: string }
+        >("/api/take-exam-focus-analysis", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: focusAnalysisRequestBody,
         });
-
-        const nextAnalysis = (await response.json()) as ExamFocusAnalysis & {
-          message?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(
-            nextAnalysis.message ?? "AI focus analysis үүсгэж чадсангүй.",
-          );
-        }
 
         if (!isCancelled) {
           setFocusAnalysis(nextAnalysis);

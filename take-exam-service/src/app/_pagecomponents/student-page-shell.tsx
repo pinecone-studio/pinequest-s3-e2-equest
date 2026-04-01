@@ -82,6 +82,7 @@ type StudentPageShellProps = {
   isInitialLoading: boolean;
   isMutating: boolean;
   latestProgress: GetProgressResponse | SubmitAnswersResponse | null;
+  latestSubmittedExamTitle: string | null;
   pageTitle: string;
   passRate: number;
   passedAttemptsCount: number;
@@ -109,6 +110,28 @@ type ResultBreakdownPanelProps = {
   attempt: AttemptSummary;
 };
 
+const MAX_INLINE_FEEDBACK_CHARS = 160;
+
+const compactInlineFeedback = (value?: string | null) => {
+  const normalized = value?.replace(/\s+/g, " ").trim() ?? "";
+  if (!normalized) {
+    return "";
+  }
+
+  const sentences = normalized
+    .split(/(?<=[.!?])\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const limited = sentences.slice(0, 2).join(" ").trim();
+  const candidate = limited || normalized;
+
+  if (candidate.length <= MAX_INLINE_FEEDBACK_CHARS) {
+    return candidate;
+  }
+
+  return `${candidate.slice(0, MAX_INLINE_FEEDBACK_CHARS - 1).trimEnd()}…`;
+};
+
 function FeedbackPanel({ feedback }: FeedbackPanelProps) {
   return (
     <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-slate-800">
@@ -117,7 +140,9 @@ function FeedbackPanel({ feedback }: FeedbackPanelProps) {
         <span>{feedback.headline}</span>
         <AiContentBadge source={feedback.source} />
       </div>
-      <p className="mt-2 text-sm leading-6 text-slate-700">{feedback.summary}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-700">
+        {feedback.summary}
+      </p>
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
@@ -150,14 +175,18 @@ function ResultBreakdownPanel({ attempt }: ResultBreakdownPanelProps) {
   }
 
   const answerReviewByQuestionId = new Map(
-    (attempt.answerReview ?? []).map((item) => [item.questionId, item] as const),
+    (attempt.answerReview ?? []).map(
+      (item) => [item.questionId, item] as const,
+    ),
   );
 
   return (
     <div className="space-y-3">
       <div className="space-y-3">
         {attempt.result.questionResults.map((questionResult, index) => {
-          const answerReview = answerReviewByQuestionId.get(questionResult.questionId);
+          const answerReview = answerReviewByQuestionId.get(
+            questionResult.questionId,
+          );
           const isCorrect = questionResult.isCorrect;
 
           return (
@@ -191,8 +220,18 @@ function ResultBreakdownPanel({ attempt }: ResultBreakdownPanelProps) {
               </div>
 
               <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <div
+                  className={`rounded-xl border p-4 ${
+                    isCorrect
+                      ? "border-emerald-200 bg-emerald-50"
+                      : "border-rose-200 bg-rose-50"
+                  }`}
+                >
+                  <p
+                    className={`text-xs font-semibold uppercase tracking-[0.14em] ${
+                      isCorrect ? "text-emerald-700" : "text-rose-700"
+                    }`}
+                  >
                     Таны хариулт
                   </p>
                   <MathText
@@ -207,7 +246,8 @@ function ResultBreakdownPanel({ attempt }: ResultBreakdownPanelProps) {
                   />
                 </div>
 
-                {(answerReview?.correctAnswerText || questionResult.correctOptionId) && (
+                {(answerReview?.correctAnswerText ||
+                  questionResult.correctOptionId) && (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
                       Зөв хариулт
@@ -225,26 +265,29 @@ function ResultBreakdownPanel({ attempt }: ResultBreakdownPanelProps) {
                   </div>
                 )}
 
-                {(answerReview?.responseGuide || questionResult.explanation) && (
+                {!isCorrect &&
+                (answerReview?.responseGuide || questionResult.explanation) ? (
                   <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
-                        Тайлбар
+                        Зөвлөмж
                       </p>
-                      <AiContentBadge source={questionResult.explanationSource} />
+                      <AiContentBadge
+                        source={questionResult.explanationSource}
+                      />
                     </div>
                     <MathText
                       as="p"
                       className="mt-2 text-sm leading-6 text-slate-800"
                       displayMode={answerReview?.questionType === "math"}
-                      text={
+                      text={compactInlineFeedback(
                         questionResult.explanation ||
-                        answerReview?.responseGuide ||
-                        "Тайлбар нэмэгдээгүй."
-                      }
+                          answerReview?.responseGuide ||
+                          "Хариугаа дахин шалгаарай.",
+                      )}
                     />
                   </div>
-                )}
+                ) : null}
               </div>
             </article>
           );
@@ -292,6 +335,29 @@ function TestCardsGrid({
   onResumeExam,
   onStartExam,
 }: TestCardsGridProps) {
+  const [now, setNow] = useState(Date.now());
+  const mockStartTimesRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const nextStartTimes = { ...mockStartTimesRef.current };
+
+    filteredTests.forEach((test, index) => {
+      if (!nextStartTimes[test.id]) {
+        nextStartTimes[test.id] = Date.now() + (index + 2) * 60 * 60 * 1000;
+      }
+    });
+
+    mockStartTimesRef.current = nextStartTimes;
+  }, [filteredTests]);
+
   if (!selectedStudent) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-500">
@@ -310,9 +376,26 @@ function TestCardsGrid({
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
-      {filteredTests.map((test) => {
+      {filteredTests.map((test, index) => {
         const resumableAttempt = inProgressByTestId.get(test.id);
         const completedAttempt = completedByTestId.get(test.id);
+        const mockStartAt =
+          mockStartTimesRef.current[test.id] ??
+          Date.now() + (index + 2) * 60 * 60 * 1000;
+        const realStartAt = new Date(test.updatedAt).getTime();
+        const hasFutureRealStartAt =
+          Number.isFinite(realStartAt) && realStartAt > now;
+        const displayStartAt = hasFutureRealStartAt ? realStartAt : mockStartAt;
+        const countdownMs = Math.max(0, displayStartAt - now);
+        const countdownHours = Math.floor(countdownMs / (60 * 60 * 1000));
+        const countdownMinutes = Math.floor(
+          (countdownMs % (60 * 60 * 1000)) / (60 * 1000),
+        );
+        const countdownSeconds = Math.floor((countdownMs % (60 * 1000)) / 1000);
+        const mockCountdownLabel =
+          countdownHours > 0
+            ? `${countdownHours}:${String(countdownMinutes).padStart(2, "0")}:${String(countdownSeconds).padStart(2, "0")}`
+            : `${countdownMinutes}:${String(countdownSeconds).padStart(2, "0")}`;
 
         return (
           <article
@@ -321,9 +404,17 @@ function TestCardsGrid({
           >
             <div className="absolute inset-x-0 top-0 h-1 bg-[#59c9ee]" />
             <div className="space-y-3">
-              <h3 className="text-lg font-semibold text-slate-900">
-                {test.title}
-              </h3>
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {test.title}
+                </h3>
+                <div className="shrink-0 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-right shadow-[0_6px_16px_rgba(14,116,144,0.08)]">
+                  <p className="mt-1 text-xs font-semibold text-sky-900">
+                    {mockCountdownLabel}
+                  </p>
+                  {/* <p className="text-[11px] text-sky-700/80">дараа эхэлнэ</p> */}
+                </div>
+              </div>
               {completedAttempt && (
                 <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                   Дууссан
@@ -335,11 +426,11 @@ function TestCardsGrid({
               </p>
               <p className="flex items-center gap-2 text-xs text-slate-500">
                 <Clock3 className="h-4 w-4" />
-                {estimateDurationMinutes(test)} мин
+                Үргэлжлэх хугацаа: {estimateDurationMinutes(test)} мин
               </p>
               <p className="flex items-center gap-2 text-xs text-slate-500">
                 <CalendarClock className="h-4 w-4" />
-                Хаагдах хугацаа: {formatDate(test.updatedAt)}
+                Эхлэх хугацаа: {formatDate(new Date(displayStartAt).toISOString())}
               </p>
             </div>
 
@@ -433,8 +524,12 @@ function ResultCardsGrid({
                   <td className="px-4 py-4">{row.subject}</td>
                   <td className="px-4 py-4">{row.className}</td>
                   <td className="px-4 py-4">{row.teacher}</td>
-                  <td className="px-4 py-4 whitespace-nowrap">{row.startedAt}</td>
-                  <td className="px-4 py-4 whitespace-nowrap">{row.finishedAt}</td>
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    {row.startedAt}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    {row.finishedAt}
+                  </td>
                   <td className="px-4 py-4">
                     <div className="relative flex items-center justify-center">
                       <span
@@ -484,6 +579,7 @@ export function StudentPageShell({
   isInitialLoading,
   isMutating,
   latestProgress,
+  latestSubmittedExamTitle,
   pageTitle,
   passRate,
   passedAttemptsCount,
@@ -502,7 +598,11 @@ export function StudentPageShell({
   const studentMenuRef = useRef<HTMLDivElement | null>(null);
   const approvedAttemptById = useMemo(
     () =>
-      new Map(approvedAttempts.map((attempt) => [attempt.attemptId, attempt] as const)),
+      new Map(
+        approvedAttempts.map(
+          (attempt) => [attempt.attemptId, attempt] as const,
+        ),
+      ),
     [approvedAttempts],
   );
   const selectedResultAttempt =
@@ -528,7 +628,7 @@ export function StudentPageShell({
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#16a4e5] text-white">
             <GraduationCap className="h-5 w-5" />
           </div>
-          <p className="text-xl font-semibold text-slate-900">Сурагч Портал</p>
+          <p className="text-xl font-semibold text-slate-900">Сурагч</p>
         </aside>
 
         <header className="row-start-1 col-start-2 flex items-center justify-between border-b border-slate-200 bg-white px-6">
@@ -678,10 +778,10 @@ export function StudentPageShell({
                       />
                     </div>
 
-                {latestProgress &&
-                  (latestProgress.status === "submitted" ||
-                    latestProgress.status === "processing" ||
-                    latestProgress.status === "approved") && (
+                    {latestProgress &&
+                      (latestProgress.status === "submitted" ||
+                        latestProgress.status === "processing" ||
+                        latestProgress.status === "approved") && (
                         <div className="space-y-4">
                           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700">
                             <div className="flex items-center gap-2 font-semibold">
@@ -690,20 +790,26 @@ export function StudentPageShell({
                                 ? "Шалгалтыг боловсруулж байна"
                                 : latestProgress.status === "approved"
                                   ? "Шалгалтын дүн бэлэн боллоо"
-                                  : "Шалгалт амжилттай илгээгдлээ"}
+                                  : latestSubmittedExamTitle
+                                    ? `"${latestSubmittedExamTitle}" шалгалт амжилттай илгээгдлээ`
+                                    : "Шалгалт амжилттай илгээгдлээ"}
                             </div>
                             <p className="mt-1 text-sm text-emerald-700/90">
                               {latestProgress.status === "approved" &&
                               latestProgress.result
                                 ? `${latestProgress.result.maxScore} онооноос ${latestProgress.result.score} авч, ${latestProgress.result.percentage}% гүйцэтгэл үзүүллээ.`
-                                : "Таны хариулт амжилттай бүртгэгдсэн. Багш баталсны дараа дүн, зөв хариу, тайлбар хэсэгт харагдана."}
+                                : latestSubmittedExamTitle
+                                  ? ` Багш баталсны дараа дүн, зөв хариу, тайлбар хэсэгт харагдана.`
+                                  : "Таны хариулт амжилттай бүртгэгдсэн. Багш баталсны дараа дүн, зөв хариу, тайлбар хэсэгт харагдана."}
                             </p>
                           </div>
 
                           {latestProgress.status === "approved" &&
                             latestProgress.feedback && (
-                            <FeedbackPanel feedback={latestProgress.feedback} />
-                          )}
+                              <FeedbackPanel
+                                feedback={latestProgress.feedback}
+                              />
+                            )}
                         </div>
                       )}
 
@@ -824,8 +930,8 @@ export function StudentPageShell({
                   <div>
                     <DialogTitle>{selectedResultAttempt.title}</DialogTitle>
                     <DialogDescription>
-                      {selectedResultAttempt.percentage ?? 0}% гүйцэтгэл.
-                      Алдаа, тайлбар болон feedback-ийг доороос харна.
+                      {selectedResultAttempt.percentage ?? 0}% гүйцэтгэл. Алдаа,
+                      тайлбар болон зөвлөмжийг доороос харна.
                     </DialogDescription>
                   </div>
                   <div className="mr-2 flex min-w-28 flex-col items-center rounded-full bg-emerald-50 px-4 py-2 text-center">

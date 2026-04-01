@@ -6,6 +6,7 @@ import type {
 	AttemptReviewPayload,
 	AttemptQuestionMetricInput,
 	ExamAnswerInput,
+	MonitoringMode,
 	ProctoringEventSeverity,
 	StartExamResponse,
 } from "@/lib/exam-service/types";
@@ -56,6 +57,10 @@ type AttemptActivityInput = {
 	title: string;
 	detail: string;
 	occurredAt?: string | null;
+	mode: MonitoringMode;
+	screenshotCapturedAt?: string | null;
+	screenshotStorageKey?: string | null;
+	screenshotUrl?: string | null;
 };
 
 const getResolverEnv = () =>

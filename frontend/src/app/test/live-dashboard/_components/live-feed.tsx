@@ -11,6 +11,7 @@ import {
   CheckCircle,
   FileEdit,
   Activity,
+  Camera,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -95,6 +96,26 @@ function EventItem({ event }: { event: MonitoringEvent }) {
           </div>
           <p className="mt-0.5 text-sm text-foreground">{event.title}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">{event.detail}</p>
+          {event.mode || event.screenshotUrl ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {event.mode ? (
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-foreground">
+                  {formatMonitoringMode(event.mode)}
+                </span>
+              ) : null}
+              {event.screenshotUrl ? (
+                <a
+                  className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-foreground hover:bg-secondary"
+                  href={event.screenshotUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <Camera className="h-3 w-3" />
+                  Screenshot
+                </a>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -128,4 +149,17 @@ function formatTime(date: Date): string {
     minute: "2-digit",
     hour12: true,
   });
+}
+
+function formatMonitoringMode(mode: NonNullable<MonitoringEvent["mode"]>) {
+  switch (mode) {
+    case "screen-capture-enabled":
+      return "Screen capture";
+    case "fallback-dom-capture":
+      return "Fallback capture";
+    case "limited-monitoring":
+      return "Limited monitoring";
+    default:
+      return mode;
+  }
 }

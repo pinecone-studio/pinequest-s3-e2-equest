@@ -12,6 +12,7 @@ import {
   type NavigationSection,
   StudentPageShell,
 } from "@/app/_pagecomponents/student-page-shell";
+import { ExamMonitoringConsentDialog } from "@/app/_pagecomponents/exam-monitoring-consent-dialog";
 import { SebAccessGate } from "@/app/_pagecomponents/seb-access-gate";
 import type {
   GetProgressResponse,
@@ -39,17 +40,30 @@ import { useExamMonitoring } from "@/app/_pagecomponents/use-exam-monitoring";
 import { useExamSessionMonitoring } from "@/app/_pagecomponents/use-exam-session-monitoring";
 import { usePersistedExamAnswers } from "@/app/_pagecomponents/use-persisted-exam-answers";
 import { useSebAccess } from "@/app/_pagecomponents/use-seb-access";
+import { useScreenCapture } from "@/app/_pagecomponents/use-screen-capture";
 import { useStudentDashboardData } from "@/app/_pagecomponents/use-student-dashboard-data";
+
+type PendingMonitoringAction =
+  {
+    kind: "start";
+    studentId: string;
+    studentName: string;
+    testId: string;
+  };
 
 export default function StudentAppPage() {
   const ACTIVE_ATTEMPT_STORAGE_KEY = "active_exam_attempt";
   const FREE_TEXT_COMMIT_DELAY_MS = 900;
-  const getPersistedAnswersStorageKey = (attemptId: string) => `answers_${attemptId}`;
+  const getPersistedAnswersStorageKey = (attemptId: string) =>
+    `answers_${attemptId}`;
   const [activeAttempt, setActiveAttempt] = useState<StartExamResponse | null>(
     null,
   );
   const [latestProgress, setLatestProgress] = useState<
     GetProgressResponse | SubmitAnswersResponse | null
+  >(null);
+  const [latestSubmittedExamTitle, setLatestSubmittedExamTitle] = useState<
+    string | null
   >(null);
   const [flaggedQuestions, setFlaggedQuestions] = useState<
     Record<string, boolean>
@@ -59,11 +73,14 @@ export default function StudentAppPage() {
   const [error, setError] = useState<string | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const [isFinalizingAttempt, setIsFinalizingAttempt] = useState(false);
+  const [pendingMonitoringAction, setPendingMonitoringAction] =
+    useState<PendingMonitoringAction | null>(null);
   const [pendingResumeAttempt, setPendingResumeAttempt] = useState<{
     attemptId: string;
     studentId: string;
   } | null>(null);
   const autosaveInFlightRef = useRef(false);
+  const examShellRef = useRef<HTMLDivElement | null>(null);
   const promptedResumeAttemptIdRef = useRef<string | null>(null);
   const mathAnswerCommitTimersRef = useRef<Record<string, number>>({});
   const committedMathAnswersRef = useRef<Record<string, string>>({});
@@ -94,13 +111,33 @@ export default function StudentAppPage() {
     selectedStudentId,
     setSelectedStudentId,
   } = useStudentDashboardData({ setError });
+  const monitoringUserId =
+    activeAttempt?.studentId ??
+    (pendingMonitoringAction?.kind === "start"
+      ? pendingMonitoringAction.studentId
+      : (pendingResumeAttempt?.studentId ?? selectedStudent?.id ?? null));
+  const monitoringStudentName =
+    activeAttempt?.studentName ??
+    (pendingMonitoringAction?.kind === "start"
+      ? pendingMonitoringAction.studentName
+      : selectedStudent?.name ?? null);
+  const screenCapture = useScreenCapture({
+    attemptId: activeAttempt?.attemptId ?? null,
+    examContainerRef: examShellRef,
+    studentName: monitoringStudentName,
+    userId: monitoringUserId,
+  });
   const {
     markInteraction,
     recordBehaviorEvent,
     resetActivityTracking,
     timeLeftMs,
     trackQuestionView,
-  } = useExamMonitoring(activeAttempt, !isFinalizingAttempt);
+  } = useExamMonitoring(activeAttempt, {
+    captureEvidence: screenCapture.captureEvidence,
+    enabled: !isFinalizingAttempt,
+    monitoringMode: screenCapture.mode,
+  });
   const { answers, clearAnswers, setAnswers } = usePersistedExamAnswers(
     activeAttempt?.attemptId ?? null,
     activeAttempt?.existingAnswers ?? null,
@@ -108,6 +145,7 @@ export default function StudentAppPage() {
   const { clearMonitoringState } = useExamSessionMonitoring({
     attemptId: activeAttempt?.attemptId ?? null,
     enabled: Boolean(activeAttempt) && !isFinalizingAttempt,
+    monitoringMode: screenCapture.mode,
   });
 
   useAnimatedDocumentTitle("Сурагч Портал");
@@ -118,7 +156,9 @@ export default function StudentAppPage() {
 
   const readPersistedAnswersSnapshot = useCallback((attemptId: string) => {
     try {
-      const rawValue = localStorage.getItem(getPersistedAnswersStorageKey(attemptId));
+      const rawValue = localStorage.getItem(
+        getPersistedAnswersStorageKey(attemptId),
+      );
       if (!rawValue) {
         return {} as Record<string, string | null>;
       }
@@ -251,7 +291,10 @@ export default function StudentAppPage() {
         continue;
       }
 
-      commitMathAnswerSnapshot(question.questionId, answers[question.questionId]);
+      commitMathAnswerSnapshot(
+        question.questionId,
+        answers[question.questionId],
+      );
     }
   }, [activeAttempt, answers, commitMathAnswerSnapshot]);
 
@@ -276,45 +319,49 @@ export default function StudentAppPage() {
     [commitActiveQuestionDwell, getQuestionMeta, trackQuestionView],
   );
 
-  const flushQuestionMetrics = useCallback(async (attemptId: string) => {
-    flushPendingMathAnswerCommits();
-    commitActiveQuestionDwell();
+  const flushQuestionMetrics = useCallback(
+    async (attemptId: string) => {
+      flushPendingMathAnswerCommits();
+      commitActiveQuestionDwell();
 
-    const payload = Object.entries(questionMetricsRef.current)
-      .map(([questionId, metric]) => ({
-        questionId,
-        answerChangeCount: metric.answerChangeCount,
-        dwellMs: metric.dwellMs,
-      }))
-      .filter(
-        (metric) =>
-          (metric.answerChangeCount ?? 0) > 0 || (metric.dwellMs ?? 0) > 0,
-      );
+      const payload = Object.entries(questionMetricsRef.current)
+        .map(([questionId, metric]) => ({
+          questionId,
+          answerChangeCount: metric.answerChangeCount,
+          dwellMs: metric.dwellMs,
+        }))
+        .filter(
+          (metric) =>
+            (metric.answerChangeCount ?? 0) > 0 || (metric.dwellMs ?? 0) > 0,
+        );
 
-    if (payload.length === 0) {
-      return;
-    }
+      if (payload.length === 0) {
+        return;
+      }
 
-    questionMetricsRef.current = {};
-    const activeQuestion = activeQuestionTimingRef.current;
-    if (activeQuestion) {
-      activeQuestionTimingRef.current = {
-        questionId: activeQuestion.questionId,
-        startedAt: Date.now(),
-      };
-    }
+      questionMetricsRef.current = {};
+      const activeQuestion = activeQuestionTimingRef.current;
+      if (activeQuestion) {
+        activeQuestionTimingRef.current = {
+          questionId: activeQuestion.questionId,
+          startedAt: Date.now(),
+        };
+      }
 
-    try {
-      await logQuestionMetricsRequest(attemptId, payload);
-    } catch (error) {
-      console.error("Failed to persist question metrics:", error);
-    }
-  }, [commitActiveQuestionDwell, flushPendingMathAnswerCommits]);
+      try {
+        await logQuestionMetricsRequest(attemptId, payload);
+      } catch (error) {
+        console.error("Failed to persist question metrics:", error);
+      }
+    },
+    [commitActiveQuestionDwell, flushPendingMathAnswerCommits],
+  );
 
   const openAttempt = useCallback(
     (attempt: StartExamResponse) => {
       setActiveAttempt(attempt);
       setLatestProgress(null);
+      setLatestSubmittedExamTitle(null);
       setFlaggedQuestions({});
       resetQuestionMetricsTracking();
       committedMathAnswersRef.current = Object.fromEntries(
@@ -373,6 +420,7 @@ export default function StudentAppPage() {
 
         setLatestProgress(submittedProgress);
         clearMonitoringState(attemptId);
+        screenCapture.resetMonitoringCapture();
         clearAnswers(attemptId);
         setActiveAttempt(null);
         setPendingResumeAttempt(null);
@@ -401,43 +449,54 @@ export default function StudentAppPage() {
       readPersistedAnswersSnapshot,
       resetActivityTracking,
       resetQuestionMetricsTracking,
+      screenCapture,
     ],
   );
 
-  const handleConfirmResumeAttempt = useCallback(async () => {
+  const resumeAttemptWithoutMonitoringConsent = useCallback(
+    async (attemptId: string) => {
+      setError(null);
+      setIsMutating(true);
+
+      try {
+        const sebCheck = await verifySebAccess();
+        if (!sebCheck.ok) {
+          showSebFriendlyWarning(sebCheck.message);
+          setPendingResumeAttempt(null);
+          return;
+        }
+
+        screenCapture.resetMonitoringCapture();
+        const nextAttempt = await resumeExamRequest(attemptId);
+        setPendingResumeAttempt(null);
+        setPendingMonitoringAction(null);
+        openAttempt(nextAttempt);
+      } catch (err) {
+        sessionStorage.removeItem(ACTIVE_ATTEMPT_STORAGE_KEY);
+        setPendingResumeAttempt(null);
+        setError(
+          err instanceof Error ? err.message : "Шалгалтыг сэргээж чадсангүй.",
+        );
+      } finally {
+        setIsMutating(false);
+      }
+    },
+    [
+      ACTIVE_ATTEMPT_STORAGE_KEY,
+      openAttempt,
+      screenCapture,
+      showSebFriendlyWarning,
+      verifySebAccess,
+    ],
+  );
+
+  const handleConfirmResumeAttempt = useCallback(() => {
     if (!pendingResumeAttempt) {
       return;
     }
 
-    setError(null);
-    setIsMutating(true);
-
-    try {
-      const sebCheck = await verifySebAccess();
-      if (!sebCheck.ok) {
-        showSebFriendlyWarning(sebCheck.message);
-        return;
-      }
-
-      const resumedAttempt = await resumeExamRequest(pendingResumeAttempt.attemptId);
-      setPendingResumeAttempt(null);
-      openAttempt(resumedAttempt);
-    } catch (err) {
-      sessionStorage.removeItem(ACTIVE_ATTEMPT_STORAGE_KEY);
-      setPendingResumeAttempt(null);
-      setError(
-        err instanceof Error ? err.message : "Шалгалтыг сэргээж чадсангүй.",
-      );
-    } finally {
-      setIsMutating(false);
-    }
-  }, [
-    ACTIVE_ATTEMPT_STORAGE_KEY,
-    openAttempt,
-    pendingResumeAttempt,
-    showSebFriendlyWarning,
-    verifySebAccess,
-  ]);
+    void resumeAttemptWithoutMonitoringConsent(pendingResumeAttempt.attemptId);
+  }, [pendingResumeAttempt, resumeAttemptWithoutMonitoringConsent]);
 
   const handleDeclineResumeAttempt = useCallback(async () => {
     if (!pendingResumeAttempt) {
@@ -447,9 +506,39 @@ export default function StudentAppPage() {
     await finalizeSavedAttempt(pendingResumeAttempt.attemptId);
   }, [finalizeSavedAttempt, pendingResumeAttempt]);
 
-  const handleStartExam = async (testId: string) => {
+  const handleStartExam = (testId: string) => {
     if (!selectedStudent) {
       setError("Эхлээд сурагчаа сонгоно уу.");
+      return;
+    }
+
+    setError(null);
+    setPendingMonitoringAction({
+      kind: "start",
+      studentId: selectedStudent.id,
+      studentName: selectedStudent.name,
+      testId,
+    });
+  };
+
+  const handleResumeExam = (attemptId: string) => {
+    void resumeAttemptWithoutMonitoringConsent(attemptId);
+  };
+
+  const requestExamFullscreen = useCallback(async () => {
+    if (typeof document === "undefined" || document.fullscreenElement) {
+      return;
+    }
+
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      // Some browsers may still reject fullscreen requests.
+    }
+  }, []);
+
+  const handleMonitoringConsentContinue = useCallback(async () => {
+    if (!pendingMonitoringAction) {
       return;
     }
 
@@ -460,26 +549,52 @@ export default function StudentAppPage() {
       const sebCheck = await verifySebAccess();
       if (!sebCheck.ok) {
         showSebFriendlyWarning(sebCheck.message);
+        setPendingMonitoringAction(null);
         return;
       }
 
-      const startedAttempt = await startExamRequest({
-        testId,
-        studentId: selectedStudent.id,
-        studentName: selectedStudent.name,
+      const permissionRequest = screenCapture
+        .requestScreenCaptureAccess()
+        .catch((error) => {
+          console.error("Failed to request screen capture access:", error);
+          return "fallback-dom-capture" as const;
+        });
+
+      const nextAttempt = await startExamRequest({
+        testId: pendingMonitoringAction.testId,
+        studentId: pendingMonitoringAction.studentId,
+        studentName: pendingMonitoringAction.studentName,
       });
 
-      openAttempt(startedAttempt);
+      setPendingMonitoringAction(null);
+      setPendingResumeAttempt(null);
+      openAttempt(nextAttempt);
+      void permissionRequest;
     } catch (err) {
+      sessionStorage.removeItem(ACTIVE_ATTEMPT_STORAGE_KEY);
+      setPendingMonitoringAction(null);
       setError(
-        err instanceof Error ? err.message : "Шалгалт эхлүүлэхэд алдаа гарлаа.",
+        err instanceof Error
+          ? err.message
+          : "Шалгалт эхлүүлэхэд алдаа гарлаа.",
       );
     } finally {
       setIsMutating(false);
     }
-  };
+  }, [
+    ACTIVE_ATTEMPT_STORAGE_KEY,
+    openAttempt,
+    pendingMonitoringAction,
+    screenCapture,
+    showSebFriendlyWarning,
+    verifySebAccess,
+  ]);
 
-  const handleResumeExam = async (attemptId: string) => {
+  const handleMonitoringConsentDecline = useCallback(async () => {
+    if (!pendingMonitoringAction) {
+      return;
+    }
+
     setError(null);
     setIsMutating(true);
 
@@ -487,19 +602,50 @@ export default function StudentAppPage() {
       const sebCheck = await verifySebAccess();
       if (!sebCheck.ok) {
         showSebFriendlyWarning(sebCheck.message);
+        setPendingMonitoringAction(null);
         return;
       }
 
-      const resumedAttempt = await resumeExamRequest(attemptId);
-      openAttempt(resumedAttempt);
+      screenCapture.resetMonitoringCapture();
+
+      const nextAttempt = await startExamRequest({
+        testId: pendingMonitoringAction.testId,
+        studentId: pendingMonitoringAction.studentId,
+        studentName: pendingMonitoringAction.studentName,
+      });
+
+      setPendingMonitoringAction(null);
+      setPendingResumeAttempt(null);
+      openAttempt(nextAttempt);
     } catch (err) {
+      sessionStorage.removeItem(ACTIVE_ATTEMPT_STORAGE_KEY);
+      setPendingMonitoringAction(null);
       setError(
-        err instanceof Error ? err.message : "Шалгалтыг сэргээж чадсангүй.",
+        err instanceof Error
+          ? err.message
+          : "Шалгалт эхлүүлэхэд алдаа гарлаа.",
       );
     } finally {
       setIsMutating(false);
     }
-  };
+  }, [
+    ACTIVE_ATTEMPT_STORAGE_KEY,
+    openAttempt,
+    pendingMonitoringAction,
+    screenCapture,
+    showSebFriendlyWarning,
+    verifySebAccess,
+  ]);
+
+  const handleMonitoringConsentOpenChange = useCallback((open: boolean) => {
+    if (!open && !isMutating && !screenCapture.isRequestingPermission) {
+      setPendingMonitoringAction(null);
+    }
+  }, [isMutating, screenCapture.isRequestingPermission]);
+
+  const handleDismissMonitoringWarning = useCallback(() => {
+    screenCapture.dismissPermissionWarning();
+  }, [screenCapture]);
 
   const handleSelectAnswer = (questionId: string, optionId: string) => {
     markInteraction();
@@ -616,9 +762,13 @@ export default function StudentAppPage() {
       });
 
       setLatestProgress(submittedProgress);
+      if (finalize) {
+        setLatestSubmittedExamTitle(activeAttempt.exam.title);
+      }
 
       if (finalize) {
         clearMonitoringState(activeAttempt.attemptId);
+        screenCapture.resetMonitoringCapture();
         clearAnswers(activeAttempt.attemptId);
         setActiveAttempt(null);
         setFlaggedQuestions({});
@@ -839,12 +989,42 @@ export default function StudentAppPage() {
     return (
       <>
         <Toaster richColors position="top-center" />
+        <AlertDialog
+          open={screenCapture.isPermissionWarningOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              handleDismissMonitoringWarning();
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Дэлгэц хуваалцах зөвшөөрөл олгогдсонгүй
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Дэлгэц хуваалцах зөвшөөрөл өгвөл шалгалтын хяналт илүү бүрэн
+                ажиллана. Дараа дахин зөвшөөрөх бол <strong>Entire screen</strong>
+                {" "}буюу <strong>Бүтэн дэлгэц</strong>-ийг сонгоно уу.
+                Одоогоор боломжтой тохиолдолд fallback хяналт ашиглан шалгалт
+                хэвийн үргэлжилнэ.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogAction onClick={handleDismissMonitoringWarning}>
+                Ойлголоо
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <TakeExam
           attempt={activeAttempt}
           answers={answers}
+          containerRef={examShellRef}
           error={error}
           flaggedQuestions={flaggedQuestions}
           isMutating={isMutating}
+          onQuestionInteract={() => void requestExamFullscreen()}
           timeLeftLabel={formatTimeLeft(timeLeftMs)}
           onQuestionFocus={handleQuestionFocus}
           onSelectAnswer={handleSelectAnswer}
@@ -858,14 +1038,49 @@ export default function StudentAppPage() {
   return (
     <>
       <Toaster richColors position="top-center" />
+      <ExamMonitoringConsentDialog
+        isSubmitting={isMutating || screenCapture.isRequestingPermission}
+        open={pendingMonitoringAction?.kind === "start"}
+        onAccept={() => void handleMonitoringConsentContinue()}
+        onOpenChange={handleMonitoringConsentOpenChange}
+        onDecline={() => void handleMonitoringConsentDecline()}
+      />
+      <AlertDialog
+        open={screenCapture.isPermissionWarningOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleDismissMonitoringWarning();
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Дэлгэц хуваалцах зөвшөөрөл олгогдсонгүй
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Дэлгэц хуваалцах зөвшөөрөл өгвөл шалгалтын хяналт илүү бүрэн
+              ажиллана. Дараа дахин зөвшөөрөх бол <strong>Entire screen</strong>
+              {" "}буюу <strong>Бүтэн дэлгэц</strong>-ийг сонгоно уу. Одоогоор
+              боломжтой тохиолдолд fallback хяналт ашиглан шалгалт хэвийн
+              үргэлжилнэ.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={handleDismissMonitoringWarning}>
+              Ойлголоо
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={Boolean(pendingResumeAttempt)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Шалгалтаа үргэлжлүүлэх үү?</AlertDialogTitle>
             <AlertDialogDescription>
-              Таны эхлүүлсэн шалгалт олдлоо. Үргэлжлүүлбэл өмнөх хариултууд болон
-              асуултын дараалал хэвээр сэргэнэ. Үгүй гэвэл одоогийн оролдлогыг
-              шууд дууссан гэж тэмдэглэнэ.
+              Таны эхлүүлсэн шалгалт олдлоо. Үргэлжлүүлбэл өмнөх хариултууд
+              болон асуултын дараалал хэвээр сэргэнэ. Үгүй гэвэл одоогийн
+              оролдлогыг шууд дууссан гэж тэмдэглэнэ.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -882,7 +1097,7 @@ export default function StudentAppPage() {
               disabled={isMutating}
               onClick={(event) => {
                 event.preventDefault();
-                void handleConfirmResumeAttempt();
+                handleConfirmResumeAttempt();
               }}
             >
               Үргэлжлүүлье
@@ -909,6 +1124,7 @@ export default function StudentAppPage() {
           isInitialLoading={isInitialLoading}
           isMutating={isMutating}
           latestProgress={latestProgress}
+          latestSubmittedExamTitle={latestSubmittedExamTitle}
           pageTitle={pageTitle}
           passRate={passRate}
           passedAttemptsCount={passedAttemptsCount}

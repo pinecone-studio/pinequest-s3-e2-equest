@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { fetchRuntimeJson } from "@/lib/runtime-api";
+import { fetchTakeExamDashboard } from "@/lib/take-exam-dashboard-api";
 import {
   Select,
   SelectContent,
@@ -37,18 +39,7 @@ export default function ExamReportPage() {
       }
 
       try {
-        const response = await fetch("/api/take-exam-dashboard?limit=80", {
-          cache: "no-store",
-        });
-        const nextPayload = (await response.json()) as DashboardApiPayload & {
-          message?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(
-            nextPayload.message ?? "Тайлангийн өгөгдөл ачаалж чадсангүй.",
-          );
-        }
+        const nextPayload = await fetchTakeExamDashboard(40);
 
         setPayload(nextPayload);
         setError(null);

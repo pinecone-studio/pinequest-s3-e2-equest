@@ -80,6 +80,10 @@ type AttemptMonitoringEvent {
   title: String!
   detail: String!
   occurredAt: String!
+  mode: String!
+  screenshotCapturedAt: String
+  screenshotStorageKey: String
+  screenshotUrl: String
 }
 
 type AttemptMonitoringSummary {
@@ -233,6 +237,10 @@ input AttemptActivityInput {
   title: String!
   detail: String!
   occurredAt: String
+  mode: String!
+  screenshotCapturedAt: String
+  screenshotStorageKey: String
+  screenshotUrl: String
 }
 
 input QuestionMetricInput {

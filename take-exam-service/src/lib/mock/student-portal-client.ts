@@ -2,6 +2,7 @@ import type {
 	AttemptSummary,
 	ExamAnswerInput,
 	ExamResultSummary,
+	MonitoringMode,
 	ProctoringEventSeverity,
 	StartExamResponse,
 	StudentExamQuestion,
@@ -19,8 +20,12 @@ type DashboardPayload = {
 type AttemptActivityInput = {
 	code: string;
 	detail: string;
+	mode: MonitoringMode;
 	occurredAt?: string;
 	severity: ProctoringEventSeverity;
+	screenshotCapturedAt?: string;
+	screenshotStorageKey?: string;
+	screenshotUrl?: string;
 	title: string;
 };
 
@@ -414,7 +419,11 @@ const appendMockMonitoringEvent = (
 		id: `mock-evt-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`,
 		code: input.code,
 		detail: input.detail,
+		mode: input.mode,
 		severity: input.severity,
+		screenshotCapturedAt: input.screenshotCapturedAt,
+		screenshotStorageKey: input.screenshotStorageKey,
+		screenshotUrl: input.screenshotUrl,
 		title: input.title,
 		occurredAt,
 	};

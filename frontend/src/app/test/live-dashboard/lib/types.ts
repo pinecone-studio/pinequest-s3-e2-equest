@@ -13,6 +13,10 @@ export type MonitoringState =
   | "idle";
 export type EventSeverity = "info" | "warning" | "danger";
 export type AiContentSource = "ollama" | "gemini" | "cf-ai" | "fallback";
+export type MonitoringMode =
+  | "screen-capture-enabled"
+  | "fallback-dom-capture"
+  | "limited-monitoring";
 
 export interface Exam {
   id: string;
@@ -47,6 +51,9 @@ export interface MonitoringEvent {
   code?: string;
   count?: number;
   id: string;
+  mode?: MonitoringMode;
+  screenshotCapturedAt?: Date;
+  screenshotUrl?: string;
   studentId: string;
   studentName: string;
   type:
@@ -176,8 +183,11 @@ export interface SubmittedAttempt {
       code?: string;
       detail: string;
       id: string;
+      mode?: MonitoringMode;
       occurredAt: Date;
       severity: EventSeverity;
+      screenshotCapturedAt?: Date;
+      screenshotUrl?: string;
       title: string;
       type: "warning" | "danger" | "focus";
     }>;

@@ -30,6 +30,26 @@ const FALLBACK_MODEL = "@cf/openai/gpt-oss-20b";
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
 const GEMINI_API_BASE_URL =
 	"https://generativelanguage.googleapis.com/v1beta";
+const MAX_QUESTION_FEEDBACK_CHARS = 140;
+const MATH_FALLBACK_TIPS = [
+	"Томьёонд орсон тоо, тэмдэг, коэффициентоо нэг мөрөөр дахин шалга.",
+	"Сүүлчийн тооцооллын алхмаа дахин нягтал.",
+	"Орлуулсан утга бүрээ бодлогодоо буцааж шалга.",
+	"Сөрөг тэмдэг, зэрэг, язгуур дээрээ онцгой анхаар.",
+	"Тэнцэтгэлийн хоёр талыг ижил дүрмээр хувиргаснаа шалга.",
+	"Хариугаа бодлогод буцааж орлуулж баталгаажуул.",
+	"Задлах, нэгтгэх алхам дээрээ алдаа байгаа эсэхийг нягтал.",
+	"Эцсийн хариугаа бичихийн өмнө завсрын мөрүүдээ нэг шалга.",
+	"Тоонуудыг буруу хуулсан эсэхээ дахин нягтал.",
+	"Завсрын хариугаа эцсийн мөртэйгээ тулгаж шалга.",
+] as const;
+const GENERAL_FALLBACK_TIPS = [
+	"Гол түлхүүр ойлголтоо дахин нэг сэргээн шалга.",
+	"Асуултын нөхцөл, сонголтоо дахин нягтал.",
+	"Түлхүүр үг, нөхцөл, тоон мэдээллээ анхааралтай унш.",
+	"Эцсийн хариугаа сонгохын өмнө логикоор нь дахин шалга.",
+	"Алдаа гарсан хэсгээ товч тэмдэглээд дахин бодож үз.",
+] as const;
 type FeedbackOptions = {
 	ai?: AiBinding;
 	geminiApiKey?: string;
@@ -161,7 +181,7 @@ const buildSystemPrompt = () =>
 	"Та шалгалтын дараах богино, дэмжсэн өнгө аястай монгол хэлний feedback JSON үүсгэнэ. headline, summary, strengths, improvements гэсэн 4 key ашигла. strengths болон improvements нь тус бүр 1-3 мөртэй массив байна.";
 
 const buildQuestionFeedbackSystemPrompt = () =>
-	"Та сурагчийн буруу эсвэл дутуу хариулт бүрт зориулсан товч монгол хэлний тайлбар JSON үүсгэнэ. Зөвхөн questionFeedback гэсэн key ашиглаж, массив дотор questionId ба feedback гэсэн 2 талбар өг. feedback нь 1-2 өгүүлбэртэй, аль болох богино байна. Юун дээр алдсан, зөв хариу юу байсан, дараа нь юуг дахин шалгах ёстойг шууд ойлгомжтой хэл.";
+	"Та сурагчийн буруу эсвэл дутуу хариулт бүрт зориулсан маш товч монгол хэлний тайлбар JSON үүсгэнэ. Зөвхөн questionFeedback гэсэн key ашиглаж, массив дотор questionId ба feedback гэсэн 2 талбар өг. feedback нь дээд тал нь 2 маш богино өгүүлбэр, 140 тэмдэгт орчим байна. Эхлээд зөв хариуг товч дурд, дараа нь яг ямар алдаа гарсныг 1 богино өгүүлбэрээр хэл. 'Анхаарах санаа', 'Давтах зөвлөмж' зэрэг шошго бүү хэрэглэ.";
 
 const buildUserPayload = (
 	progress: ExamProgress,
@@ -184,10 +204,13 @@ const buildQuestionFeedbackPayload = (items: QuestionFeedbackItem[]) =>
 	JSON.stringify({
 		questions: items,
 		instruction:
-			"questionId бүрийн feedback-ийг монгол хэлээр бич. 1-2 богино өгүүлбэр ашигла. Асуултын prompt, сурагчийн өгсөн хариулт, зөв хариуг харьцуулж яг аль алхам эсвэл ойлголт дээр алдсаныг товч хэл. Зөв хариуг дурд. Давтах зүйл байвал нэг богино зөвлөмжөөр төгсгө.",
+			"questionId бүрийн feedback-ийг монгол хэлээр бич. Дээд тал нь 2 маш богино өгүүлбэр хэрэглэ. Эхний өгүүлбэрт зөв хариуг, хоёр дахь өгүүлбэрт алдааг л товч хэл. Давхардсан тайлбар, урт зөвлөмж, шошго бүү ашигла.",
 	});
 
 const normalizeWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
+
+const hasMeaningfulAnswerText = (value?: string | null) =>
+	normalizeWhitespace(value ?? "").replace(/^["']+|["']+$/g, "").length > 0;
 
 const splitSentences = (value: string) =>
 	normalizeWhitespace(value)
@@ -207,13 +230,26 @@ const compactExplanation = (value: string, item: QuestionFeedbackItem) => {
 
 	const selectedAnswer = item.selectedAnswerText.trim().toLowerCase();
 	const correctAnswer = item.correctAnswerText.trim().toLowerCase();
+	const hasSelectedAnswer = hasMeaningfulAnswerText(item.selectedAnswerText);
+	const hasCorrectAnswer = hasMeaningfulAnswerText(item.correctAnswerText);
 
-	const filtered = sentences.filter((sentence, index) => {
-		if (index !== 0) {
-			return true;
+	const filtered = sentences.filter((sentence) => {
+		const normalizedSentence = sentence.toLowerCase();
+		const isRoutineSentence =
+			/^(анхаарах санаа|давтах зөвлөмж)[:\s]/i.test(sentence) ||
+			[
+				"жишээ бодлого",
+				"ижил хэв шинжийн",
+				"ахиад ажилла",
+				"үндсэн дүрэм",
+				"бодолтын алхмуудаа",
+				"алхмуудаа бич",
+				"хэлбэрээр өг",
+			].some((phrase) => normalizedSentence.includes(phrase));
+		if (isRoutineSentence || isLikelyInstructionText(sentence)) {
+			return false;
 		}
 
-		const normalizedSentence = sentence.toLowerCase();
 		const mentionsSelected =
 			selectedAnswer.length > 0 && normalizedSentence.includes(selectedAnswer);
 		const mentionsCorrect =
@@ -221,11 +257,114 @@ const compactExplanation = (value: string, item: QuestionFeedbackItem) => {
 		const mentionsAnswerPattern =
 			normalizedSentence.includes("зөв хари") ||
 			normalizedSentence.includes("зөв нь");
+		const mentionsEmptyCorrectAnswer =
+			/зөв(?:\s+хари(?:у|улт)(?:\s+нь)?)?\s*["']{2}/i.test(sentence) ||
+			normalizedSentence.includes('зөв нь ""') ||
+			normalizedSentence.includes('зөв хариу нь ""') ||
+			normalizedSentence.includes('зөв хариулт нь ""');
 
-		return !(mentionsSelected && mentionsCorrect && mentionsAnswerPattern);
+		if (mentionsEmptyCorrectAnswer) {
+			return false;
+		}
+
+		if (mentionsSelected && mentionsCorrect && mentionsAnswerPattern) {
+			return false;
+		}
+
+		if (!hasCorrectAnswer && (normalizedSentence.includes('зөв хари') || normalizedSentence.includes('зөв нь "')))
+		{
+			return false;
+		}
+
+		if (!hasSelectedAnswer && normalizedSentence.startsWith("энэ асуултад хариулаагүй")) {
+			return false;
+		}
+
+		return true;
 	});
 
 	return filtered[0] ?? sentences[0] ?? "";
+};
+
+const pickRandomFallbackTip = (
+	tips: readonly string[],
+) => tips[Math.floor(Math.random() * tips.length)] ?? tips[0] ?? "";
+
+const trimSentence = (value: string, maxLength: number) => {
+	const normalized = normalizeWhitespace(value).replace(/^[:\-.,\s]+/, "");
+	if (normalized.length <= maxLength) {
+		return normalized;
+	}
+
+	const sliced = normalized.slice(0, maxLength).replace(/[,\s.:;!?-]+$/g, "");
+	return `${sliced}.`;
+};
+
+const formatConciseQuestionFeedback = (
+	value: string,
+	item: QuestionFeedbackItem,
+) => {
+	const hasCorrectAnswer = hasMeaningfulAnswerText(item.correctAnswerText);
+	const hasSelectedAnswer = hasMeaningfulAnswerText(item.selectedAnswerText);
+	const coreExplanation = compactExplanation(value, item);
+	const conciseExplanation = coreExplanation
+		? trimSentence(coreExplanation, 78)
+		: "";
+	const correctPart = hasCorrectAnswer
+		? hasSelectedAnswer
+			? `Зөв нь "${item.correctAnswerText}".`
+			: `Хариулаагүй. Зөв нь "${item.correctAnswerText}".`
+		: hasSelectedAnswer
+			? "Хариугаа дахин шалгаарай."
+			: "Хариулаагүй байна.";
+
+	const explanationMentionsCorrect =
+		hasCorrectAnswer &&
+		conciseExplanation
+			.toLowerCase()
+			.includes(item.correctAnswerText.trim().toLowerCase());
+	const parts = [correctPart];
+	if (conciseExplanation && !explanationMentionsCorrect) {
+		parts.push(conciseExplanation);
+	} else if (!parts[0] && conciseExplanation) {
+		parts.push(conciseExplanation);
+	}
+
+	const merged = normalizeWhitespace(parts.join(" "));
+	return trimSentence(merged, MAX_QUESTION_FEEDBACK_CHARS);
+};
+
+const sanitizeGeneratedQuestionFeedback = (
+	value: string,
+	item: QuestionFeedbackItem,
+) => {
+	const normalized = normalizeWhitespace(value);
+	if (!normalized) {
+		return "";
+	}
+
+	const hasBlockedPattern =
+		/анхаарах санаа/i.test(normalized) ||
+		/давтах зөвлөмж/i.test(normalized) ||
+		/жишээ бодлого/i.test(normalized) ||
+		/ижил хэв шинж/i.test(normalized) ||
+		/зөв(?:\s+хари(?:у|улт)(?:\s+нь)?)?\s*["']{2}/i.test(normalized);
+
+	if (hasBlockedPattern) {
+		return "";
+	}
+
+	const formatted = formatConciseQuestionFeedback(normalized, item);
+	if (
+		!formatted ||
+		/анхаарах санаа/i.test(formatted) ||
+		/давтах зөвлөмж/i.test(formatted) ||
+		/зөв(?:\s+хари(?:у|улт)(?:\s+нь)?)?\s*["']{2}/i.test(formatted)
+	) {
+		return "";
+	}
+
+	return formatted;
 };
 
 const isLikelyInstructionText = (value: string) => {
@@ -298,7 +437,7 @@ const buildFallbackQuestionFeedback = (item: QuestionFeedbackItem) => {
 		correctNumeric < 0 &&
 		studentNumeric >= 0
 	) {
-		return `Та ${subtraction.left}-${subtraction.right} үйлдэл дээр сөрөг тэмдгийг алдсан байна. Зөв нь "${item.correctAnswerText}", бага тооноос их тоо хасахад хариу сөрөг гарна.`;
+		return `Зөв нь "${item.correctAnswerText}". Сөрөг тэмдгээ алдсан байна.`;
 	}
 
 	if (
@@ -307,25 +446,29 @@ const buildFallbackQuestionFeedback = (item: QuestionFeedbackItem) => {
 		item.selectedAnswerText &&
 		!item.selectedAnswerText.includes("+ C")
 	) {
-		return `Та интегралын тогтмол +C-г орхигдуулсан байна. Зөв нь "${item.correctAnswerText}", интегралын эцэст +C-гээ заавал нэмээрэй.`;
+		return `Зөв нь "${item.correctAnswerText}". Интегралын +C-г орхигдуулсан байна.`;
 	}
 
-	const correctAnswer = item.correctAnswerText.trim();
-	const lead = item.selectedAnswerText
-		? correctAnswer
-			? `Таны хариулт "${item.selectedAnswerText}", зөв нь "${correctAnswer}".`
-			: `Таны хариулт "${item.selectedAnswerText}" байна.`
-		: correctAnswer
-			? `Энэ асуултад хариулаагүй. Зөв нь "${correctAnswer}".`
-			: "Энэ асуултад хариулаагүй байна.";
 	const explanation = item.baseExplanation
 		? compactExplanation(item.baseExplanation, item)
 		: "";
+	if (
+		!hasMeaningfulAnswerText(item.correctAnswerText) &&
+		!explanation
+	) {
+		return hasMeaningfulAnswerText(item.selectedAnswerText)
+			? "Хариугаа дахин шалгаарай."
+			: "Хариулаагүй байна.";
+	}
+
 	const studyTopic = normalizeStudyTopic(item.competency, item.questionType);
 	const reminder =
-		explanation || `${studyTopic}-ийн үндсэн ойлголтоо дахин шалгаарай.`;
+		explanation ||
+		(item.questionType === "math"
+			? pickRandomFallbackTip(MATH_FALLBACK_TIPS)
+			: `${studyTopic}-ийн үндсэн ойлголтоо дахин шалгаарай.`);
 
-	return `${lead} ${reminder}`;
+	return formatConciseQuestionFeedback(reminder, item);
 };
 
 const buildQuestionFeedbackItems = (
@@ -452,26 +595,47 @@ export const enrichResultWithQuestionFeedback = async (
 	options: FeedbackOptions = {},
 ): Promise<ExamResultSummary> => {
 	const items = buildQuestionFeedbackItems(rows, result);
+	const aiEligibleItems = items.filter((item) => item.questionType !== "math");
+	const itemByQuestionId = new Map(
+		items.map((item) => [item.questionId, item] as const),
+	);
 	if (items.length === 0) {
 		return result;
 	}
 
 	let feedbackByQuestionId = new Map<string, string>();
 	let feedbackSourceByQuestionId = new Map<string, AiContentSource>();
+	const applyGeneratedFeedback = (
+		questionFeedback: QuestionFeedbackResponse["questionFeedback"],
+		source: AiContentSource,
+	) => {
+		for (const item of questionFeedback) {
+			const targetItem = itemByQuestionId.get(item.questionId);
+			if (!targetItem) {
+				continue;
+			}
+
+			const sanitized = sanitizeGeneratedQuestionFeedback(
+				item.feedback,
+				targetItem,
+			);
+			if (!sanitized) {
+				continue;
+			}
+
+			feedbackByQuestionId.set(item.questionId, sanitized);
+			feedbackSourceByQuestionId.set(item.questionId, source);
+		}
+	};
 
 	try {
 		try {
-			const ollamaFeedback = await generateOllamaQuestionFeedback(items, options);
+			const ollamaFeedback = await generateOllamaQuestionFeedback(
+				aiEligibleItems,
+				options,
+			);
 			if (ollamaFeedback) {
-				feedbackByQuestionId = new Map(
-					ollamaFeedback.questionFeedback.map((item) => [item.questionId, item.feedback] as const),
-				);
-				feedbackSourceByQuestionId = new Map(
-					ollamaFeedback.questionFeedback.map((item) => [
-						item.questionId,
-						"ollama" as const,
-					] as const),
-				);
+				applyGeneratedFeedback(ollamaFeedback.questionFeedback, "ollama");
 			}
 		} catch {
 			// Try the next provider.
@@ -479,17 +643,12 @@ export const enrichResultWithQuestionFeedback = async (
 
 		if (feedbackByQuestionId.size === 0) {
 			try {
-				const geminiFeedback = await generateGeminiQuestionFeedback(items, options);
+				const geminiFeedback = await generateGeminiQuestionFeedback(
+					aiEligibleItems,
+					options,
+				);
 				if (geminiFeedback) {
-					feedbackByQuestionId = new Map(
-						geminiFeedback.questionFeedback.map((item) => [item.questionId, item.feedback] as const),
-					);
-					feedbackSourceByQuestionId = new Map(
-						geminiFeedback.questionFeedback.map((item) => [
-							item.questionId,
-							"gemini" as const,
-						] as const),
-					);
+					applyGeneratedFeedback(geminiFeedback.questionFeedback, "gemini");
 				}
 			} catch {
 				// Fall through to deterministic fallback.
@@ -499,12 +658,13 @@ export const enrichResultWithQuestionFeedback = async (
 		// Fall through to deterministic fallback.
 	}
 
-	if (feedbackByQuestionId.size === 0) {
-		feedbackByQuestionId = new Map();
-		for (const item of items) {
-			feedbackByQuestionId.set(item.questionId, buildFallbackQuestionFeedback(item));
-			feedbackSourceByQuestionId.set(item.questionId, "fallback");
+	for (const item of items) {
+		if (feedbackByQuestionId.has(item.questionId)) {
+			continue;
 		}
+
+		feedbackByQuestionId.set(item.questionId, buildFallbackQuestionFeedback(item));
+		feedbackSourceByQuestionId.set(item.questionId, "fallback");
 	}
 
 	return {

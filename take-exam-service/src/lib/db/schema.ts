@@ -116,6 +116,16 @@ export const proctoringEvents = sqliteTable("proctoring_events", {
     title: text("title").notNull(),
     detail: text("detail").notNull(),
     occurredAt: text("occurred_at").notNull(),
+    mode: text("mode", {
+        enum: [
+            "screen-capture-enabled",
+            "fallback-dom-capture",
+            "limited-monitoring",
+        ],
+    }).notNull().default("limited-monitoring"),
+    screenshotCapturedAt: text("screenshot_captured_at"),
+    screenshotStorageKey: text("screenshot_storage_key"),
+    screenshotUrl: text("screenshot_url"),
     createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
     attemptOccurredIdx: index("proctoring_events_attempt_occurred_idx").on(table.attemptId, table.occurredAt),

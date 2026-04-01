@@ -1,5 +1,6 @@
 "use client";
 
+import type { MonitoringMode } from "@/lib/exam-service/types";
 import type { AttemptActivityInput } from "./student-page-api";
 
 export type ExamSessionEventType =
@@ -33,6 +34,8 @@ export type BrowserFingerprintSnapshot = BrowserFingerprintSignals & {
 };
 
 export type ExamEventMetadata = Record<string, unknown>;
+
+const DEFAULT_MONITORING_MODE: MonitoringMode = "limited-monitoring";
 
 type QueuedExamEvent = {
   attemptId: string;
@@ -296,9 +299,16 @@ const buildAttemptActivityInput = (
   const config = EVENT_CONFIG[eventType];
   const occurredAt =
     typeof metadata.timestamp === "string" ? metadata.timestamp : getTimestamp();
+  const mode =
+    metadata.mode === "screen-capture-enabled" ||
+    metadata.mode === "fallback-dom-capture" ||
+    metadata.mode === "limited-monitoring"
+      ? (metadata.mode as MonitoringMode)
+      : DEFAULT_MONITORING_MODE;
 
   return {
     code: eventType,
+    mode,
     severity: config.severity,
     title: config.title,
     occurredAt,

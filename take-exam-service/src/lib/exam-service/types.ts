@@ -85,6 +85,10 @@ export type AttemptStatus = "in_progress" | "processing" | "submitted" | "approv
 
 export type ProctoringEventSeverity = "info" | "warning" | "danger";
 export type AiContentSource = "ollama" | "gemini" | "cf-ai" | "fallback";
+export type MonitoringMode =
+	| "screen-capture-enabled"
+	| "fallback-dom-capture"
+	| "limited-monitoring";
 
 export type AttemptMonitoringEvent = {
 	id: string;
@@ -93,6 +97,10 @@ export type AttemptMonitoringEvent = {
 	title: string;
 	detail: string;
 	occurredAt: string;
+	mode: MonitoringMode;
+	screenshotCapturedAt?: string;
+	screenshotStorageKey?: string;
+	screenshotUrl?: string;
 };
 
 export type AttemptMonitoringSummary = {

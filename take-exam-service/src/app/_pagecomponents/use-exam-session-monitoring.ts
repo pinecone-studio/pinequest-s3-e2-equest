@@ -15,11 +15,13 @@ import {
   readStoredFingerprint,
   type BrowserFingerprintSnapshot,
 } from "./exam-session-monitoring-utils";
+import type { MonitoringMode } from "@/lib/exam-service/types";
 
 type UseExamSessionMonitoringOptions = {
   attemptId: string | null;
   enabled?: boolean;
   heartbeatIntervalMs?: number;
+  monitoringMode?: MonitoringMode;
 };
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
@@ -28,12 +30,14 @@ export function useExamSessionMonitoring({
   attemptId,
   enabled = true,
   heartbeatIntervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS,
+  monitoringMode = "limited-monitoring",
 }: UseExamSessionMonitoringOptions) {
   const [isOnline, setIsOnline] = useState(getCurrentOnlineStatus);
   const baselineFingerprintRef = useRef<BrowserFingerprintSnapshot | null>(null);
   const currentFingerprintRef = useRef<BrowserFingerprintSnapshot | null>(null);
   const loggedDeviceChangeSignatureRef = useRef<string | null>(null);
   const latestAttemptIdRef = useRef<string | null>(attemptId);
+  const monitoringModeRef = useRef<MonitoringMode>(monitoringMode);
   const sessionIdRef = useRef<string | null>(null);
   const isOnlineRef = useRef(isOnline);
   const logger = useMemo(
@@ -44,6 +48,10 @@ export function useExamSessionMonitoring({
   useEffect(() => {
     latestAttemptIdRef.current = attemptId;
   }, [attemptId]);
+
+  useEffect(() => {
+    monitoringModeRef.current = monitoringMode;
+  }, [monitoringMode]);
 
   useEffect(() => {
     isOnlineRef.current = isOnline;
@@ -70,6 +78,7 @@ export function useExamSessionMonitoring({
 
       logger.logExamEvent(activeAttemptId, eventType, {
         attemptId: activeAttemptId,
+        mode: monitoringModeRef.current,
         sessionId: sessionIdRef.current,
         ...metadata,
       });

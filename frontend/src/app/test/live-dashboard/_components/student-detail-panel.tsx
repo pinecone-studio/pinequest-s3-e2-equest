@@ -18,6 +18,7 @@ import {
   AlertOctagon,
   CheckCircle,
   User,
+  Camera,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -298,7 +299,48 @@ function TimelineEvent({ event }: { event: MonitoringEvent }) {
           </span>
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground">{event.detail}</p>
+        {event.mode || event.screenshotUrl ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {event.mode ? (
+              <Badge variant="outline" className="text-[10px]">
+                {formatMonitoringMode(event.mode)}
+              </Badge>
+            ) : null}
+            {event.screenshotCapturedAt ? (
+              <span className="text-[10px] text-muted-foreground">
+                {event.screenshotCapturedAt.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+            ) : null}
+            {event.screenshotUrl ? (
+              <a
+                className="inline-flex items-center gap-1 text-[10px] font-medium text-foreground underline-offset-4 hover:underline"
+                href={event.screenshotUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <Camera className="h-3 w-3" />
+                Screenshot
+              </a>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
+}
+
+function formatMonitoringMode(mode: NonNullable<MonitoringEvent["mode"]>) {
+  switch (mode) {
+    case "screen-capture-enabled":
+      return "Screen capture";
+    case "fallback-dom-capture":
+      return "Fallback capture";
+    case "limited-monitoring":
+      return "Limited monitoring";
+    default:
+      return mode;
+  }
 }

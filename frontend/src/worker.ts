@@ -50,8 +50,12 @@ type AttemptPayload = {
     recentEvents?: Array<{
       code?: string | null;
       detail?: string | null;
+      mode?: string | null;
       occurredAt?: string | null;
       severity?: string | null;
+      screenshotCapturedAt?: string | null;
+      screenshotStorageKey?: string | null;
+      screenshotUrl?: string | null;
       title?: string | null;
     }>;
     totalEvents?: number;
@@ -194,6 +198,10 @@ fragment FrontendDashboardAttemptFields on AttemptSummary {
       title
       detail
       occurredAt
+      mode
+      screenshotCapturedAt
+      screenshotStorageKey
+      screenshotUrl
     }
   }
   result {
@@ -263,6 +271,10 @@ fragment FrontendDashboardLiveFeedFields on AttemptLiveFeedItem {
     title
     detail
     occurredAt
+    mode
+    screenshotCapturedAt
+    screenshotStorageKey
+    screenshotUrl
   }
 }
 
@@ -321,6 +333,10 @@ fragment FrontendDashboardAttemptFields on AttemptSummary {
       title
       detail
       occurredAt
+      mode
+      screenshotCapturedAt
+      screenshotStorageKey
+      screenshotUrl
     }
   }
   result {
@@ -390,6 +406,10 @@ fragment FrontendDashboardLiveFeedFields on AttemptLiveFeedItem {
     title
     detail
     occurredAt
+    mode
+    screenshotCapturedAt
+    screenshotStorageKey
+    screenshotUrl
   }
 }
 

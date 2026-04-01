@@ -3,6 +3,7 @@ import type {
   ExamAnalytics,
   Exam,
   MonitoringEvent,
+  MonitoringMode,
   MonitoringState,
   QuestionReview,
   RiskLevel,
@@ -58,8 +59,12 @@ export type DashboardApiPayload = {
         code: string;
         detail: string;
         id: string;
+        mode?: string | null;
         occurredAt: string;
         severity: "info" | "warning" | "danger";
+        screenshotCapturedAt?: string | null;
+        screenshotStorageKey?: string | null;
+        screenshotUrl?: string | null;
         title: string;
       }>;
       totalEvents: number;
@@ -117,8 +122,12 @@ export type DashboardApiPayload = {
       code: string;
       detail: string;
       id: string;
+      mode?: string | null;
       occurredAt: string;
       severity: "info" | "warning" | "danger";
+      screenshotCapturedAt?: string | null;
+      screenshotStorageKey?: string | null;
+      screenshotUrl?: string | null;
       title: string;
     } | null;
     monitoring?: {
@@ -154,6 +163,17 @@ type MaterialQuestion = NonNullable<
   DashboardApiPayload["testMaterial"]
 >["questions"][number];
 type DashboardAttempt = DashboardApiPayload["attempts"][number];
+
+const toMonitoringMode = (value?: string | null): MonitoringMode | undefined => {
+  switch (value) {
+    case "screen-capture-enabled":
+    case "fallback-dom-capture":
+    case "limited-monitoring":
+      return value;
+    default:
+      return undefined;
+  }
+};
 
 const toStudentStatus = (status: DashboardApiPayload["attempts"][number]["status"]): StudentStatus => {
   switch (status) {
@@ -508,8 +528,13 @@ const buildSubmittedAttempt = (
           code: event.code,
           detail: event.detail,
           id: event.id,
+          mode: toMonitoringMode(event.mode),
           occurredAt: getEventTimestamp(event.occurredAt),
           severity: event.severity,
+          screenshotCapturedAt: event.screenshotCapturedAt
+            ? getEventTimestamp(event.screenshotCapturedAt)
+            : undefined,
+          screenshotUrl: event.screenshotUrl ?? undefined,
           title: event.title,
           type:
             event.code === "tab_hidden" || event.code === "window_blur"
@@ -877,6 +902,11 @@ export const buildExamDashboardData = (
       code: latestEvent.code,
       count: 1,
       id: latestEvent.id,
+      mode: toMonitoringMode(latestEvent.mode),
+      screenshotCapturedAt: latestEvent.screenshotCapturedAt
+        ? getEventTimestamp(latestEvent.screenshotCapturedAt)
+        : undefined,
+      screenshotUrl: latestEvent.screenshotUrl ?? undefined,
       studentId: item.studentId,
       studentName: item.studentName,
       type: toEventType(latestEvent.code),
@@ -898,6 +928,11 @@ export const buildExamDashboardData = (
         code: event.code,
         count: 1,
         id: event.id,
+        mode: toMonitoringMode(event.mode),
+        screenshotCapturedAt: event.screenshotCapturedAt
+          ? getEventTimestamp(event.screenshotCapturedAt)
+          : undefined,
+        screenshotUrl: event.screenshotUrl ?? undefined,
         studentId: attempt.studentId,
         studentName: attempt.studentName,
         type: toEventType(event.code),

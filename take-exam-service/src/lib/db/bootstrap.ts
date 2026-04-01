@@ -143,6 +143,10 @@ export async function ensureExamSchema(db: D1Database) {
 				title text NOT NULL,
 				detail text NOT NULL,
 				occurred_at text NOT NULL,
+				mode text NOT NULL DEFAULT 'limited-monitoring',
+				screenshot_captured_at text,
+				screenshot_storage_key text,
+				screenshot_url text,
 				created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
 			)`,
 		)
@@ -315,6 +319,34 @@ export async function ensureExamSchema(db: D1Database) {
 	);
 
 	const proctoringEventColumns = await getColumnNames(db, "proctoring_events");
+	await addColumnIfMissing(
+		db,
+		"proctoring_events",
+		proctoringEventColumns,
+		"mode",
+		"mode text NOT NULL DEFAULT 'limited-monitoring'",
+	);
+	await addColumnIfMissing(
+		db,
+		"proctoring_events",
+		proctoringEventColumns,
+		"screenshot_captured_at",
+		"screenshot_captured_at text",
+	);
+	await addColumnIfMissing(
+		db,
+		"proctoring_events",
+		proctoringEventColumns,
+		"screenshot_storage_key",
+		"screenshot_storage_key text",
+	);
+	await addColumnIfMissing(
+		db,
+		"proctoring_events",
+		proctoringEventColumns,
+		"screenshot_url",
+		"screenshot_url text",
+	);
 	await addColumnIfMissing(
 		db,
 		"proctoring_events",

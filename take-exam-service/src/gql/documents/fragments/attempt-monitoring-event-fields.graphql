@@ -5,4 +5,8 @@ fragment AttemptMonitoringEventFields on AttemptMonitoringEvent {
   title
   detail
   occurredAt
+  mode
+  screenshotCapturedAt
+  screenshotStorageKey
+  screenshotUrl
 }

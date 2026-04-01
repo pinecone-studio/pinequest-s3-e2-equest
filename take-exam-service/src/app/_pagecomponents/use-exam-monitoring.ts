@@ -5,11 +5,56 @@ import {
   type AttemptActivityInput,
   logAttemptActivityRequest,
 } from "./student-page-api";
-import type { StartExamResponse } from "@/lib/exam-service/types";
+import type {
+  MonitoringMode,
+  StartExamResponse,
+} from "@/lib/exam-service/types";
+
+type MonitoringEvidenceResult = {
+  mode: MonitoringMode;
+  screenshotCapturedAt?: string;
+  screenshotStorageKey?: string;
+  screenshotUrl?: string;
+};
+
+type MonitoringActivityDraft = Omit<
+  AttemptActivityInput,
+  "mode" | "occurredAt" | "screenshotCapturedAt" | "screenshotStorageKey" | "screenshotUrl"
+> & {
+  cooldownMs?: number;
+  mode?: MonitoringMode;
+  occurredAt?: string;
+  screenshotCapturedAt?: string;
+  screenshotStorageKey?: string;
+  screenshotUrl?: string;
+};
+
+type UseExamMonitoringOptions = {
+  captureEvidence?: (input: {
+    attemptId: string;
+    eventCode: string;
+    occurredAt?: string;
+  }) => Promise<MonitoringEvidenceResult>;
+  enabled?: boolean;
+  monitoringMode: MonitoringMode;
+  suspiciousScoreThreshold?: number;
+};
+
+const CAPTURE_TRIGGER_CODES = new Set([
+  "tab_hidden",
+  "window_blur",
+  "fullscreen-exit",
+]);
+const FULLSCREEN_REQUEST_DELAY_MS = 5_000;
 
 export function useExamMonitoring(
   activeAttempt: StartExamResponse | null,
-  enabled = true,
+  {
+    captureEvidence,
+    enabled = true,
+    monitoringMode,
+    suspiciousScoreThreshold = 3,
+  }: UseExamMonitoringOptions,
 ) {
   const [now, setNow] = useState(Date.now());
   const activityCooldownRef = useRef<Record<string, number>>({});
@@ -19,6 +64,8 @@ export function useExamMonitoring(
   const lastInteractionAtRef = useRef(Date.now());
   const loggedAttemptSessionRef = useRef<string | null>(null);
   const questionViewCountsRef = useRef<Record<string, number>>({});
+  const monitoringModeRef = useRef<MonitoringMode>(monitoringMode);
+  const suspiciousScoreRef = useRef(0);
   const tabIdRef = useRef(
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
@@ -34,14 +81,23 @@ export function useExamMonitoring(
     activeAttemptRef.current = activeAttempt;
   }, [activeAttempt]);
 
+  useEffect(() => {
+    monitoringModeRef.current = monitoringMode;
+  }, [monitoringMode]);
+
   const recordAttemptActivity = useEffectEvent(
     async ({
       code,
       cooldownMs = 1_500,
       detail,
+      mode,
+      occurredAt,
       severity = "warning",
+      screenshotCapturedAt,
+      screenshotStorageKey,
+      screenshotUrl,
       title,
-    }: AttemptActivityInput & { cooldownMs?: number }) => {
+    }: MonitoringActivityDraft) => {
       const attempt = activeAttemptRef.current;
       if (!attempt || !enabled) return;
 
@@ -52,15 +108,36 @@ export function useExamMonitoring(
       }
 
       activityCooldownRef.current[code] = nowTs;
-      const occurredAt = new Date(nowTs).toISOString();
+      const resolvedOccurredAt = occurredAt ?? new Date(nowTs).toISOString();
+      const nextSuspiciousScore =
+        suspiciousScoreRef.current +
+        (severity === "danger" ? 2 : severity === "warning" ? 1 : 0);
+      suspiciousScoreRef.current = nextSuspiciousScore;
+      const shouldCaptureEvidence =
+        Boolean(captureEvidence) &&
+        (CAPTURE_TRIGGER_CODES.has(code) ||
+          nextSuspiciousScore >= suspiciousScoreThreshold);
+      const evidence = shouldCaptureEvidence
+        ? await captureEvidence?.({
+            attemptId: attempt.attemptId,
+            eventCode: code,
+            occurredAt: resolvedOccurredAt,
+          })
+        : undefined;
 
       try {
         await logAttemptActivityRequest(attempt.attemptId, {
           code,
           detail,
+          mode: evidence?.mode ?? mode ?? monitoringModeRef.current,
           severity,
+          screenshotCapturedAt:
+            evidence?.screenshotCapturedAt ?? screenshotCapturedAt,
+          screenshotStorageKey:
+            evidence?.screenshotStorageKey ?? screenshotStorageKey,
+          screenshotUrl: evidence?.screenshotUrl ?? screenshotUrl,
           title,
-          occurredAt,
+          occurredAt: resolvedOccurredAt,
         });
       } catch {
         // Monitoring events are best-effort and must not block the exam.
@@ -77,15 +154,25 @@ export function useExamMonitoring(
       code,
       cooldownMs,
       detail,
+      mode,
+      occurredAt,
       severity = "info",
+      screenshotCapturedAt,
+      screenshotStorageKey,
+      screenshotUrl,
       title,
-    }: AttemptActivityInput & { cooldownMs?: number }) => {
+    }: MonitoringActivityDraft) => {
       markInteraction();
       void recordAttemptActivity({
         code,
         cooldownMs,
         detail,
+        mode,
+        occurredAt,
         severity,
+        screenshotCapturedAt,
+        screenshotStorageKey,
+        screenshotUrl,
         title,
       });
     },
@@ -141,11 +228,13 @@ export function useExamMonitoring(
       lastInteractionAtRef.current = Date.now();
       questionViewCountsRef.current = {};
       loggedAttemptSessionRef.current = null;
+      suspiciousScoreRef.current = 0;
       return;
     }
 
     lastInteractionAtRef.current = Date.now();
     questionViewCountsRef.current = {};
+    suspiciousScoreRef.current = 0;
 
     if (loggedAttemptSessionRef.current === activeAttempt.attemptId) {
       return;
@@ -159,7 +248,13 @@ export function useExamMonitoring(
       severity: "info",
       title: "Session open",
     });
-  }, [activeAttempt, enabled, recordAttemptActivity]);
+  }, [
+    activeAttempt,
+    captureEvidence,
+    enabled,
+    recordAttemptActivity,
+    suspiciousScoreThreshold,
+  ]);
 
   useEffect(() => {
     if (!activeAttempt || !enabled) {
@@ -181,7 +276,9 @@ export function useExamMonitoring(
       }
     };
 
-    void requestFullscreen();
+    const fullscreenRequestTimer = window.setTimeout(() => {
+      void requestFullscreen();
+    }, FULLSCREEN_REQUEST_DELAY_MS);
     viewportRef.current = {
       breakpoint: getBreakpoint(window.innerWidth),
       height: window.innerHeight,
@@ -494,6 +591,7 @@ export function useExamMonitoring(
     window.addEventListener("scroll", handleInteraction, true);
 
     return () => {
+      window.clearTimeout(fullscreenRequestTimer);
       window.clearTimeout(initialViewportCheckTimer);
       window.clearInterval(devtoolsInterval);
       window.clearInterval(idleInterval);

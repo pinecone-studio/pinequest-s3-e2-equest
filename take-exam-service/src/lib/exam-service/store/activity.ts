@@ -3,6 +3,7 @@ import type {
 	AttemptLiveFeedItem,
 	AttemptMonitoringEvent,
 	AttemptMonitoringSummary,
+	MonitoringMode,
 	ProctoringEventSeverity,
 } from "@/lib/exam-service/types";
 import { DbClient } from "@/lib/db";
@@ -17,6 +18,10 @@ type LogAttemptActivityInput = {
 	title: string;
 	detail: string;
 	occurredAt?: string | null;
+	mode: MonitoringMode;
+	screenshotCapturedAt?: string | null;
+	screenshotStorageKey?: string | null;
+	screenshotUrl?: string | null;
 };
 
 const toMonitoringEvent = (
@@ -28,6 +33,10 @@ const toMonitoringEvent = (
 	title: row.title,
 	detail: row.detail,
 	occurredAt: row.occurredAt,
+	mode: row.mode,
+	screenshotCapturedAt: row.screenshotCapturedAt ?? undefined,
+	screenshotStorageKey: row.screenshotStorageKey ?? undefined,
+	screenshotUrl: row.screenshotUrl ?? undefined,
 });
 
 export const logAttemptActivity = async (
@@ -56,6 +65,10 @@ export const logAttemptActivity = async (
 		title: input.title.trim(),
 		detail: input.detail.trim(),
 		occurredAt,
+		mode: input.mode,
+		screenshotCapturedAt: input.screenshotCapturedAt ?? null,
+		screenshotStorageKey: input.screenshotStorageKey ?? null,
+		screenshotUrl: input.screenshotUrl ?? null,
 	});
 };
 

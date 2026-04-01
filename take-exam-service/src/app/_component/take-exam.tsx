@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   AlertCircle,
   Flag,
@@ -19,9 +19,11 @@ import { formatQuestionPrompt } from "@/app/_pagecomponents/student-page-utils";
 type TakeExamProps = {
   answers: Record<string, string | null>;
   attempt: StartExamResponse;
+  containerRef?: RefObject<HTMLDivElement | null>;
   error: string | null;
   flaggedQuestions: Record<string, boolean>;
   isMutating: boolean;
+  onQuestionInteract?: () => void;
   timeLeftLabel: string;
   onQuestionFocus?: (questionId: string) => void;
   onSelectAnswer: (questionId: string, value: string) => void;
@@ -32,9 +34,11 @@ type TakeExamProps = {
 export function TakeExam({
   answers,
   attempt,
+  containerRef,
   error,
   flaggedQuestions,
   isMutating,
+  onQuestionInteract,
   timeLeftLabel,
   onQuestionFocus,
   onSelectAnswer,
@@ -144,8 +148,64 @@ export function TakeExam({
     });
   };
 
+  const renderQuestionMedia = (
+    question: StartExamResponse["exam"]["questions"][number],
+    index: number,
+  ) => {
+    if (!question.imageUrl && !question.audioUrl && !question.videoUrl) {
+      return null;
+    }
+
+    return (
+      <div className="mb-8 space-y-4">
+        {question.imageUrl ? (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={question.imageUrl}
+              alt={`Question ${index + 1}`}
+              className="max-h-80 w-auto max-w-full object-contain"
+            />
+          </div>
+        ) : null}
+
+        {question.videoUrl ? (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="overflow-hidden rounded-xl bg-slate-950">
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                className="aspect-video h-auto max-h-[420px] w-full"
+                src={question.videoUrl}
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          </div>
+        ) : null}
+
+        {question.audioUrl ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <audio
+              controls
+              preload="metadata"
+              className="w-full max-w-full"
+              src={question.audioUrl}
+            >
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-[#f7f7f8] text-slate-900">
+    <div
+      ref={containerRef}
+      className="min-h-screen bg-[#f7f7f8] text-slate-900"
+    >
       <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
         <div className="mb-5 flex items-start justify-between gap-4 rounded-[18px] border border-slate-200/80 bg-[#f7f7f8] px-4 py-3 sm:mb-8">
           <h1 className="text-lg font-semibold tracking-tight text-slate-900 sm:text-[20px]">
@@ -178,6 +238,7 @@ export function TakeExam({
 
                   <article
                     data-question-id={question.questionId}
+                    onPointerDownCapture={() => onQuestionInteract?.()}
                     ref={(node) => {
                       questionCardRefs.current[question.questionId] = node;
                     }}
@@ -216,16 +277,7 @@ export function TakeExam({
                       />
                     </div>
 
-                    {question.imageUrl && (
-                      <div className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={question.imageUrl}
-                          alt={`Question ${index + 1}`}
-                          className="max-h-80 w-auto max-w-full object-contain"
-                        />
-                      </div>
-                    )}
+                    {renderQuestionMedia(question, index)}
 
                     <div className="space-y-4 pl-0 sm:space-y-5 sm:pl-1">
                       {question.type === "math" ? (
@@ -305,8 +357,8 @@ export function TakeExam({
                               }
                               className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition ${
                                 activeInputMode === "ai"
-                                  ? "border-violet-300 bg-violet-50 text-violet-700"
-                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                  ? "border-sky-300 bg-sky-50 text-sky-700 shadow-[0_6px_14px_rgba(56,189,248,0.18)]"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
                               }`}
                             >
                               <Sparkles className="h-3.5 w-3.5" />
@@ -341,7 +393,7 @@ export function TakeExam({
                               placeholder="Хариугаа энд бичнэ үү..."
                               className="shadow-[0_10px_24px_rgba(148,163,184,0.10)]"
                             />
-                          ) : (
+                          ) : activeInputMode === "ai" ? (
                             <div className="grid gap-3 rounded-[20px] border border-slate-200 bg-white p-4 sm:rounded-[24px] lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                               <div className="space-y-3">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -441,7 +493,7 @@ export function TakeExam({
                                     );
                                     setActiveInputModeByQuestion((prev) => ({
                                       ...prev,
-                                      [question.questionId]: "none",
+                                      [question.questionId]: "ai",
                                     }));
                                   } catch (error) {
                                     setAssistResultByQuestion((prev) => ({
@@ -475,7 +527,7 @@ export function TakeExam({
                                 )}
                               </button>
                             </div>
-                          )}
+                          ) : null}
 
                           {assistResultByQuestion[question.questionId] ? (
                             <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">

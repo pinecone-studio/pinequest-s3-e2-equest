@@ -4,12 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  ArrowUpRight,
   BarChart3,
   CalendarClock,
   ClipboardCheck,
   FileQuestion,
   type LucideIcon,
 } from "lucide-react";
+
+const STUDENT_PORTAL_URL =
+  "https://take-exam-service.tsetsegulziiocherdene.workers.dev";
 
 type NavigationItem =
   | {
@@ -57,8 +61,8 @@ export function TestSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="row-start-2 col-start-1 overflow-y-auto border-r border-slate-200 bg-[#f3f6f9] p-2">
-      <nav className="space-y-2">
+    <aside className="row-start-2 col-start-1 flex min-h-0 flex-col border-r border-slate-200 bg-[#f3f6f9] p-2">
+      <nav className="flex-1 space-y-2 overflow-y-auto">
         {navigationItems.map((item) => {
           const isActive =
             !item.disabled &&
@@ -106,6 +110,18 @@ export function TestSidebar() {
           );
         })}
       </nav>
+
+      <div className="border-t border-slate-200 px-1 pt-3">
+        <a
+          href={STUDENT_PORTAL_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="flex w-full items-center gap-2 rounded-lg border border-[#d6ebfb] bg-white px-3 py-2 text-left text-sm font-medium text-[#1287c7] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#eef8ff]"
+        >
+          <ArrowUpRight className="h-4 w-4" />
+          <span>Сурагч портал нээх</span>
+        </a>
+      </div>
     </aside>
   );
 }

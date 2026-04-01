@@ -84,6 +84,10 @@ export const typeDefs = /* GraphQL */ `
     title: String!
     detail: String!
     occurredAt: String!
+    mode: String!
+    screenshotCapturedAt: String
+    screenshotStorageKey: String
+    screenshotUrl: String
   }
 
   type AttemptMonitoringSummary {
@@ -237,6 +241,10 @@ export const typeDefs = /* GraphQL */ `
     title: String!
     detail: String!
     occurredAt: String
+    mode: String!
+    screenshotCapturedAt: String
+    screenshotStorageKey: String
+    screenshotUrl: String
   }
 
   input QuestionMetricInput {

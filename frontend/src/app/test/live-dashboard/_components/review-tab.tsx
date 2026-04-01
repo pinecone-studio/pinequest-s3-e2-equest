@@ -16,6 +16,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertTriangle,
+  Camera,
   CheckCircle2,
   ChevronRight,
   CircleUserRound,
@@ -24,6 +25,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { buildRuntimeApiUrl, fetchRuntimeJson } from "@/lib/runtime-api";
+import { approveTakeExamAttempt } from "@/lib/take-exam-dashboard-api";
 import { QuestionReview, SubmittedAttempt } from "../lib/types";
 
 interface ReviewTabProps {
@@ -225,7 +228,10 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
         : { ...current, [selectedQuestionKey]: true },
     );
 
-    void fetch("/api/take-exam-question-feedback", {
+    void fetchRuntimeJson<{
+      feedback?: string;
+      source?: AiContentSource;
+    }>("/api/take-exam-question-feedback", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -238,16 +244,6 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
         studentAnswer: selectedQuestion.studentAnswer,
       }),
     })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("AI тайлбар авч чадсангүй.");
-        }
-
-        return (await response.json()) as {
-          feedback?: string;
-          source?: AiContentSource;
-        };
-      })
       .then((payload) => {
         if (cancelled || !payload.feedback?.trim()) {
           return;
@@ -416,20 +412,10 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
     setApprovingAttemptId(selectedAttempt.id);
 
     try {
-      const response = await fetch("/api/take-exam-approve", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          attemptId: selectedAttempt.id,
-          review,
-        }),
+      await approveTakeExamAttempt({
+        attemptId: selectedAttempt.id,
+        review,
       });
-
-      if (!response.ok) {
-        throw new Error("Attempt approve хийж чадсангүй.");
-      }
 
       onApproved?.();
     } finally {
@@ -795,6 +781,26 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                     <p className="mt-3 text-sm leading-6 text-foreground/90">
                       {event.detail}
                     </p>
+                    {event.mode || event.screenshotUrl ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {event.mode ? (
+                          <Badge variant="outline" className="text-[10px]">
+                            {formatMonitoringCaptureMode(event.mode)}
+                          </Badge>
+                        ) : null}
+                        {event.screenshotUrl ? (
+                          <a
+                            className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[10px] font-medium text-foreground hover:bg-secondary"
+                            href={event.screenshotUrl}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            <Camera className="h-3 w-3" />
+                            Screenshot
+                          </a>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <p className="mt-2 text-xs text-muted-foreground">
                       {formatDateTime(event.occurredAt)}
                     </p>
@@ -838,6 +844,19 @@ function hasMeaningfulReviewText(...values: Array<string | undefined>) {
         trimmed !== "Тайлбар хараахан нэмэгдээгүй байна.",
     );
   });
+}
+
+function formatMonitoringCaptureMode(mode?: string) {
+  switch (mode) {
+    case "screen-capture-enabled":
+      return "Screen capture";
+    case "fallback-dom-capture":
+      return "Fallback capture";
+    case "limited-monitoring":
+      return "Limited monitoring";
+    default:
+      return "Monitoring";
+  }
 }
 
 function normalizeUnavailableAnswer(value: string) {
