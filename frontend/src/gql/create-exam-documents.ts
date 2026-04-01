@@ -47,6 +47,39 @@ export const RequestExamVariantsDocument = gql(`
 	}
 `);
 
+export const ConfirmExamVariantDocument = gql(`
+	mutation ConfirmExamVariant($input: ConfirmExamVariantInput!) {
+		confirmExamVariant(input: $input) {
+			success
+			message
+			variant {
+				id
+				status
+				confirmedAt
+				savedAt
+				savedExamId
+			}
+		}
+	}
+`);
+
+export const SaveExamVariantDocument = gql(`
+	mutation SaveExamVariant($input: SaveExamVariantInput!) {
+		saveExamVariant(input: $input) {
+			success
+			message
+			examId
+			variant {
+				id
+				status
+				confirmedAt
+				savedAt
+				savedExamId
+			}
+		}
+	}
+`);
+
 export const GetExamVariantJobDocument = gql(`
 	query GetExamVariantJob($jobId: ID!) {
 		getExamVariantJob(jobId: $jobId) {
@@ -68,6 +101,10 @@ export const GetExamVariantJobDocument = gql(`
 				examId
 				variantNumber
 				title
+				status
+				confirmedAt
+				savedAt
+				savedExamId
 				createdAt
 				updatedAt
 				questions {

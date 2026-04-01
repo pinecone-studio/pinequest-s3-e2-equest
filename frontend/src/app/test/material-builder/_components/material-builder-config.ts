@@ -4,14 +4,14 @@ import {
   FileUp,
   FileText,
   Files,
-  PenSquare,
+  Keyboard,
   Table2,
 } from "lucide-react";
 
 export const sourceOptions = [
   {
     id: "question-bank",
-    icon: PenSquare,
+    icon: Keyboard,
     label: "Гараар",
   },
   {

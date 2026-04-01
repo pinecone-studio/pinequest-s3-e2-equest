@@ -38,6 +38,18 @@ export type AiQuestionTemplateInput = {
   type: Scalars['String']['input'];
 };
 
+export type ConfirmExamVariantInput = {
+  questions: Array<ExamVariantQuestionInput>;
+  variantId: Scalars['ID']['input'];
+};
+
+export type ConfirmExamVariantPayload = {
+  __typename?: 'ConfirmExamVariantPayload';
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+  variant?: Maybe<ExamVariant>;
+};
+
 export type CreateAiExamTemplateInput = {
   durationMinutes: Scalars['Int']['input'];
   grade: Scalars['Int']['input'];
@@ -143,11 +155,15 @@ export enum ExamType {
 
 export type ExamVariant = {
   __typename?: 'ExamVariant';
+  confirmedAt?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['String']['output'];
   examId?: Maybe<Scalars['ID']['output']>;
   id: Scalars['ID']['output'];
   jobId: Scalars['ID']['output'];
   questions: Array<ExamVariantQuestion>;
+  savedAt?: Maybe<Scalars['String']['output']>;
+  savedExamId?: Maybe<Scalars['ID']['output']>;
+  status: ExamVariantStatus;
   title: Scalars['String']['output'];
   updatedAt: Scalars['String']['output'];
   variantNumber: Scalars['Int']['output'];
@@ -197,6 +213,12 @@ export type ExamVariantQuestionInput = {
   type: Scalars['String']['input'];
 };
 
+export enum ExamVariantStatus {
+  Confirmed = 'confirmed',
+  Generated = 'generated',
+  Saved = 'saved'
+}
+
 export type FormatDistributionInput = {
   fillIn: Scalars['Int']['input'];
   matching: Scalars['Int']['input'];
@@ -244,6 +266,7 @@ export type Mutation = {
   analyzeQuestion: QuestionAnalysisResult;
   /** Багш AI-ийн саналуудаас нэгийг сонгож батална (human-in-the-loop) */
   approveAiExamSchedule: ExamSchedule;
+  confirmExamVariant: ConfirmExamVariantPayload;
   createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
   generateQuestionAnswer: GenerateQuestionAnswerResult;
@@ -256,6 +279,7 @@ export type Mutation = {
   requestAiExamSchedule: RequestExamSchedulePayload;
   requestExamVariants: RequestExamVariantsPayload;
   saveExam: SaveExamPayload;
+  saveExamVariant: SaveExamVariantPayload;
   saveNewMathExam: SaveNewMathExamPayload;
 };
 
@@ -268,6 +292,11 @@ export type MutationAnalyzeQuestionArgs = {
 export type MutationApproveAiExamScheduleArgs = {
   examId: Scalars['ID']['input'];
   variantId: Scalars['String']['input'];
+};
+
+
+export type MutationConfirmExamVariantArgs = {
+  input: ConfirmExamVariantInput;
 };
 
 
@@ -312,6 +341,11 @@ export type MutationRequestExamVariantsArgs = {
 
 export type MutationSaveExamArgs = {
   input: SaveExamInput;
+};
+
+
+export type MutationSaveExamVariantArgs = {
+  input: SaveExamVariantInput;
 };
 
 
@@ -572,6 +606,25 @@ export type SaveExamPayload = {
   examId: Scalars['ID']['output'];
   status: ExamStatus;
   updatedAt: Scalars['String']['output'];
+};
+
+export type SaveExamVariantInput = {
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
+  examId?: InputMaybe<Scalars['ID']['input']>;
+  examType?: InputMaybe<Scalars['String']['input']>;
+  grade?: InputMaybe<Scalars['Int']['input']>;
+  questions: Array<ExamVariantQuestionInput>;
+  subject?: InputMaybe<Scalars['String']['input']>;
+  title: Scalars['String']['input'];
+  variantId: Scalars['ID']['input'];
+};
+
+export type SaveExamVariantPayload = {
+  __typename?: 'SaveExamVariantPayload';
+  examId?: Maybe<Scalars['ID']['output']>;
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+  variant?: Maybe<ExamVariant>;
 };
 
 export type SaveNewMathExamInput = {

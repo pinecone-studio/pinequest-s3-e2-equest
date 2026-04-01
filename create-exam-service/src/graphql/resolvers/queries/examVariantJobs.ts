@@ -52,6 +52,10 @@ export const examVariantJobQueries = {
 				examId: examVariants.examId,
 				variantNumber: examVariants.variantNumber,
 				title: examVariants.title,
+				status: examVariants.status,
+				confirmedAt: examVariants.confirmedAt,
+				savedAt: examVariants.savedAt,
+				savedExamId: examVariants.savedExamId,
 				createdAt: examVariants.createdAt,
 				updatedAt: examVariants.updatedAt,
 			})

@@ -10,8 +10,8 @@ import {
   FileUp,
   FileText,
   GripVertical,
+  Keyboard,
   Loader2,
-  PenSquare,
   Plus,
   RefreshCcw,
   Search,
@@ -70,10 +70,16 @@ export type PreviewQuestion = {
   question: string;
   answers: string[];
   correct: number;
+  points: number;
   source: string;
 };
 
 const initialPreviewQuestions: PreviewQuestion[] = [];
+const mathAssistFieldClassName =
+  "rounded-[20px]! border-[#b8e5d7]! bg-[#edf8f4]! px-4! py-3! hover:border-[#98d4c3]! focus-visible:border-[#89cab8]! focus-visible:ring-[#89cab8]/20";
+const answerMathAssistFieldClassName = `${mathAssistFieldClassName} h-11! min-h-11!`;
+const mathAssistFieldContentClassName =
+  "font-sans text-[14px] leading-[1.6] font-normal tracking-normal text-slate-800 [&_.katex]:text-inherit";
 
 const workspaceSourceOptions = sourceOptions.filter(
   (
@@ -105,7 +111,7 @@ function WorkspaceTabs({
             type="button"
             onClick={() => onSourceChange(option.id)}
             className={cn(
-              "relative flex h-[72px] flex-col items-center justify-center gap-2 rounded-[12px] border text-[13px] font-medium transition-all",
+              "relative flex h-[72px] cursor-pointer flex-col items-center justify-center gap-2 rounded-[12px] border text-[13px] font-medium transition-all",
               active
                 ? "border-[#0b5cab] bg-[#0b5cab] text-white shadow-[0_10px_24px_rgba(11,92,171,0.22)]"
                 : "border-transparent bg-transparent text-slate-700 hover:bg-white hover:text-slate-900",
@@ -145,11 +151,11 @@ function FilePanel() {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <button className="flex h-[48px] items-center justify-center gap-2 rounded-[12px] border border-[#e0e7f1] bg-white text-[14px] font-medium text-slate-700">
+        <button className="flex h-[48px] cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#e0e7f1] bg-white text-[14px] font-medium text-slate-700">
           <FileText className="h-4 w-4 text-rose-500" />
           PDF
         </button>
-        <button className="flex h-[48px] items-center justify-center gap-2 rounded-[12px] border border-[#e0e7f1] bg-white text-[14px] font-medium text-slate-700">
+        <button className="flex h-[48px] cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#e0e7f1] bg-white text-[14px] font-medium text-slate-700">
           <FileText className="h-4 w-4 text-blue-500" />
           DOC/DOCX
         </button>
@@ -442,6 +448,7 @@ function QuestionBankPanel({
       question: trimmedQuestion,
       answers: normalizedAnswers,
       correct: normalizedAnswers.indexOf(answers[selectedAnswerIndex].trim()),
+      points: scoreValue ? Number(scoreValue) : 1,
       source: "Гараар",
     });
 
@@ -541,7 +548,7 @@ function QuestionBankPanel({
               type="button"
               variant="outline"
               onClick={handleFillDemo}
-              className="h-7 rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-75 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
+              className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-40 shadow-none hover:border-transparent hover:bg-slate-50 hover:text-slate-500 hover:opacity-65"
             >
               Demo
             </Button>
@@ -549,7 +556,7 @@ function QuestionBankPanel({
               type="button"
               variant="outline"
               onClick={handleFillAiDemo}
-              className="h-7 rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-75 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
+              className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-40 shadow-none hover:border-transparent hover:bg-slate-50 hover:text-slate-500 hover:opacity-65"
             >
               Demo-AI
             </Button>
@@ -557,7 +564,7 @@ function QuestionBankPanel({
               type="button"
               variant="outline"
               onClick={handleResetForm}
-              className="h-7 rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-75 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
+              className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-40 shadow-none hover:border-transparent hover:bg-slate-50 hover:text-slate-500 hover:opacity-65"
             >
               Reset
             </Button>
@@ -568,7 +575,7 @@ function QuestionBankPanel({
             <Select value={scoreValue} onValueChange={setScoreValue}>
               <SelectTrigger
                 title="Оноо"
-                className="w-full rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
+                className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
               >
                 <SelectValue placeholder="Оноо" />
               </SelectTrigger>
@@ -588,7 +595,7 @@ function QuestionBankPanel({
             >
               <SelectTrigger
                 title="Асуултын төрөл"
-                className="w-full rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
+                className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
               >
                 <SelectValue placeholder="Асуултын төрөл" />
               </SelectTrigger>
@@ -603,7 +610,7 @@ function QuestionBankPanel({
             <Select value={difficultyValue} onValueChange={setDifficultyValue}>
               <SelectTrigger
                 title="Асуултын хүндрэлийн түвшин"
-                className="w-full rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
+                className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
               >
                 <SelectValue placeholder="Асуултын хүндрэлийн түвшин" />
               </SelectTrigger>
@@ -619,6 +626,8 @@ function QuestionBankPanel({
 
       <div>
         <MathAssistField
+          className={mathAssistFieldClassName}
+          contentClassName={mathAssistFieldContentClassName}
           value={questionText}
           multiline
           onChange={(nextValue) => {
@@ -638,7 +647,7 @@ function QuestionBankPanel({
         variant="outline"
         onClick={() => void handleGenerateAnswer()}
         disabled={isAiWorking}
-        className="w-full rounded-[12px] border-[#dce8fb] bg-[#f4f8ff] text-[#0b5cab]"
+        className="w-full cursor-pointer rounded-[12px] border-[#dce8fb] bg-[#f4f8ff] text-[#0b5cab]"
       >
         {generating ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -654,7 +663,7 @@ function QuestionBankPanel({
           <button
             type="button"
             onClick={handleAddAnswer}
-            className="inline-flex items-center gap-1 text-[13px] font-medium text-[#0b5cab]"
+            className="inline-flex cursor-pointer items-center gap-1 text-[13px] font-medium text-[#0b5cab]"
           >
             <Plus className="h-4 w-4" />
             Хариулт нэмэх
@@ -662,7 +671,7 @@ function QuestionBankPanel({
         </div>
         {answers.map((label, index) => (
           <div key={`answer-${index}`} className="space-y-2">
-            <div className="flex items-center gap-3">
+            <div className="grid grid-cols-[24px_minmax(0,1fr)_24px] items-center gap-3">
               <button
                 type="button"
                 role="button"
@@ -671,7 +680,7 @@ function QuestionBankPanel({
                   setShowCorrectAnswerError(false);
                 }}
                 className={cn(
-                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition",
+                  "flex h-6 w-6 place-self-center cursor-pointer items-center justify-center rounded-full border transition",
                   index === selectedAnswerIndex
                     ? "border-[#0b5cab] bg-[#e8f1ff] shadow-[0_0_0_3px_rgba(11,92,171,0.08)]"
                     : "border-[#cbd9ee] bg-white hover:border-[#9fbae3]",
@@ -687,15 +696,19 @@ function QuestionBankPanel({
                   )}
                 />
               </button>
-              <MathAssistField
-                value={label}
-                onChange={(nextValue) => handleAnswerChange(index, nextValue)}
-                placeholder={`Хариулт ${index + 1}`}
-              />
+              <div className="min-w-0">
+                <MathAssistField
+                  className={answerMathAssistFieldClassName}
+                  contentClassName={mathAssistFieldContentClassName}
+                  value={label}
+                  onChange={(nextValue) => handleAnswerChange(index, nextValue)}
+                  placeholder={`Хариулт ${index + 1}`}
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => handleRemoveAnswer(index)}
-                className="text-slate-500 transition hover:text-slate-700"
+                className="flex h-6 w-6 place-self-center cursor-pointer items-center justify-center text-slate-500 transition hover:text-slate-700"
                 aria-label="Хариулт устгах"
               >
                 <X className="h-4 w-4" />
@@ -727,7 +740,7 @@ function QuestionBankPanel({
               type="button"
               onClick={() => void handleRegenerateAnswer()}
               disabled={isAiWorking}
-              className="inline-flex items-center gap-2 rounded-[10px] border border-transparent px-3 py-2 text-[14px] font-medium text-slate-700 transition hover:border-[#dbe4f3] hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-transparent px-3 py-2 text-[14px] font-medium text-slate-700 transition hover:border-[#dbe4f3] hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {regenerating ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -749,7 +762,7 @@ function QuestionBankPanel({
           type="button"
           onClick={handleAppendQuestion}
           className={cn(
-            "w-full rounded-[12px] bg-[#0b5cab] text-white hover:bg-[#0a4f96]",
+            "w-full cursor-pointer rounded-[12px] bg-[#0b5cab] text-white hover:bg-[#0a4f96]",
             !canAppendQuestion && "opacity-55",
           )}
         >
@@ -986,7 +999,7 @@ function SharedLibraryPanel({
 function getQuestionSourceBadge(source: string) {
   if (source === "Гараар") {
     return {
-      icon: PenSquare,
+      icon: Keyboard,
       label: "Гараар оруулсан",
       className:
         "rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50",
@@ -1076,45 +1089,47 @@ function PreviewQuestionCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1 text-[18px] font-semibold text-slate-900">
+            <div className="min-w-0 flex-1 text-[14px] font-semibold text-slate-900">
               <MathPreviewText
                 content={question.question}
                 contentSource="preview"
-                className="text-[18px] leading-relaxed text-slate-900"
+                className="text-[14px] leading-relaxed text-slate-900"
               />
             </div>
-            <div
-              className={cn(
-                "flex items-center gap-1 transition-opacity group-hover:opacity-100 md:opacity-0",
-                isDragging && "opacity-40",
-              )}
-            >
-              <button
-                type="button"
-                onClick={onMoveUp}
-                disabled={!canMoveUp}
-                className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                aria-label="Дээш зөөх"
+            <div className="flex items-start gap-3">
+              <div
+                className={cn(
+                  "flex items-center gap-1 transition-opacity group-hover:opacity-100 md:opacity-0",
+                  isDragging && "opacity-40",
+                )}
               >
-                <ChevronUp className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onMoveDown}
-                disabled={!canMoveDown}
-                className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                aria-label="Доош зөөх"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onDelete}
-                className="rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
-                aria-label="Устгах"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+                <button
+                  type="button"
+                  onClick={onMoveUp}
+                  disabled={!canMoveUp}
+                  className="cursor-pointer rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                  aria-label="Дээш зөөх"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onMoveDown}
+                  disabled={!canMoveDown}
+                  className="cursor-pointer rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                  aria-label="Доош зөөх"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  className="cursor-pointer rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                  aria-label="Устгах"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -1122,7 +1137,7 @@ function PreviewQuestionCard({
               <div
                 key={`${answer}-${index}`}
                 className={cn(
-                  "rounded-[14px] px-4 py-3 text-[15px] text-slate-700",
+                  "rounded-[14px] px-4 py-3 text-[14px] text-slate-700",
                   index === question.correct
                     ? "border border-[#a8ddd0] bg-[#d8f2ea] text-[#167e61]"
                     : "bg-[#eef2f6]",
@@ -1133,13 +1148,13 @@ function PreviewQuestionCard({
                   <MathPreviewText
                     content={answer}
                     contentSource="preview"
-                    className="min-w-0 text-[15px] leading-relaxed"
+                    className="min-w-0 text-[14px] leading-relaxed"
                   />
                 </div>
               </div>
             ))}
           </div>
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge
               className={cn(
                 "inline-flex items-center gap-1.5",
@@ -1148,6 +1163,9 @@ function PreviewQuestionCard({
             >
               <sourceBadge.icon className="h-3.5 w-3.5" />
               {sourceBadge.label}
+            </Badge>
+            <Badge className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+              {question.points} оноо
             </Badge>
           </div>
         </div>
@@ -1164,8 +1182,12 @@ export function MaterialBuilderWorkspaceSection({
   previewQuestions,
   onPreviewQuestionsChange,
 }: Props) {
-  const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(null);
-  const [dragTargetQuestionId, setDragTargetQuestionId] = useState<string | null>(null);
+  const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(
+    null,
+  );
+  const [dragTargetQuestionId, setDragTargetQuestionId] = useState<
+    string | null
+  >(null);
   const activeSource = source === "textbook" ? "question-bank" : source;
   const sourceCounts = useMemo(
     () => ({
@@ -1189,20 +1211,20 @@ export function MaterialBuilderWorkspaceSection({
   ) {
     onPreviewQuestionsChange(
       ((prev: PreviewQuestion[]) => {
-      const next = [
-        {
-          ...question,
-          id: `manual-${Date.now()}-${prev.length + 1}`,
-          index: 1,
-        },
-        ...prev,
-      ];
+        const next = [
+          {
+            ...question,
+            id: `manual-${Date.now()}-${prev.length + 1}`,
+            index: 1,
+          },
+          ...prev,
+        ];
 
-      return next.map((item, index) => ({
-        ...item,
-        index: index + 1,
-      }));
-    })(previewQuestions),
+        return next.map((item, index) => ({
+          ...item,
+          index: index + 1,
+        }));
+      })(previewQuestions),
     );
   }
 
@@ -1220,26 +1242,26 @@ export function MaterialBuilderWorkspaceSection({
   function handleMoveQuestion(questionId: string, direction: "up" | "down") {
     onPreviewQuestionsChange(
       ((prev: PreviewQuestion[]) => {
-      const currentIndex = prev.findIndex(
-        (question) => question.id === questionId,
-      );
-      if (currentIndex === -1) return prev;
+        const currentIndex = prev.findIndex(
+          (question) => question.id === questionId,
+        );
+        if (currentIndex === -1) return prev;
 
-      const targetIndex =
-        direction === "up" ? currentIndex - 1 : currentIndex + 1;
-      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+        const targetIndex =
+          direction === "up" ? currentIndex - 1 : currentIndex + 1;
+        if (targetIndex < 0 || targetIndex >= prev.length) return prev;
 
-      const next = [...prev];
-      [next[currentIndex], next[targetIndex]] = [
-        next[targetIndex],
-        next[currentIndex],
-      ];
+        const next = [...prev];
+        [next[currentIndex], next[targetIndex]] = [
+          next[targetIndex],
+          next[currentIndex],
+        ];
 
-      return next.map((question, index) => ({
-        ...question,
-        index: index + 1,
-      }));
-    })(previewQuestions),
+        return next.map((question, index) => ({
+          ...question,
+          index: index + 1,
+        }));
+      })(previewQuestions),
     );
   }
 
@@ -1257,10 +1279,18 @@ export function MaterialBuilderWorkspaceSection({
       return;
     }
 
-    const draggedIndex = previewQuestions.findIndex((question) => question.id === draggedQuestionId);
-    const targetIndex = previewQuestions.findIndex((question) => question.id === targetQuestionId);
+    const draggedIndex = previewQuestions.findIndex(
+      (question) => question.id === draggedQuestionId,
+    );
+    const targetIndex = previewQuestions.findIndex(
+      (question) => question.id === targetQuestionId,
+    );
 
-    if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+    if (
+      draggedIndex === -1 ||
+      targetIndex === -1 ||
+      draggedIndex === targetIndex
+    ) {
       setDraggedQuestionId(null);
       setDragTargetQuestionId(null);
       return;
@@ -1320,7 +1350,7 @@ export function MaterialBuilderWorkspaceSection({
             </div>
             <div className="flex items-center gap-2">
               <div className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-100 px-3 py-1 text-[14px] font-semibold text-blue-700">
-                <PenSquare className="h-4 w-4" />
+                <Keyboard className="h-4 w-4" />
                 {sourceCounts["question-bank"]}
               </div>
               <div className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-100 px-3 py-1 text-[14px] font-semibold text-amber-700">
@@ -1342,9 +1372,9 @@ export function MaterialBuilderWorkspaceSection({
               <p className="mt-6 text-[18px] font-semibold text-slate-900">
                 Асуулт байхгүй байна
               </p>
-              <div className="mt-3 space-y-1 text-[14px] leading-7 text-slate-500">
-                <p>Зүүн талын 4 аргын аль нэгийг ашиглан асуулт нэмнэ үү.</p>
-                <p>Та олон аргыг хольж ашиглаж болно.</p>
+              <div className="mt-3 space-y-0 text-[14px] leading-6 text-slate-500">
+                <p>Зүүн талын 3 аргын аль нэгийг ашиглан асуулт нэмнэ үү.</p>
+                <p>Олон арга хольж ашиглаж болно.</p>
               </div>
             </div>
           ) : (

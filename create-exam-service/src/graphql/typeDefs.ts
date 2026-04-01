@@ -275,6 +275,41 @@ export const typeDefs = /* GraphQL */ `
     jobId: ID
   }
 
+  enum ExamVariantStatus {
+    generated
+    confirmed
+    saved
+  }
+
+  input SaveExamVariantInput {
+    variantId: ID!
+    examId: ID
+    title: String!
+    grade: Int
+    examType: String
+    subject: String
+    durationMinutes: Int
+    questions: [ExamVariantQuestionInput!]!
+  }
+
+  type ConfirmExamVariantPayload {
+    success: Boolean!
+    message: String!
+    variant: ExamVariant
+  }
+
+  input ConfirmExamVariantInput {
+    variantId: ID!
+    questions: [ExamVariantQuestionInput!]!
+  }
+
+  type SaveExamVariantPayload {
+    success: Boolean!
+    message: String!
+    examId: ID
+    variant: ExamVariant
+  }
+
   type ExamVariantJob {
     jobId: ID!
     examId: ID
@@ -297,6 +332,10 @@ export const typeDefs = /* GraphQL */ `
     examId: ID
     variantNumber: Int!
     title: String!
+    status: ExamVariantStatus!
+    confirmedAt: String
+    savedAt: String
+    savedExamId: ID
     questions: [ExamVariantQuestion!]!
     createdAt: String!
     updatedAt: String!
@@ -453,6 +492,8 @@ export const typeDefs = /* GraphQL */ `
     saveExam(input: SaveExamInput!): SaveExamPayload!
     saveNewMathExam(input: SaveNewMathExamInput!): SaveNewMathExamPayload!
     requestExamVariants(input: RequestExamVariantsInput!): RequestExamVariantsPayload!
+    confirmExamVariant(input: ConfirmExamVariantInput!): ConfirmExamVariantPayload!
+    saveExamVariant(input: SaveExamVariantInput!): SaveExamVariantPayload!
     # AI-аар шинжлүүлэх
     analyzeQuestion(prompt: String!): QuestionAnalysisResult!
     # AI-аар үүсгэсэн загварыг хадгалах

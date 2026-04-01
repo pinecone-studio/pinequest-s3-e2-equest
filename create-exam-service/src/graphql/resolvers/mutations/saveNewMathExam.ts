@@ -69,15 +69,16 @@ function dbQuestionType(t: MathExamQuestionType): "mcq" | "math" {
 	return "mcq";
 }
 
-export const saveNewMathExamMutation = {
-	saveNewMathExam: async (_: unknown, args: Args, ctx: GraphQLContext) => {
-		if (!ctx.db) {
-			throw new GraphQLError(
-				"D1 DB холбогдоогүй байна (локалд .dev.vars + wrangler, production-д binding шалгана уу)",
-			);
-		}
+export async function performSaveNewMathExam(
+	input: SaveNewMathExamInput,
+	ctx: GraphQLContext,
+) {
+	if (!ctx.db) {
+		throw new GraphQLError(
+			"D1 DB холбогдоогүй байна (локалд .dev.vars + wrangler, production-д binding шалгана уу)",
+		);
+	}
 
-		const { input } = args;
 		const now = new Date().toISOString();
 		const id =
 			input.examId?.trim() ||
@@ -222,5 +223,11 @@ export const saveNewMathExamMutation = {
 		});
 
 		return result;
+}
+
+export const saveNewMathExamMutation = {
+	saveNewMathExam: async (_: unknown, args: Args, ctx: GraphQLContext) => {
+		const { input } = args;
+		return performSaveNewMathExam(input, ctx);
 	},
 };

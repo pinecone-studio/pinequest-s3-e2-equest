@@ -19,8 +19,7 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
     difficulty: "easy",
   },
   {
-    questionText:
-      "$x^2+5x+6$ олон гишүүнтийг үржигдэхүүн болгон задал.",
+    questionText: "x^2+5x+6 олон гишүүнтийг үржигдэхүүн болгон задал.",
     answers: [
       "$(x+5)(x+1)$",
       "$(x+4)(x+2)$",
@@ -34,8 +33,7 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
     difficulty: "easy",
   },
   {
-    questionText:
-      "Параболын тэгш хэмийн тэнхлэгийг олоорой. $f(x)=(x-1)^2+3$",
+    questionText: "Параболын тэгш хэмийн тэнхлэгийг олоорой. f(x)=(x-1)^2+3",
     answers: ["$x=3$", "$x=2$", "$x=-1$", "$x=0$", "$x=1$"],
     correctIndex: 4,
     points: "1",
@@ -58,8 +56,7 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
     difficulty: "easy",
   },
   {
-    questionText:
-      "$x=2^3$, $y=5!$ бол $m=8$ ба $n=120$ болох хосыг сонгоно уу.",
+    questionText: "x=2^3, y=5! бол m=8 ба n=120 болох хосыг сонгоно уу.",
     answers: [
       "$m=8,\\ n=120$",
       "$m=4,\\ n=120$",
@@ -73,7 +70,7 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
     difficulty: "medium",
   },
   {
-    questionText: "Тэгшитгэлийг бод. $3x^3-8x^2+14x=0$",
+    questionText: "Тэгшитгэлийг бод. 3x^3-8x^2+14x=0",
     answers: [
       "$\\{3,-8,14\\}$",
       "$\\{0\\}$",
@@ -103,7 +100,7 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
   },
   {
     questionText:
-      "$45\\%$ нь зэс байх $36$ кг хольц дээр $60\\%$ зэс болгохын тулд хэдэн кг зэс нэмэх хэрэгтэй вэ?",
+      "45% нь зэс байх 36 кг хольц дээр 60% зэс болгохын тулд хэдэн кг зэс нэмэх хэрэгтэй вэ?",
     answers: ["$12.5$ кг", "$13$ кг", "$13.5$ кг", "$14$ кг", "$10$ кг"],
     correctIndex: 2,
     points: "2",
@@ -111,7 +108,7 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
     difficulty: "medium",
   },
   {
-    questionText: "$f(x)=x^2+2$ функцийн буурах завсрыг олоорой.",
+    questionText: "f(x)=x^2+2 функцийн буурах завсрыг олоорой.",
     answers: [
       "$(-\\infty;+\\infty)$",
       "$(2;+\\infty)$",
@@ -125,7 +122,7 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
     difficulty: "medium",
   },
   {
-    questionText: "Тэгшитгэл бод. $|8x-3|=|9-x|$",
+    questionText: "Тэгшитгэл бод. |8x-3|=|9-x|",
     answers: [
       "$\\left\\{-\\frac{6}{7},\\ \\frac{4}{3}\\right\\}$",
       "$\\{0,\\ \\frac{4}{3}\\}$",
@@ -139,8 +136,7 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
     difficulty: "hard",
   },
   {
-    questionText:
-      "Шоог $1$ удаа хаяхад тав гэсэн нүдээрээ тусах магадлалыг ол.",
+    questionText: "Шоог 1 удаа хаяхад тав гэсэн нүдээрээ тусах магадлалыг ол.",
     answers: [
       "$\\frac{1}{6}$",
       "$\\frac{1}{5}$",
@@ -154,7 +150,7 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
     difficulty: "easy",
   },
   {
-    questionText: "$2x^2+7x-9=0$ тэгшитгэлийн шийдүүдийн нийлбэрийг олоорой.",
+    questionText: "2x^2+7x-9=0 тэгшитгэлийн шийдүүдийн нийлбэрийг олоорой.",
     answers: ["$-9$", "$-4.5$", "$-3.5$", "$-7$", "$7$"],
     correctIndex: 2,
     points: "1",
@@ -162,7 +158,8 @@ export const materialBuilderDemoQuestions: MaterialBuilderDemoQuestion[] = [
     difficulty: "medium",
   },
   {
-    questionText: "$y=x$ шулууны хувьд харилцан тэгш хэмтэй цэгүүдийг сонгоно уу.",
+    questionText:
+      "y=x шулууны хувьд харилцан тэгш хэмтэй цэгүүдийг сонгоно уу.",
     answers: [
       "$A(-2;6),\\ B(2;-6)$",
       "$C(7;-4),\\ D(-4;7)$",

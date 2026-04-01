@@ -51,6 +51,101 @@ function uuid() {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function normalizeVariantQuestion(
+  sourceQuestion: {
+    order: number;
+    prompt: string;
+    type: string;
+    options?: string[] | null;
+    correctAnswer?: string | null;
+    explanation?: string | null;
+  },
+  generatedQuestion: Record<string, unknown>,
+) {
+  const sourceOptions = Array.isArray(sourceQuestion.options)
+    ? sourceQuestion.options.map((option) => String(option))
+    : [];
+  const expectedOptionCount =
+    sourceQuestion.type === "single-choice" ? sourceOptions.length : 0;
+
+  const rawOptions = Array.isArray(generatedQuestion.options)
+    ? generatedQuestion.options.map((option) => String(option).trim())
+    : [];
+  const rawCorrectOptionIndex =
+    typeof generatedQuestion.correctOptionIndex === "number" &&
+    Number.isFinite(generatedQuestion.correctOptionIndex)
+      ? Math.floor(generatedQuestion.correctOptionIndex)
+      : null;
+
+  const uniqueOptions: string[] = [];
+  for (const option of rawOptions) {
+    if (!option) continue;
+    if (!uniqueOptions.includes(option)) {
+      uniqueOptions.push(option);
+    }
+  }
+
+  let normalizedOptions =
+    sourceQuestion.type === "single-choice"
+      ? uniqueOptions.slice(0, expectedOptionCount)
+      : [];
+
+  if (
+    sourceQuestion.type === "single-choice" &&
+    normalizedOptions.length < expectedOptionCount
+  ) {
+    for (const fallbackOption of sourceOptions) {
+      const trimmedFallback = fallbackOption.trim();
+      if (!trimmedFallback) continue;
+      if (!normalizedOptions.includes(trimmedFallback)) {
+        normalizedOptions.push(trimmedFallback);
+      }
+      if (normalizedOptions.length === expectedOptionCount) {
+        break;
+      }
+    }
+  }
+
+  let normalizedCorrectAnswer =
+    String(generatedQuestion.correctAnswer ?? "").trim() || null;
+
+  if (sourceQuestion.type === "single-choice") {
+    if (
+      rawCorrectOptionIndex !== null &&
+      rawCorrectOptionIndex >= 0 &&
+      rawCorrectOptionIndex < normalizedOptions.length
+    ) {
+      normalizedCorrectAnswer = normalizedOptions[rawCorrectOptionIndex] ?? null;
+    }
+
+    if (
+      !normalizedCorrectAnswer ||
+      !normalizedOptions.some((option) => option === normalizedCorrectAnswer)
+    ) {
+      normalizedCorrectAnswer =
+        normalizedOptions[0] ??
+        sourceQuestion.correctAnswer?.trim() ??
+        sourceOptions[0]?.trim() ??
+        null;
+    }
+  } else {
+    normalizedCorrectAnswer =
+      normalizedCorrectAnswer || sourceQuestion.correctAnswer?.trim() || null;
+  }
+
+  return {
+    order:
+      typeof generatedQuestion.order === "number"
+        ? Math.floor(generatedQuestion.order)
+        : sourceQuestion.order,
+    prompt: String(generatedQuestion.prompt ?? "").trim() || sourceQuestion.prompt,
+    type: sourceQuestion.type,
+    options: normalizedOptions,
+    correctAnswer: normalizedCorrectAnswer,
+    explanation: String(generatedQuestion.explanation ?? "").trim() || null,
+  };
+}
+
 function buildVariantPrompt(args: {
   examTitle: string;
   variantCount: number;
@@ -74,6 +169,7 @@ function buildVariantPrompt(args: {
 - Зөвхөн доторх тоонууд, тогтмолууд, шаардлагатай бол сонголтын утгуудыг өөрчил.
 - Нэг variant дотор асуултын order, type-ийг яг хэвээр хадгал.
 - Хариуг монголоор өг.
+- Асуулт бүрийн options-ийн тоог ЭХ АСУУЛТТАЙ ЯГ ИЖИЛ хадгал. Илүү/дутуу option огт бүү гарга.
 
  SINGLE_CHOICE дүрэм:
 - options-ийн тоо эх асуулттай ижил байна.
@@ -81,6 +177,9 @@ function buildVariantPrompt(args: {
 - duplicate option бүү гарга.
 - яг нэг зөв хариулттай байна.
 - correctAnswer нь options доторх нэг string-тэй яг ижил таарч байна.
+- correctOptionIndex талбарыг заавал буцаа. Энэ нь 0-ээс эхэлсэн индекс байна.
+- correctAnswer болон correctOptionIndex хоёр хоорондоо таарч байх ёстой.
+- Жишээ: эх асуулт 4 option-той бол шинэ хувилбар МӨН 4 option-той байна. 5 эсвэл 3 болгож болохгүй.
 
  WRITTEN дүрэм:
 - options хоосон массив [] байна.
@@ -104,6 +203,7 @@ JSON бүтэц:
           "prompt": "...",
           "type": "single-choice" | "written",
           "options": ["...", "..."],
+          "correctOptionIndex": 0,
           "correctAnswer": "...",
           "explanation": "..."
         }
@@ -119,6 +219,8 @@ JSON бүтэц:
 - Хэрэв нэг асуулт байсан ч variants массивд ${args.variantCount} ширхэг бүрэн variant буцаа.
 - Асуулт бүр дээр шинэ тоон утга сонгосны дараа зөв хариуг дахин бод.
 - Хэрэв type нь "written" бол options=[] буцаа.
+- SINGLE_CHOICE асуулт бүр дээр options.length нь эх асуултын options.length-тэй тэнцүү байх ёстой.
+- SINGLE_CHOICE асуулт бүр дээр correctOptionIndex-г заавал бөглө.
 
 Эх асуултууд:
 ${JSON.stringify(args.questions, null, 2)}
@@ -151,7 +253,7 @@ async function runVariantGeneration(
     throw new Error(`exam_variant_jobs дээр job олдсонгүй: ${jobId}`);
   }
 
-  const examId = String(job.examId ?? body.examId ?? "").trim();
+  const examId = String(job.examId ?? body.examId ?? "").trim() || null;
   const now = new Date().toISOString();
 
   await db
@@ -192,7 +294,7 @@ async function runVariantGeneration(
       answerLatex: newExamQuestions.answerLatex,
     })
     .from(newExamQuestions)
-    .where(eq(newExamQuestions.examId, examId))
+    .where(eq(newExamQuestions.examId, examId ?? ""))
     .orderBy(asc(newExamQuestions.position));
 
   const apiKey = env.GOOGLE_AI_API_KEY?.trim() || env.GEMINI_API_KEY?.trim();
@@ -211,6 +313,8 @@ async function runVariantGeneration(
           options: question.optionsJson
             ? (JSON.parse(question.optionsJson) as string[])
             : null,
+          correctOptionIndex:
+            typeof question.correctOption === "number" ? question.correctOption : null,
           correctAnswer:
             question.correctAnswer ??
             (typeof question.answerLatex === "string" && question.answerLatex.trim()
@@ -225,6 +329,7 @@ async function runVariantGeneration(
               prompt: string;
               type: string;
               options?: string[] | null;
+              correctOptionIndex?: number | null;
               correctAnswer?: string | null;
               explanation?: string | null;
             }[];
@@ -290,7 +395,7 @@ async function runVariantGeneration(
     await db.insert(examVariants).values({
       id: variantId,
       jobId,
-      examId: exam?.id ?? null,
+      examId: exam?.id?.trim() || null,
       variantNumber:
         typeof (variant as { variantNumber?: unknown })?.variantNumber === "number"
           ? Math.floor((variant as { variantNumber: number }).variantNumber)
@@ -303,25 +408,30 @@ async function runVariantGeneration(
     });
 
     if (rawQuestions.length > 0) {
+      const normalizedQuestions = rawQuestions.map((question, questionIndex) =>
+        normalizeVariantQuestion(
+          sourceQuestions[questionIndex] ?? {
+            order: questionIndex + 1,
+            prompt: "",
+            type: "single-choice",
+            options: [],
+            correctAnswer: null,
+            explanation: null,
+          },
+          (question as Record<string, unknown>) ?? {},
+        ),
+      );
+
       await db.insert(examVariantQuestions).values(
-        rawQuestions.map((question, questionIndex) => ({
+        normalizedQuestions.map((question, questionIndex) => ({
           id: uuid(),
           variantId,
-          position:
-            typeof (question as { order?: unknown })?.order === "number"
-              ? Math.floor((question as { order: number }).order)
-              : questionIndex + 1,
-          type: String((question as { type?: unknown })?.type ?? "single-choice"),
-          prompt: String((question as { prompt?: unknown })?.prompt ?? "").trim(),
-          optionsJson: Array.isArray((question as { options?: unknown[] })?.options)
-            ? JSON.stringify((question as { options: unknown[] }).options.map(String))
-            : null,
-          correctAnswer:
-            String((question as { correctAnswer?: unknown })?.correctAnswer ?? "").trim() ||
-            null,
-          explanation:
-            String((question as { explanation?: unknown })?.explanation ?? "").trim() ||
-            null,
+          position: question.order || questionIndex + 1,
+          type: question.type,
+          prompt: question.prompt,
+          optionsJson: JSON.stringify(question.options),
+          correctAnswer: question.correctAnswer,
+          explanation: question.explanation,
           createdAt: completedAt,
           updatedAt: completedAt,
         })),
