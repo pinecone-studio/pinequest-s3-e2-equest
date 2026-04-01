@@ -2,13 +2,13 @@ import { eq } from "drizzle-orm";
 import { GraphQLError } from "graphql";
 
 import type { GraphQLContext } from "../../../context";
-import { examSchedules } from "../../../../db/schema";
+import { examSchedules, newExams } from "../../../../db/schema";
 import {
 	examScheduleRowToGql,
 	parseAiVariantsJson,
 } from "../../../../lib/exam-schedule-variants";
 
-const EXAM_DURATION_MS = 90 * 60 * 1000;
+const DEFAULT_EXAM_DURATION_MINUTES = 90;
 
 type Args = { examId: string; variantId: string };
 
@@ -40,6 +40,12 @@ export const approveAiExamScheduleMutation = {
 			);
 		}
 
+		const [examRow] = await ctx.db
+			.select({ durationMinutes: newExams.durationMinutes })
+			.from(newExams)
+			.where(eq(newExams.id, row.testId))
+			.limit(1);
+
 		const variants = parseAiVariantsJson(row.aiVariantsJson);
 		const chosen = variants.find((v) => v.id === variantId);
 		if (!chosen) {
@@ -51,7 +57,13 @@ export const approveAiExamScheduleMutation = {
 			throw new GraphQLError("Сонгосон хувилбарын startTime буруу байна.");
 		}
 
-		const end = new Date(start.getTime() + EXAM_DURATION_MS);
+		const durationMinutes =
+			typeof examRow?.durationMinutes === "number" &&
+			Number.isFinite(examRow.durationMinutes) &&
+			examRow.durationMinutes > 0
+				? Math.floor(examRow.durationMinutes)
+				: DEFAULT_EXAM_DURATION_MINUTES;
+		const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
 		const now = new Date().toISOString();
 
 		await ctx.db

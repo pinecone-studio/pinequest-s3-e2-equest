@@ -42,6 +42,7 @@ export const ListNewMathExamsDocument = gql(`
 		listNewMathExams(limit: $limit) {
 			examId
 			title
+			durationMinutes
 			updatedAt
 		}
 	}

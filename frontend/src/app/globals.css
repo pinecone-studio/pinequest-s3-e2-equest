@@ -240,23 +240,23 @@
 
 /* Ээлж солих түгжрэл — ташуу зураас (blocked) */
 .calendar-red-zone-stripes {
-	background-color: rgb(254 242 242 / 0.55);
+	background-color: rgb(254 242 242 / 0.36);
 	background-image: repeating-linear-gradient(
 		-45deg,
 		transparent,
 		transparent 5px,
-		rgb(248 113 113 / 0.18) 5px,
-		rgb(248 113 113 / 0.18) 7px
+		rgb(248 113 113 / 0.12) 5px,
+		rgb(248 113 113 / 0.12) 7px
 	);
 }
 .dark .calendar-red-zone-stripes {
-	background-color: rgb(127 29 29 / 0.22);
+	background-color: rgb(127 29 29 / 0.16);
 	background-image: repeating-linear-gradient(
 		-45deg,
 		transparent,
 		transparent 5px,
-		rgb(252 165 165 / 0.12) 5px,
-		rgb(252 165 165 / 0.12) 7px
+		rgb(252 165 165 / 0.08) 5px,
+		rgb(252 165 165 / 0.08) 7px
 	);
 }
 

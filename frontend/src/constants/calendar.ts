@@ -94,20 +94,18 @@ export const CALENDAR_VIEW_CONFIG = {
     {
       id: "morning-block",
       start: "07:30",
-      end: "07:50",
+      end: "07:45",
       kind: "red-zone" as const,
       label: "Өглөөний бэлтгэл / ирц",
-      tooltip:
-        "Ирц, I ээлжийн бэлтгэл — энэ цонхонд шалгалт төлөвлөхийг зөвлөхгүй",
+      tooltip: "I ээлжийн бэлтгэл",
     },
     {
       id: "transition-block",
       start: "13:05",
-      end: "13:25",
+      end: "13:20",
       kind: "red-zone" as const,
       label: "Ээлж солигдох түгжрэл",
-      tooltip:
-        "Сурагчдын шилжилт хөдөлгөөн ихтэй тул шалгалт төлөвлөх боломжгүй",
+      tooltip: "II ээлжийн шилжилт",
     },
   ],
   shiftMarkers: [

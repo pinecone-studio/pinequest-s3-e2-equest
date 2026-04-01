@@ -368,12 +368,22 @@ export function SchoolEventScheduler({
 
     const overlapsHoliday = (start: Date, end: Date) =>
       holidayWindows.some(
-        (w) => start.getTime() < w.end.getTime() && end.getTime() > w.start.getTime(),
+        (w) =>
+          start.getTime() < w.end.getTime() &&
+          end.getTime() > w.start.getTime(),
       );
 
-    const pushOccurrence = (ev: SchoolEvent, start: Date, end: Date, key: string) => {
+    const pushOccurrence = (
+      ev: SchoolEvent,
+      start: Date,
+      end: Date,
+      key: string,
+    ) => {
       if (!overlaps(start, end)) return;
-      if (String(ev.repeatPattern ?? "NONE").toUpperCase() !== "NONE" && overlapsHoliday(start, end)) {
+      if (
+        String(ev.repeatPattern ?? "NONE").toUpperCase() !== "NONE" &&
+        overlapsHoliday(start, end)
+      ) {
         return;
       }
       out.push({
@@ -387,7 +397,11 @@ export function SchoolEventScheduler({
     for (const ev of allSchoolCalendarEvents) {
       const start = parseISO(ev.startDate);
       const end = parseISO(ev.endDate);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      if (
+        Number.isNaN(start.getTime()) ||
+        Number.isNaN(end.getTime()) ||
+        end <= start
+      ) {
         continue;
       }
 
@@ -419,7 +433,8 @@ export function SchoolEventScheduler({
     }
 
     return out.sort(
-      (a, b) => parseISO(a.startDate).getTime() - parseISO(b.startDate).getTime(),
+      (a, b) =>
+        parseISO(a.startDate).getTime() - parseISO(b.startDate).getTime(),
     );
   }, [allSchoolCalendarEvents, weekStart, weekEnd]);
 
@@ -963,7 +978,7 @@ export function SchoolEventScheduler({
                   <Building2 className="size-4" strokeWidth={2} />
                 </div>
                 <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                  Сургуулийн туслах
+                  Таны туслах
                 </span>
               </div>
 

@@ -375,6 +375,7 @@ export const typeDefs = /* GraphQL */ `
   type NewMathExamSummary {
     examId: ID!
     title: String!
+    durationMinutes: Int
     updatedAt: String!
   }
 

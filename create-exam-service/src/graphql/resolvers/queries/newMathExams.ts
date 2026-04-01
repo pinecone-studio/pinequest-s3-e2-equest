@@ -106,6 +106,7 @@ export const newMathExamQueries = {
       .select({
         examId: newExams.id,
         title: newExams.title,
+        durationMinutes: newExams.durationMinutes,
         updatedAt: newExams.updatedAt,
       })
       .from(newExams)

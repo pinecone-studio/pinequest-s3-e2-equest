@@ -419,6 +419,7 @@ type Mutation {
 type NewMathExamSummary {
   examId: ID!
   title: String!
+  durationMinutes: Int
   updatedAt: String!
 }
 

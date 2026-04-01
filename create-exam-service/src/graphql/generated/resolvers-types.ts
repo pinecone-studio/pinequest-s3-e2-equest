@@ -322,6 +322,7 @@ export type NewMathExamSessionMetaInput = {
 
 export type NewMathExamSummary = {
   __typename?: 'NewMathExamSummary';
+  durationMinutes?: Maybe<Scalars['Int']['output']>;
   examId: Scalars['ID']['output'];
   title: Scalars['String']['output'];
   updatedAt: Scalars['String']['output'];
@@ -825,6 +826,7 @@ export type NewMathExamSessionMetaResolvers<ContextType = GraphQLContext, Parent
 }>;
 
 export type NewMathExamSummaryResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['NewMathExamSummary'] = ResolversParentTypes['NewMathExamSummary']> = ResolversObject<{
+  durationMinutes?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   examId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

@@ -320,6 +320,7 @@ export type NewMathExamSessionMetaInput = {
 
 export type NewMathExamSummary = {
   __typename?: 'NewMathExamSummary';
+  durationMinutes?: Maybe<Scalars['Int']['output']>;
   examId: Scalars['ID']['output'];
   title: Scalars['String']['output'];
   updatedAt: Scalars['String']['output'];

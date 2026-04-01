@@ -7,12 +7,15 @@ import {
   curriculum,
   examSchedules,
   masterSchedules,
+  newExams,
   periods,
   schoolEvents,
   users,
   groups,
 } from "../../../src/db/schema";
 import { parseAiVariantsJson } from "../../../src/lib/exam-schedule-variants";
+
+const DEFAULT_EXAM_DURATION_MINUTES = 90;
 
 export interface Env {
   DB: D1Database;
@@ -74,6 +77,26 @@ function extractJsonObject(text: string): Record<string, unknown> {
   }
 
   throw new Error("JSON объект бүрэн хаагдсангүй");
+}
+
+function isoForWeekdayAndClock(
+  preferredDate: Date,
+  isoDay: number,
+  hhmm: string,
+): string | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm ?? "").trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+
+  const base = new Date(preferredDate);
+  const jsDay = base.getDay(); // 0=Sun .. 6=Sat
+  const baseIsoDay = jsDay === 0 ? 7 : jsDay;
+  const delta = isoDay - baseIsoDay;
+  base.setDate(base.getDate() + delta);
+  base.setHours(h, min, 0, 0);
+  return base.toISOString();
 }
 
 async function runScheduler(
@@ -174,6 +197,9 @@ async function runScheduler(
   });
 
   const roomIds = rooms.map((r) => r.id).join(", ");
+  const preferredStart = new Date(current.startTime);
+  const preferredStartIso = preferredStart.toISOString();
+  const preferredYear = preferredStart.getUTCFullYear();
 
   const [teacherRow] = await db
     .select({
@@ -185,30 +211,76 @@ async function runScheduler(
     .where(eq(curriculum.groupId, classId))
     .limit(1);
 
+  const availableRooms = rooms.filter(
+    (r) => Number(r.capacity ?? 0) >= Number(group?.studentCount ?? 30),
+  );
+  const [examRow] = await db
+    .select({
+      title: newExams.title,
+      durationMinutes: newExams.durationMinutes,
+    })
+    .from(newExams)
+    .where(eq(newExams.id, body.testId))
+    .limit(1);
+  const examDurationMinutes =
+    typeof examRow?.durationMinutes === "number" &&
+    Number.isFinite(examRow.durationMinutes) &&
+    examRow.durationMinutes > 0
+      ? Math.floor(examRow.durationMinutes)
+      : DEFAULT_EXAM_DURATION_MINUTES;
+  const periodById = new Map(allPeriods.map((p) => [Number(p.id), p]));
+  const primaryAnchorSlots = timetable
+    .map((row) => {
+      const period = periodById.get(Number(row.periodId));
+      if (!period) return null;
+      return {
+        dayOfWeek: Number(row.dayOfWeek),
+        periodId: Number(row.periodId),
+        periodNumber: Number(period.periodNumber),
+        startTime: String(period.startTime),
+        classroomId: row.classroomId ? String(row.classroomId) : null,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .sort(
+      (a, b) =>
+        a.dayOfWeek - b.dayOfWeek || a.periodNumber - b.periodNumber,
+    );
+
   const prompt = `Чи 1-р сургуулийн сургалтын албаны хуваарь төлөвлөгч AI.
 
 ОЛОН ДАВХАРГАТ ХУАНЛИ (Multi-Layer Calendar) — эдгээр давхаргыг хольж биш ДАВХАРЛАЖ үзнэ:
 
-• Давхарга 1 — ҮНДСЭН ХУВААРЬ (Primary schedule): тогтмол хичээлийн цаг. Чи үүнийг ЗАСАХГҮЙ; зөвхөн CONSTRAINT (хязгаарлалт) болгон ашиглана — эдгээр цагуудад шалгалт тавихгүй.
+• Давхарга 1 — ҮНДСЭН ХУВААРЬ (Primary schedule): тогтмол хичээлийн цаг. Ерөнхийдөө conflict-оос зайлсхий.
 • Давхарга 2 — ШАЛГАЛТЫН ХУВААРЬ (Exam calendar): чи зөвхөн энд OUTPUT өгнө — доорх JSON хариултын variants.
 • Давхарга 3 — СУРГУУЛИЙН АРГА ХЭМЖЭЭ (School events): бүх анги/багшид хамаарах GLOBAL BLOCKER. Эдгээр цагуудыг тооцоололд ХАМГИЙН ТҮРҮҮНД хасна (одоогоор жагсаалт хоосон бол ч гэсэн ирээдүйд энд ирнэ).
 
 Анги: ${classId}
 Сурагчдын тоо: ${group?.studentCount ?? 30}
 Багш: ${teacherRow?.shortName ?? "—"} (Өдөрт max ${teacherRow?.workLoadLimit ?? 6} цаг)
+Шалгалтын нэр: ${examRow?.title ?? body.testId}
+Шалгалтын үргэлжлэх хугацаа: ${examDurationMinutes} минут
+Багшийн хүссэн эхлэх огноо (preferredDate): ${preferredStartIso}
+Зөвшөөрөгдөх он: ${preferredYear}
 
 ДАВХАРГА 1 — master_schedules (JSON, constraint): ${JSON.stringify(timetable)}
+ANCHOR SLOT-ууд (яг энэ ангийн өөрийн үндсэн хичээлийн slot-ууд): ${JSON.stringify(primaryAnchorSlots)}
 ДАВХАРГА 3 — school_events blockers (JSON): ${JSON.stringify(schoolEventBlockers)}
 Periods (JSON): ${JSON.stringify(allPeriods)}
 Боломжит танхимууд (JSON): ${JSON.stringify(rooms)}
 
 ДҮРЭМ:
-1. Давхарга 1-тэй (хичээлийн цаг) давхцуулж болохгүй. Давхарга 3-д цаг орсон бол тэр хугацаанд шалгалтын startTime байх ёсгүй.
-2. Шалгалт 90 минут.
+1. Давхарга 3-д цаг орсон бол тэр хугацаанд шалгалтын startTime байх ёсгүй.
+2. Шалгалт ${examDurationMinutes} минут.
 3. roomId зөвхөн: [${roomIds}]
 4. ТАНХИМ: capacity >= ${group?.studentCount ?? 30} байх өрөөг сонго.
 5. СОФТ: сурагчид өдөрт олон шалгалт — боломжит бол өөр өдөр сонго.
-5. Өөр өөр ашигтай 3 хувилбар: (A) хамгийн ойрын цаг, (B) ангийн завтай цонхонд илүү тохиромжтой, (C) танхимын багтаамж/тохиргоо сайн.
+6. ЗААВАЛ: 3 хувилбарын дор хаяж 1 нь ANCHOR SLOT-уудын НЭГ дээр яг таарсан байх ёстой.
+7. Ялангуяа Variant A-г ANCHOR SLOT дээр тавь. Өөрөөр хэлбэл Variant A-ийн periodId / startTime нь дээрх anchor slot-ийн аль нэгтэй таарах ёстой.
+8. Үлдсэн Variant B/C нь anchor slot байж болно, эсвэл өөр оновчтой хувилбар байж болно.
+9. startTime нь preferredDate-ээс ӨМНӨ байж БОЛОХГҮЙ.
+10. startTime нь ЗААВАЛ ${preferredYear} он дотор байх ёстой. 2024/2025 гэх мэт өөр он руу БИТГИЙ төлөвлө.
+11. Хэрэв эргэлзээтэй бол preferredDate-тай хамгийн ойр, түүнээс хойших боломжит slot-уудыг сонго.
 
 Хариултыг ЗӨВХӨН нэг JSON объектоор:
 {
@@ -254,7 +326,7 @@ Periods (JSON): ${JSON.stringify(allPeriods)}
   }
 
   const jsonStr = JSON.stringify(rawVariants);
-  const normalized = parseAiVariantsJson(jsonStr);
+  let normalized = parseAiVariantsJson(jsonStr);
   if (normalized.length < 2) {
     const now = new Date().toISOString();
     await db
@@ -266,6 +338,50 @@ Periods (JSON): ${JSON.stringify(allPeriods)}
       })
       .where(eq(examSchedules.id, examId));
     return;
+  }
+
+  const anchorKeys = new Set(
+    primaryAnchorSlots.map((slot) => `${slot.dayOfWeek}:${slot.periodId}`),
+  );
+  const hasAnchorVariant = normalized.some((v) => {
+    const t = new Date(v.startTime);
+    if (Number.isNaN(t.getTime())) return false;
+    const isoDay = t.getDay() === 0 ? 7 : t.getDay();
+    const periodId =
+      typeof (v as unknown as { periodId?: unknown }).periodId === "number"
+        ? Number((v as unknown as { periodId?: unknown }).periodId)
+        : null;
+    return periodId != null && anchorKeys.has(`${isoDay}:${periodId}`);
+  });
+
+  if (!hasAnchorVariant && primaryAnchorSlots.length > 0 && availableRooms.length > 0) {
+    const anchor = primaryAnchorSlots[0];
+    const preferred = new Date(current.startTime);
+    const anchorStartIso = isoForWeekdayAndClock(
+      preferred,
+      anchor.dayOfWeek,
+      anchor.startTime,
+    );
+    const anchorRoom =
+      (anchor.classroomId &&
+      availableRooms.some((r) => String(r.id) === anchor.classroomId)
+        ? anchor.classroomId
+        : String(availableRooms[0].id));
+
+    if (anchorStartIso) {
+      normalized = [
+        {
+          ...normalized[0],
+          id: normalized[0]?.id || "a",
+          label: normalized[0]?.label || "Хувилбар A — үндсэн хичээлийн цаг дээр",
+          startTime: anchorStartIso,
+          roomId: anchorRoom,
+          reason:
+            "Тухайн ангийн үндсэн хичээлийн slot дээр суурилуулсан anchor хувилбар.",
+        },
+        ...normalized.slice(1),
+      ];
+    }
   }
 
   for (const v of normalized) {
@@ -294,6 +410,30 @@ Periods (JSON): ${JSON.stringify(allPeriods)}
         .where(eq(examSchedules.id, examId));
       return;
     }
+    if (t.getTime() < preferredStart.getTime()) {
+      const now = new Date().toISOString();
+      await db
+        .update(examSchedules)
+        .set({
+          status: "failed",
+          aiReasoning: `preferredDate-ээс өмнөх санал ирлээ: ${v.id} → ${v.startTime}`,
+          updatedAt: now,
+        })
+        .where(eq(examSchedules.id, examId));
+      return;
+    }
+    if (t.getUTCFullYear() !== preferredYear) {
+      const now = new Date().toISOString();
+      await db
+        .update(examSchedules)
+        .set({
+          status: "failed",
+          aiReasoning: `Буруу онтой санал ирлээ: ${v.id} → ${v.startTime}`,
+          updatedAt: now,
+        })
+        .where(eq(examSchedules.id, examId));
+      return;
+    }
   }
 
   const summary =
@@ -307,7 +447,7 @@ Periods (JSON): ${JSON.stringify(allPeriods)}
     .update(examSchedules)
     .set({
       status: "suggested",
-      aiVariantsJson: jsonStr,
+      aiVariantsJson: JSON.stringify(normalized),
       aiReasoning: summary,
       updatedAt: now,
     })
