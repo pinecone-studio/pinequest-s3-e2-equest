@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation } from "@apollo/client/react";
+import type { ReactNode } from "react";
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import {
   BookOpen,
@@ -60,6 +61,7 @@ type Props = {
   onSourceChange: (source: MaterialSourceId) => void;
   previewQuestions: PreviewQuestion[];
   onPreviewQuestionsChange: (questions: PreviewQuestion[]) => void;
+  appendedContent?: ReactNode;
 };
 
 type WorkspaceSourceId = Exclude<MaterialSourceId, "textbook">;
@@ -79,7 +81,7 @@ const mathAssistFieldClassName =
   "rounded-[20px]! border-[#b8e5d7]! bg-[#edf8f4]! px-4! py-3! hover:border-[#98d4c3]! focus-visible:border-[#89cab8]! focus-visible:ring-[#89cab8]/20";
 const answerMathAssistFieldClassName = `${mathAssistFieldClassName} h-11! min-h-11!`;
 const mathAssistFieldContentClassName =
-  "font-sans text-[14px] leading-[1.6] font-normal tracking-normal text-slate-800 [&_.katex]:text-inherit";
+  "pl-1.5 font-sans text-[14px] leading-[1.6] font-normal tracking-normal text-slate-800 [&_.katex]:text-inherit";
 
 const workspaceSourceOptions = sourceOptions.filter(
   (
@@ -646,7 +648,7 @@ function QuestionBankPanel({
         type="button"
         variant="outline"
         onClick={() => void handleGenerateAnswer()}
-        disabled={isAiWorking}
+        disabled={isAiWorking || questionText.trim().length === 0}
         className="w-full cursor-pointer rounded-[12px] border-[#dce8fb] bg-[#f4f8ff] text-[#0b5cab]"
       >
         {generating ? (
@@ -845,7 +847,7 @@ function TextbookPanel() {
               <div>
                 <p className="mb-2 text-[13px] text-slate-600">Олон сонголт</p>
                 <Select defaultValue="no">
-                  <SelectTrigger className="rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                  <SelectTrigger className="cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -857,7 +859,7 @@ function TextbookPanel() {
               <div>
                 <p className="mb-2 text-[13px] text-slate-600">Хүндрэлийн</p>
                 <Select defaultValue="medium">
-                  <SelectTrigger className="rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                  <SelectTrigger className="cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -908,7 +910,7 @@ function SharedLibraryPanel({
       <div className="grid grid-cols-3 gap-2">
         {["Бүгд", "Бүгд", "Бүгд"].map((label, index) => (
           <Select key={`${label}-${index}`} defaultValue="all">
-            <SelectTrigger className="rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+            <SelectTrigger className="cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
               <SelectValue placeholder={label} />
             </SelectTrigger>
             <SelectContent>
@@ -1053,7 +1055,7 @@ function PreviewQuestionCard({
           "scale-[1.015] -rotate-1 border-sky-300 bg-sky-50/60 shadow-[0_24px_50px_-20px_rgba(14,116,144,0.35)] opacity-70",
         isDragTarget
           ? "border-[#0f74e7] ring-2 ring-[#0f74e7]/20 shadow-[0_0_0_1px_rgba(15,116,231,0.08)]"
-          : "border-[#e3e9f4] shadow-[0_8px_20px_rgba(15,23,42,0.04)]",
+          : "border-[#e3e9f4] shadow-[0_8px_20px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:border-[#b8ccef] hover:bg-[#fbfdff] hover:shadow-[0_10px_22px_rgba(148,163,184,0.14)]",
       )}
       onDragEnter={onDragTargetEnter}
       onDragOver={onDragTargetOver}
@@ -1181,6 +1183,7 @@ export function MaterialBuilderWorkspaceSection({
   onSourceChange,
   previewQuestions,
   onPreviewQuestionsChange,
+  appendedContent,
 }: Props) {
   const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(
     null,
@@ -1338,7 +1341,13 @@ export function MaterialBuilderWorkspaceSection({
           </div>
         </div>
 
-        <div className="rounded-[20px] border border-[#e6edf7] bg-[#fcfdff] p-4 sm:p-5">
+        <div
+          className={cn(
+            "rounded-[20px] border border-[#e6edf7] bg-[#fcfdff] p-4 sm:p-5",
+            previewQuestions.length > 5 &&
+              "flex max-h-[calc(100vh-10rem)] flex-col",
+          )}
+        >
           <div className="mb-4 flex items-start justify-between gap-4 border-b border-[#e6edf7] pb-4">
             <div>
               <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">
@@ -1364,6 +1373,11 @@ export function MaterialBuilderWorkspaceSection({
             </div>
           </div>
 
+          <div
+            className={cn(
+              previewQuestions.length > 5 && "min-h-0 flex-1 overflow-y-auto pr-2",
+            )}
+          >
           {previewQuestions.length === 0 ? (
             <div className="flex min-h-[340px] flex-col items-center justify-center rounded-[20px] border border-dashed border-[#dbe4f3] bg-[#fcfdff] px-6 text-center">
               <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#eef3f9] text-slate-500">
@@ -1417,6 +1431,13 @@ export function MaterialBuilderWorkspaceSection({
               ))}
             </div>
           )}
+
+          {appendedContent ? (
+            <div className="mt-6 border-t border-[#e6edf7] pt-5">
+              {appendedContent}
+            </div>
+          ) : null}
+          </div>
         </div>
       </div>
     </section>

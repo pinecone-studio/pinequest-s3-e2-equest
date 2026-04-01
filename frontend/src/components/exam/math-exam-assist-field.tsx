@@ -783,7 +783,9 @@ export function MathAssistField({
                 )}
               />
             ) : (
-              <span className={cn("text-muted-foreground", contentClassName)}>
+              <span
+                className={cn("pl-1.5 text-muted-foreground", contentClassName)}
+              >
                 {placeholder}
               </span>
             )}

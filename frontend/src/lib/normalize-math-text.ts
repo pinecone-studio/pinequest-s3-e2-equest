@@ -9,7 +9,13 @@ export function normalizePreviewMathText(raw: string): string {
     .replace(/\\\$(?=\{)/g, "\\")
     .replace(/\\\\(?=[A-Za-z])/g, "\\")
     .replace(/\$([}\]\)])/g, "$1");
-  return next.trim();
+  const trimmed = next.trim();
+
+  if (!containsExplicitMathDelimiters(trimmed)) {
+    return normalizeBackendMathText(trimmed);
+  }
+
+  return trimmed;
 }
 
 export function normalizeBackendMathText(raw: string): string {

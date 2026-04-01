@@ -1,10 +1,20 @@
 "use client";
 
 import { useLazyQuery, useMutation } from "@apollo/client/react";
-import { Check, Eye, Loader2, Pencil, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  GripVertical,
+  Loader2,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { MathAssistField } from "@/components/exam/math-exam-assist-field";
 import MathPreviewText from "@/components/math-preview-text";
+import { normalizeBackendMathText } from "@/lib/normalize-math-text";
 import {
   ConfirmExamVariantDocument,
   GetExamVariantJobDocument,
@@ -73,10 +84,23 @@ const demoGeneralInfo: GeneralInfoValues = {
 function normalizeVariantQuestions(
   questions: GeneratedVariant["questions"],
 ): GeneratedVariant["questions"] {
+  function normalizeVariantText(value?: string | null) {
+    if (value == null) return value ?? null;
+
+    return normalizeBackendMathText(
+      value.replace(/\\\{/g, "{").replace(/\\\}/g, "}"),
+    );
+  }
+
   return questions.map((question, index) => ({
     ...question,
     position: index + 1,
-    options: question.options ?? [],
+    prompt: normalizeVariantText(question.prompt) ?? "",
+    options: (question.options ?? []).map(
+      (option) => normalizeVariantText(option) ?? "",
+    ),
+    correctAnswer: normalizeVariantText(question.correctAnswer),
+    explanation: normalizeVariantText(question.explanation),
   }));
 }
 
@@ -161,13 +185,20 @@ export default function MaterialBuilderPageContent() {
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
     null,
   );
-  const [confirmedVariantIds, setConfirmedVariantIds] = useState<string[]>(
-    [],
-  );
+  const [confirmedVariantIds, setConfirmedVariantIds] = useState<string[]>([]);
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(
     null,
   );
+  const [draggedConfirmedQuestion, setDraggedConfirmedQuestion] = useState<{
+    questionId: string;
+    variantId: string;
+  } | null>(null);
+  const [dragTargetConfirmedQuestion, setDragTargetConfirmedQuestion] = useState<{
+    questionId: string;
+    variantId: string;
+  } | null>(null);
   const [savingExam, setSavingExam] = useState(false);
+  const [savingVariantAsExam, setSavingVariantAsExam] = useState(false);
   const [savedExamId, setSavedExamId] = useState<string | null>(null);
   const variantToastIdRef = useRef<string | number | null>(null);
 
@@ -194,13 +225,15 @@ export default function MaterialBuilderPageContent() {
     [generatedVariants, selectedVariantId],
   );
   const isGeneratingVariants = requestingVariants || Boolean(variantJobId);
-  const isPersistingVariant = confirmingVariant || savingExam;
+  const isPersistingVariant =
+    confirmingVariant || savingExam || savingVariantAsExam;
   const hasGeneratedVariants = generatedVariants.length > 0;
   const confirmedVariants = useMemo(
     () =>
       generatedVariants.filter(
         (variant) =>
-          variant.status === "confirmed" || confirmedVariantIds.includes(variant.id),
+          variant.status === "confirmed" ||
+          confirmedVariantIds.includes(variant.id),
       ),
     [confirmedVariantIds, generatedVariants],
   );
@@ -424,6 +457,91 @@ export default function MaterialBuilderPageContent() {
     );
   }
 
+  function reorderVariantQuestions(
+    variantId: string,
+    questions: GeneratedVariant["questions"],
+  ) {
+    setGeneratedVariants((prev) =>
+      prev.map((variant) =>
+        variant.id === variantId
+          ? {
+              ...variant,
+              questions: normalizeVariantQuestions(questions),
+            }
+          : variant,
+      ),
+    );
+  }
+
+  function moveConfirmedVariantQuestion(
+    variantId: string,
+    questionId: string,
+    direction: "up" | "down",
+  ) {
+    const variant = generatedVariants.find((item) => item.id === variantId);
+    if (!variant) return;
+
+    const currentIndex = variant.questions.findIndex(
+      (question) => question.id === questionId,
+    );
+    if (currentIndex === -1) return;
+
+    const targetIndex =
+      direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= variant.questions.length) return;
+
+    const next = [...variant.questions];
+    [next[currentIndex], next[targetIndex]] = [
+      next[targetIndex],
+      next[currentIndex],
+    ];
+    reorderVariantQuestions(variantId, next);
+  }
+
+  function deleteConfirmedVariantQuestion(variantId: string, questionId: string) {
+    const variant = generatedVariants.find((item) => item.id === variantId);
+    if (!variant) return;
+
+    reorderVariantQuestions(
+      variantId,
+      variant.questions.filter((question) => question.id !== questionId),
+    );
+  }
+
+  function dropConfirmedVariantQuestion(variantId: string, targetQuestionId: string) {
+    if (
+      !draggedConfirmedQuestion ||
+      draggedConfirmedQuestion.variantId !== variantId ||
+      draggedConfirmedQuestion.questionId === targetQuestionId
+    ) {
+      setDraggedConfirmedQuestion(null);
+      setDragTargetConfirmedQuestion(null);
+      return;
+    }
+
+    const variant = generatedVariants.find((item) => item.id === variantId);
+    if (!variant) return;
+
+    const draggedIndex = variant.questions.findIndex(
+      (question) => question.id === draggedConfirmedQuestion.questionId,
+    );
+    const targetIndex = variant.questions.findIndex(
+      (question) => question.id === targetQuestionId,
+    );
+    if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+      setDraggedConfirmedQuestion(null);
+      setDragTargetConfirmedQuestion(null);
+      return;
+    }
+
+    const next = [...variant.questions];
+    const [draggedItem] = next.splice(draggedIndex, 1);
+    next.splice(targetIndex, 0, draggedItem);
+    reorderVariantQuestions(variantId, next);
+    setDraggedConfirmedQuestion(null);
+    setDragTargetConfirmedQuestion(null);
+  }
+
   function handleDeleteVariant(variantId: string) {
     setGeneratedVariants((prev) => {
       const next = prev.filter((variant) => variant.id !== variantId);
@@ -494,7 +612,9 @@ export default function MaterialBuilderPageContent() {
           ),
         );
         setConfirmedVariantIds((prev) =>
-          prev.includes(selectedVariant.id) ? prev : [...prev, selectedVariant.id],
+          prev.includes(selectedVariant.id)
+            ? prev
+            : [...prev, selectedVariant.id],
         );
         setVariantViewerOpen(false);
         toast.success(payload.message || "Сонгосон AI хувилбарыг баталлаа.");
@@ -581,47 +701,193 @@ export default function MaterialBuilderPageContent() {
           onSelectMaterialId={setSelectedSharedMaterialId}
           previewQuestions={previewQuestions}
           onPreviewQuestionsChange={setPreviewQuestions}
-        />
-
-        {confirmedVariants.length > 0 ? (
-          <section className="mt-5 rounded-[18px] border border-[#dbe4f3] bg-white px-5 py-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] sm:px-6">
-            <div className="mb-4 flex items-center gap-2 text-[15px] font-semibold text-slate-900">
-              <Check className="h-4 w-4 text-[#167e61]" />
-              Баталсан AI хувилбарууд
-            </div>
-            <div className="space-y-3">
-              {confirmedVariants.map((variant) => (
-                <div
-                  key={variant.id}
-                  className="rounded-[14px] border border-[#d7e7de] bg-[#f6fcf8] px-4 py-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[14px] font-semibold text-slate-900">
-                        {variant.title}
-                      </p>
-                      <p className="mt-1 text-[12px] text-slate-500">
-                        {variant.questions.length} асуулт
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setSelectedVariantId(variant.id);
-                        setVariantViewerOpen(true);
-                      }}
-                      className="rounded-[10px] border-[#cfe0fb] bg-white text-[#0b5cab] hover:bg-[#f7faff]"
-                    >
-                      <Eye className="h-4 w-4" />
-                      Харах
-                    </Button>
-                  </div>
+          appendedContent={
+            confirmedVariants.length > 0 ? (
+              <section>
+                <div className="mb-4 flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+                  <Check className="h-4 w-4 text-[#167e61]" />
+                  Баталсан AI хувилбарууд
                 </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                <div className="space-y-3">
+                  {confirmedVariants.map((variant) => (
+                    <div key={variant.id} className="space-y-3">
+                      <div className="rounded-[14px] border border-[#e6edf7] bg-[#f8fbff] px-4 py-3">
+                        <div>
+                          <p className="text-[15px] font-semibold text-slate-900">
+                            {variant.title}
+                          </p>
+                          <p className="mt-1 text-[12px] text-slate-500">
+                            {variant.questions.length} асуулт
+                          </p>
+                        </div>
+                      </div>
+                      {variant.questions.map((question) => (
+                        <div
+                          key={question.id}
+                          className={`group rounded-[20px] border bg-white p-5 transition-all duration-200 ${
+                            draggedConfirmedQuestion?.questionId === question.id
+                              ? "scale-[1.015] -rotate-1 border-sky-300 bg-sky-50/60 shadow-[0_24px_50px_-20px_rgba(14,116,144,0.35)] opacity-70"
+                              : dragTargetConfirmedQuestion?.questionId === question.id &&
+                                  dragTargetConfirmedQuestion.variantId === variant.id
+                                ? "border-[#0f74e7] ring-2 ring-[#0f74e7]/20 shadow-[0_0_0_1px_rgba(15,116,231,0.08)]"
+                                : "border-[#e3e9f4] shadow-[0_8px_20px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:border-[#b8ccef] hover:bg-[#fbfdff] hover:shadow-[0_10px_22px_rgba(148,163,184,0.14)]"
+                          }`}
+                          onDragEnter={() => {
+                            if (!draggedConfirmedQuestion) return;
+                            if (draggedConfirmedQuestion.variantId !== variant.id) return;
+                            setDragTargetConfirmedQuestion({
+                              variantId: variant.id,
+                              questionId: question.id,
+                            });
+                          }}
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            if (!draggedConfirmedQuestion) return;
+                            if (draggedConfirmedQuestion.variantId !== variant.id) return;
+                            event.dataTransfer.dropEffect = "move";
+                            setDragTargetConfirmedQuestion({
+                              variantId: variant.id,
+                              questionId: question.id,
+                            });
+                          }}
+                          onDrop={() =>
+                            dropConfirmedVariantQuestion(variant.id, question.id)
+                          }
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="flex w-8 shrink-0 flex-col items-center gap-2">
+                              <button
+                                type="button"
+                                draggable
+                                onDragStart={(event) => {
+                                  event.dataTransfer.effectAllowed = "move";
+                                  setDraggedConfirmedQuestion({
+                                    variantId: variant.id,
+                                    questionId: question.id,
+                                  });
+                                  setDragTargetConfirmedQuestion({
+                                    variantId: variant.id,
+                                    questionId: question.id,
+                                  });
+                                }}
+                                onDragEnd={() => {
+                                  setDraggedConfirmedQuestion(null);
+                                  setDragTargetConfirmedQuestion(null);
+                                }}
+                                className="cursor-grab rounded-md p-1 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing"
+                                aria-label="Асуултын байрлал өөрчлөх"
+                              >
+                                <GripVertical className="h-4 w-4" />
+                              </button>
+                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#0f74e7] text-[12px] font-semibold text-white">
+                                {question.position}
+                              </span>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1 text-[14px] font-semibold text-slate-900">
+                                  <MathPreviewText
+                                    content={question.prompt}
+                                    contentSource="backend"
+                                    className="text-[14px] leading-relaxed text-slate-900"
+                                  />
+                                </div>
+                                <div className="flex items-start gap-1 transition-opacity group-hover:opacity-100 md:opacity-0">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      moveConfirmedVariantQuestion(
+                                        variant.id,
+                                        question.id,
+                                        "up",
+                                      )
+                                    }
+                                    disabled={question.position === 1}
+                                    className="cursor-pointer rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-35"
+                                    aria-label="Дээш зөөх"
+                                  >
+                                    <ChevronUp className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      moveConfirmedVariantQuestion(
+                                        variant.id,
+                                        question.id,
+                                        "down",
+                                      )
+                                    }
+                                    disabled={
+                                      question.position === variant.questions.length
+                                    }
+                                    className="cursor-pointer rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-35"
+                                    aria-label="Доош зөөх"
+                                  >
+                                    <ChevronDown className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      deleteConfirmedVariantQuestion(
+                                        variant.id,
+                                        question.id,
+                                      )
+                                    }
+                                    className="cursor-pointer rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                                    aria-label="Устгах"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </div>
+                          {(question.options ?? []).length > 0 ? (
+                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              {(question.options ?? []).map((option, index) => {
+                                const isCorrect =
+                                  option.trim() ===
+                                  (question.correctAnswer ?? "").trim();
+
+                                return (
+                                  <div
+                                    key={`${question.id}-${index}`}
+                                    className={`rounded-[14px] px-4 py-3 text-[14px] ${
+                                      isCorrect
+                                        ? "border border-[#a8ddd0] bg-[#d8f2ea] text-[#167e61]"
+                                        : "bg-[#eef2f6] text-slate-700"
+                                    }`}
+                                  >
+                                    <span className="mr-1">
+                                      {String.fromCharCode(65 + index)}.
+                                    </span>
+                                    <MathPreviewText
+                                      content={option}
+                                      contentSource="backend"
+                                      className="inline text-[14px] leading-relaxed"
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <Badge className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-100">
+                              AI
+                            </Badge>
+                            <Badge className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                              1 оноо
+                            </Badge>
+                          </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null
+          }
+        />
 
         <div className="flex items-center justify-end gap-3 pt-10">
           <Button
@@ -726,7 +992,7 @@ export default function MaterialBuilderPageContent() {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)] lg:grid-rows-1 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden lg:grid-cols-[180px_minmax(0,1fr)] lg:grid-rows-1 xl:grid-cols-[200px_minmax(0,1fr)]">
               <div className="max-h-56 overflow-y-auto border-b border-[#e9eef6] bg-[#f8fbff] p-4 lg:max-h-none lg:border-b-0 lg:border-r">
                 <div className="space-y-3">
                   {generatedVariants.map((variant) => {
@@ -743,10 +1009,10 @@ export default function MaterialBuilderPageContent() {
                           setSelectedVariantId(variant.id);
                           setEditingQuestionId(null);
                         }}
-                        className={`w-full rounded-[16px] border px-4 py-3 text-left transition ${
+                        className={`w-full cursor-pointer rounded-[16px] border px-4 py-3 text-left transition-all duration-200 ${
                           isActive
                             ? "border-[#0b5cab] bg-white shadow-[0_10px_20px_rgba(11,92,171,0.12)]"
-                            : "border-[#dbe4f3] bg-white hover:border-[#bfd4f5]"
+                            : "border-[#dbe4f3] bg-white hover:-translate-y-0.5 hover:border-[#a9c8f3] hover:bg-[#f8fbff] hover:shadow-[0_10px_22px_rgba(148,163,184,0.16)]"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3">
@@ -784,7 +1050,7 @@ export default function MaterialBuilderPageContent() {
                         type="button"
                         variant="outline"
                         onClick={() => handleDeleteVariant(selectedVariant.id)}
-                        className="rounded-[12px] border-rose-200 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        className="cursor-pointer rounded-[12px] border-rose-200 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                         aria-label="Хувилбар устгах"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -818,7 +1084,7 @@ export default function MaterialBuilderPageContent() {
                                       : question.id,
                                   )
                                 }
-                                className="px-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                                className="cursor-pointer px-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
                                 aria-label={
                                   isEditingQuestion
                                     ? "Засварлах горимоос гарах"
@@ -841,7 +1107,7 @@ export default function MaterialBuilderPageContent() {
                                     question.id,
                                   )
                                 }
-                                className="px-2 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                className="cursor-pointer px-2 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                                 aria-label="Асуулт устгах"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -890,7 +1156,7 @@ export default function MaterialBuilderPageContent() {
                                               }),
                                             )
                                           }
-                                          className={`flex h-6 w-6 items-center justify-center rounded-full border transition ${
+                                          className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border transition ${
                                             index === correctOptionIndex
                                               ? "border-[#0b5cab] bg-[#e8f1ff] shadow-[0_0_0_3px_rgba(11,92,171,0.08)]"
                                               : "border-[#cbd9ee] bg-white hover:border-[#9fbae3]"
@@ -950,13 +1216,13 @@ export default function MaterialBuilderPageContent() {
                             </div>
                           ) : (
                             <div className="space-y-3">
-                            <div className="rounded-[14px] bg-[#f5f8fc] p-3">
-                              <MathPreviewText
-                                content={question.prompt}
-                                contentSource="backend"
-                                className="text-[14px] leading-relaxed text-slate-700"
-                              />
-                            </div>
+                              <div className="rounded-[14px] bg-[#f5f8fc] p-3">
+                                <MathPreviewText
+                                  content={question.prompt}
+                                  contentSource="backend"
+                                  className="text-[14px] leading-relaxed text-slate-700"
+                                />
+                              </div>
 
                               {(question.options ?? []).length > 0 ? (
                                 <div className="grid gap-3">
@@ -1015,7 +1281,7 @@ export default function MaterialBuilderPageContent() {
                 variant="outline"
                 onClick={() => setVariantViewerOpen(false)}
                 disabled={isPersistingVariant}
-                className="rounded-[12px] border-[#d7e3f5] bg-white px-5 hover:bg-slate-50"
+                className="cursor-pointer rounded-[12px] border-[#d7e3f5] bg-white px-5 hover:bg-slate-50"
               >
                 Хаах
               </Button>
@@ -1026,6 +1292,7 @@ export default function MaterialBuilderPageContent() {
                   selectedVariant
                     ? void (async () => {
                         try {
+                          setSavingVariantAsExam(true);
                           const result = await saveExamVariant({
                             variables: {
                               input: {
@@ -1036,15 +1303,19 @@ export default function MaterialBuilderPageContent() {
                                 examType: generalInfo.examType || undefined,
                                 subject: generalInfo.subject || undefined,
                                 durationMinutes:
-                                  Number(generalInfo.durationMinutes) || undefined,
-                                questions: selectedVariant.questions.map((question) => ({
-                                  order: question.position,
-                                  prompt: question.prompt,
-                                  type: question.type,
-                                  options: question.options ?? [],
-                                  correctAnswer: question.correctAnswer ?? null,
-                                  explanation: question.explanation ?? null,
-                                })),
+                                  Number(generalInfo.durationMinutes) ||
+                                  undefined,
+                                questions: selectedVariant.questions.map(
+                                  (question) => ({
+                                    order: question.position,
+                                    prompt: question.prompt,
+                                    type: question.type,
+                                    options: question.options ?? [],
+                                    correctAnswer:
+                                      question.correctAnswer ?? null,
+                                    explanation: question.explanation ?? null,
+                                  }),
+                                ),
                               },
                             },
                           });
@@ -1070,7 +1341,8 @@ export default function MaterialBuilderPageContent() {
 
                           if (!payload?.success || !payload.variant) {
                             throw new Error(
-                              payload?.message || "Шинэ шалгалт болгож хадгалж чадсангүй.",
+                              payload?.message ||
+                                "Шинэ шалгалт болгож хадгалж чадсангүй.",
                             );
                           }
 
@@ -1080,15 +1352,18 @@ export default function MaterialBuilderPageContent() {
                                 ? {
                                     ...variant,
                                     status: payload.variant.status ?? "saved",
-                                    confirmedAt: payload.variant.confirmedAt ?? null,
+                                    confirmedAt:
+                                      payload.variant.confirmedAt ?? null,
                                     savedAt: payload.variant.savedAt ?? null,
-                                    savedExamId: payload.variant.savedExamId ?? null,
+                                    savedExamId:
+                                      payload.variant.savedExamId ?? null,
                                   }
                                 : variant,
                             ),
                           );
                           toast.success(
-                            payload.message || "Variant-ийг шинэ шалгалт болгож хадгаллаа.",
+                            payload.message ||
+                              "Variant-ийг шинэ шалгалт болгож хадгаллаа.",
                           );
                         } catch (error) {
                           toast.error(
@@ -1096,14 +1371,23 @@ export default function MaterialBuilderPageContent() {
                               ? error.message
                               : "Шинэ шалгалт болгож хадгалахад алдаа гарлаа.",
                           );
+                        } finally {
+                          setSavingVariantAsExam(false);
                         }
                       })()
                     : undefined
                 }
                 disabled={!selectedVariant || isPersistingVariant}
-                className="rounded-[12px] border-[#d7e3f5] bg-white px-5 hover:bg-slate-50"
+                className="cursor-pointer rounded-[12px] border-sky-200 bg-sky-50 px-5 text-sky-700 hover:bg-sky-100 hover:text-sky-800"
               >
-                Шинэ шалгалт болгоод хадгалах
+                {savingVariantAsExam ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Шинэ шалгалт болгож хадгалж байна...
+                  </>
+                ) : (
+                  "Шинэ шалгалт болгож хадгалах"
+                )}
               </Button>
               <Button
                 type="button"
@@ -1113,7 +1397,7 @@ export default function MaterialBuilderPageContent() {
                   selectedVariant.questions.length === 0 ||
                   isPersistingVariant
                 }
-                className="rounded-[12px] bg-[#0b5cab] px-5 hover:bg-[#0a4f96]"
+                className="cursor-pointer rounded-[12px] bg-[#0b5cab] px-5 hover:bg-[#0a4f96]"
               >
                 {confirmingVariant ? (
                   <>
