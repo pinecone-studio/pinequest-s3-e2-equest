@@ -20,6 +20,10 @@ type GenerateQuestionAnswerInput = {
     | "FILL_IN"
     | "WRITTEN"
     | null;
+  previousOptions?: string[] | null;
+  previousCorrectAnswer?: string | null;
+  previousExplanation?: string | null;
+  mode?: "generate" | "regenerate";
 };
 
 const SYSTEM_INSTRUCTION = `
@@ -85,10 +89,30 @@ export async function generateQuestionAnswerWithGemini(
       : "- points: өөрөө тохируулж сонго",
   ].join("\n");
 
+  const regenerateContext =
+    input.mode === "regenerate"
+      ? `
+
+Өмнөх AI хувилбар:
+- options: ${
+          input.previousOptions?.filter(Boolean).join(" | ") || "байхгүй"
+        }
+- correctAnswer: ${input.previousCorrectAnswer?.trim() || "байхгүй"}
+- explanation: ${input.previousExplanation?.trim() || "байхгүй"}
+
+Нэмэлт дүрэм:
+- Өмнөх хувилбарыг шууд давтаж болохгүй.
+- Боломжтой бол сонголтуудын найруулга, зөв хариу, тайлбарын хэлбэрийг шинэчил.
+- Асуултын гол утгыг алдагдуулахгүйгээр шинэ AI хувилбар гарга.
+`.trim()
+      : "";
+
   const userContent = `Асуулт: ${input.prompt.trim()}
 
 Шаардлага:
 ${constraints}
+
+${regenerateContext}
 
 Энэ асуултад тохирох зөв хариу, сонголтууд (шаардлагатай бол), бодолтын тайлбарыг JSON object хэлбэрээр буцаа.`;
 

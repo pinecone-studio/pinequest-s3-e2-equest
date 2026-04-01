@@ -1,28 +1,28 @@
 import {
   BookOpen,
   Database,
-  Download,
+  FileUp,
   FileText,
   Files,
-  Sparkles,
+  PenSquare,
   Table2,
 } from "lucide-react";
 
 export const sourceOptions = [
   {
     id: "question-bank",
-    icon: Sparkles,
-    label: "Асуулт үүсгэх",
+    icon: PenSquare,
+    label: "Гараар",
   },
   {
     id: "textbook",
     icon: BookOpen,
-    label: "Сурах бичиг",
+    label: "Ном",
   },
   {
     id: "import",
-    icon: Download,
-    label: "Импорт",
+    icon: FileUp,
+    label: "Файл",
   },
   {
     id: "shared-library",

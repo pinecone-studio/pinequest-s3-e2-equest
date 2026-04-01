@@ -78,6 +78,20 @@ export const GenerateQuestionAnswerDocument = gql(`
 	}
 `);
 
+export const RegenerateQuestionAnswerDocument = gql(`
+	mutation RegenerateQuestionAnswer($input: RegenerateQuestionAnswerInput!) {
+		regenerateQuestionAnswer(input: $input) {
+			questionText
+			format
+			difficulty
+			points
+			options
+			correctAnswer
+			explanation
+		}
+	}
+`);
+
 export const CreateAiExamTemplateDocument = gql(`
 	mutation CreateAiExamTemplate($input: CreateAiExamTemplateInput!) {
 		createAiExamTemplate(input: $input) {

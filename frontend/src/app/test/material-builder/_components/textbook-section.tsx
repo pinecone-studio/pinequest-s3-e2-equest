@@ -22,7 +22,7 @@ export function TextbookSection() {
     <section className="mt-5 space-y-4">
       <div className="flex items-center gap-3 text-[15px] font-semibold text-slate-900">
         <BookOpen className="h-5 w-5 text-[#2563eb]" />
-        Сурах бичиг
+        Ном
       </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-[404px_minmax(0,1fr)]">

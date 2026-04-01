@@ -8,7 +8,7 @@ export function ImportSection() {
     <section className="mt-5 rounded-[18px] border border-[#e3e9f4] bg-white px-5 py-8 shadow-[0_8px_18px_rgba(15,23,42,0.04)] sm:px-6">
       <div className="mb-8 flex items-center gap-3 text-[15px] font-semibold text-slate-900">
         <Download className="h-5 w-5 text-[#2563eb]" />
-        Импорт
+        Файл
       </div>
 
       <div>

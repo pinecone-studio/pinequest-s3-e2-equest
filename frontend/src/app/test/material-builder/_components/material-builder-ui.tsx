@@ -208,7 +208,7 @@ export function SharedLibraryQuestionCard({
         </div>
 
         <p className="mt-2 text-[14px] leading-6 text-slate-600">
-          {material.title} материалын энэ хэсгийг `Сурах бичиг`-ийн баруун
+          {material.title} материалын энэ хэсгийг `Ном`-ын баруун
           талын асуултын card-уудтай төстэй байдлаар харуулж байна.
         </p>
       </div>

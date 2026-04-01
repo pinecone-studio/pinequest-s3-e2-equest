@@ -163,7 +163,7 @@ export function QuestionBankSection() {
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
           <Sparkles className="h-4 w-4 text-[#2563eb]" />
-          Асуулт үүсгэх
+          Гараар
         </div>
         <div className="flex items-center gap-2">
           <Button

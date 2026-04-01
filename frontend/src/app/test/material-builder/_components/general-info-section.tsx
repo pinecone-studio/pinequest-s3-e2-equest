@@ -27,11 +27,17 @@ export function GeneralInfoSection() {
 
       <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="subject" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="subject"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Хичээл
           </Label>
           <Select defaultValue="math">
-            <SelectTrigger id="subject" className={`${fieldClassName} cursor-pointer`}>
+            <SelectTrigger
+              id="subject"
+              className={`${fieldClassName} cursor-pointer`}
+            >
               <SelectValue placeholder="Хичээл сонгох" />
             </SelectTrigger>
             <SelectContent>
@@ -43,11 +49,17 @@ export function GeneralInfoSection() {
         </div>
 
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="classroom" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="classroom"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Анги
           </Label>
           <Select defaultValue="10">
-            <SelectTrigger id="classroom" className={`${fieldClassName} cursor-pointer`}>
+            <SelectTrigger
+              id="classroom"
+              className={`${fieldClassName} cursor-pointer`}
+            >
               <SelectValue placeholder="Анги сонгох" />
             </SelectTrigger>
             <SelectContent>
@@ -60,11 +72,17 @@ export function GeneralInfoSection() {
         </div>
 
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="exam-type" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="exam-type"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Төрөл
           </Label>
           <Select defaultValue="progress">
-            <SelectTrigger id="exam-type" className={`${fieldClassName} cursor-pointer`}>
+            <SelectTrigger
+              id="exam-type"
+              className={`${fieldClassName} cursor-pointer`}
+            >
               <SelectValue placeholder="Төрөл сонгох" />
             </SelectTrigger>
             <SelectContent>
@@ -76,7 +94,10 @@ export function GeneralInfoSection() {
         </div>
 
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="exam-name" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="exam-name"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Шалгалтын нэр
           </Label>
           <Input
@@ -87,7 +108,10 @@ export function GeneralInfoSection() {
         </div>
 
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="duration-left" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="duration-left"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Үргэлжлэх минут
           </Label>
           <Select defaultValue="30">
@@ -104,7 +128,6 @@ export function GeneralInfoSection() {
             </SelectContent>
           </Select>
         </div>
-
       </div>
     </section>
   );
