@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@apollo/client/react";
-import { useMemo, useState, type DragEvent } from "react";
+import { useMemo, useRef, useState, type DragEvent } from "react";
 import {
   BookOpen,
   ChevronDown,
@@ -24,6 +24,8 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MathAssistField } from "@/components/exam/math-exam-assist-field";
+import MathPreviewText from "@/components/math-preview-text";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -46,6 +48,10 @@ import {
   sourceOptions,
   type MaterialSourceId,
 } from "./material-builder-config";
+import {
+  materialBuilderDemoQuestions,
+  type MaterialBuilderDemoQuestion,
+} from "./material-builder-demo-questions";
 
 type Props = {
   selectedSharedMaterialId: string;
@@ -172,6 +178,7 @@ function QuestionBankPanel({
 }: {
   onAppendQuestion: (question: Omit<PreviewQuestion, "id" | "index">) => void;
 }) {
+  const lastDemoIndexRef = useRef<number | null>(null);
   const [generateAnswer, { loading: generating }] = useMutation(
     GenerateQuestionAnswerDocument,
   );
@@ -184,6 +191,7 @@ function QuestionBankPanel({
   );
   const [questionText, setQuestionText] = useState("");
   const [showQuestionError, setShowQuestionError] = useState(false);
+  const [showAnswerCountError, setShowAnswerCountError] = useState(false);
   const [showCorrectAnswerError, setShowCorrectAnswerError] = useState(false);
   const [generatedExplanation, setGeneratedExplanation] = useState("");
   const [scoreValue, setScoreValue] = useState("1");
@@ -200,6 +208,7 @@ function QuestionBankPanel({
 
   function handleAddAnswer() {
     setAnswers((prev) => [...prev, ""]);
+    setShowAnswerCountError(false);
   }
 
   function handleRemoveAnswer(index: number) {
@@ -208,6 +217,7 @@ function QuestionBankPanel({
       if (next.length === 0) return [""];
       return next;
     });
+    setShowAnswerCountError(false);
     setSelectedAnswerIndex((prev) => {
       if (prev === null) return null;
       if (index === prev) return null;
@@ -218,6 +228,9 @@ function QuestionBankPanel({
 
   function handleAnswerChange(index: number, value: string) {
     setAnswers((prev) => prev.map((item, i) => (i === index ? value : item)));
+    if (value.trim()) {
+      setShowAnswerCountError(false);
+    }
   }
 
   function applyGeneratedPayload(payload: {
@@ -245,6 +258,7 @@ function QuestionBankPanel({
     );
     setGeneratedExplanation(payload.explanation);
     setShowCorrectAnswerError(false);
+    setShowAnswerCountError(false);
     setScoreValue(String(payload.points ?? 1));
     setQuestionTypeValue(
       payload.format === QuestionFormat.Written ? "written" : "single-choice",
@@ -397,11 +411,28 @@ function QuestionBankPanel({
       .filter(Boolean);
     if (!trimmedQuestion) {
       setShowQuestionError(true);
-      return;
+    } else {
+      setShowQuestionError(false);
     }
-    if (normalizedAnswers.length === 0) return;
+
+    if (normalizedAnswers.length < minimumRequiredAnswers) {
+      setShowAnswerCountError(true);
+    } else {
+      setShowAnswerCountError(false);
+    }
+
     if (selectedAnswerIndex === null || !answers[selectedAnswerIndex]?.trim()) {
       setShowCorrectAnswerError(true);
+    } else {
+      setShowCorrectAnswerError(false);
+    }
+
+    if (
+      !trimmedQuestion ||
+      normalizedAnswers.length < minimumRequiredAnswers ||
+      selectedAnswerIndex === null ||
+      !answers[selectedAnswerIndex]?.trim()
+    ) {
       return;
     }
 
@@ -414,6 +445,7 @@ function QuestionBankPanel({
 
     setQuestionText("");
     setShowQuestionError(false);
+    setShowAnswerCountError(false);
     setAnswers(["", "", "", ""]);
     setSelectedAnswerIndex(null);
     setShowCorrectAnswerError(false);
@@ -423,12 +455,112 @@ function QuestionBankPanel({
     setDifficultyValue("medium");
   }
 
+  function handleFillDemo() {
+    const demoQuestions =
+      materialBuilderDemoQuestions.length > 1 &&
+      lastDemoIndexRef.current !== null
+        ? materialBuilderDemoQuestions.filter(
+            (_, index) => index !== lastDemoIndexRef.current,
+          )
+        : materialBuilderDemoQuestions;
+    const randomPoolIndex = Math.floor(Math.random() * demoQuestions.length);
+    const nextDemo = demoQuestions[randomPoolIndex];
+
+    if (!nextDemo) {
+      return;
+    }
+
+    const originalIndex = materialBuilderDemoQuestions.findIndex(
+      (item) => item === nextDemo,
+    );
+    lastDemoIndexRef.current = originalIndex >= 0 ? originalIndex : null;
+    applyDemoQuestion(nextDemo);
+  }
+
+  function handleFillAiDemo() {
+    const demoQuestions =
+      materialBuilderDemoQuestions.length > 1 &&
+      lastDemoIndexRef.current !== null
+        ? materialBuilderDemoQuestions.filter(
+            (_, index) => index !== lastDemoIndexRef.current,
+          )
+        : materialBuilderDemoQuestions;
+    const randomPoolIndex = Math.floor(Math.random() * demoQuestions.length);
+    const nextDemo = demoQuestions[randomPoolIndex];
+
+    if (!nextDemo) {
+      return;
+    }
+
+    const originalIndex = materialBuilderDemoQuestions.findIndex(
+      (item) => item === nextDemo,
+    );
+    lastDemoIndexRef.current = originalIndex >= 0 ? originalIndex : null;
+    setQuestionText(nextDemo.questionText);
+    setShowQuestionError(false);
+  }
+
+  function applyDemoQuestion(demo: MaterialBuilderDemoQuestion) {
+    setScoreValue(demo.points);
+    setQuestionTypeValue(demo.questionType);
+    setDifficultyValue(demo.difficulty);
+    setQuestionText(demo.questionText);
+    setAnswers(demo.answers);
+    setSelectedAnswerIndex(demo.correctIndex);
+    setGeneratedExplanation("");
+    setShowQuestionError(false);
+    setShowAnswerCountError(false);
+    setShowCorrectAnswerError(false);
+  }
+
+  function handleResetForm() {
+    lastDemoIndexRef.current = null;
+    setQuestionText("");
+    setAnswers(["", "", "", ""]);
+    setSelectedAnswerIndex(null);
+    setGeneratedExplanation("");
+    setScoreValue("1");
+    setQuestionTypeValue("single-choice");
+    setDifficultyValue("medium");
+    setShowQuestionError(false);
+    setShowAnswerCountError(false);
+    setShowCorrectAnswerError(false);
+  }
+
   return (
     <div className="space-y-4">
       <div>
-        <label className="mb-2 block text-[14px] font-medium text-slate-800">
-          Асуулт
-        </label>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <label className="block text-[14px] font-medium text-slate-800">
+            Асуулт
+          </label>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleFillDemo}
+              className="h-7 rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-75 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
+            >
+              Demo
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleFillAiDemo}
+              className="h-7 rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-75 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
+            >
+              Demo-AI
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleResetForm}
+              className="h-7 rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-75 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
+            >
+              Reset
+            </Button>
+          </div>
+        </div>
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
           <div className="w-full lg:w-[50px] lg:shrink-0">
             <Select value={scoreValue} onValueChange={setScoreValue}>
@@ -484,17 +616,20 @@ function QuestionBankPanel({
       </div>
 
       <div>
-        <Textarea
+        <MathAssistField
           value={questionText}
-          onChange={(event) => {
-            setQuestionText(event.target.value);
-            if (event.target.value.trim()) {
+          multiline
+          onChange={(nextValue) => {
+            setQuestionText(nextValue);
+            if (nextValue.trim()) {
               setShowQuestionError(false);
             }
           }}
           placeholder="Асуултаа энд бичнэ үү..."
-          className="min-h-[110px] rounded-[12px] border-[#e2e8f0] bg-[#f3f6fb]"
         />
+        {showQuestionError ? (
+          <p className="mt-2 text-[12px] text-red-500">Асуултаа оруулна уу</p>
+        ) : null}
       </div>
       <Button
         type="button"
@@ -524,36 +659,46 @@ function QuestionBankPanel({
           </button>
         </div>
         {answers.map((label, index) => (
-          <div key={`answer-${index}`} className="flex items-center gap-3">
-            <span
-              role="button"
-              onClick={() => {
-                setSelectedAnswerIndex(index);
-                setShowCorrectAnswerError(false);
-              }}
-              className={cn(
-                "h-4 w-4 rounded-full border cursor-pointer",
-                index === selectedAnswerIndex
-                  ? "border-[#0b5cab] bg-[#0b5cab]"
-                  : "border-slate-300 bg-white",
-              )}
-            />
-            <Input
-              value={label}
-              onChange={(event) =>
-                handleAnswerChange(index, event.target.value)
-              }
-              placeholder={`Хариулт ${index + 1}`}
-              className="h-[42px] flex-1 rounded-[12px] border-[#dbe4f3] bg-[#eef3f9] px-4 text-[14px] text-slate-700"
-            />
-            <button
-              type="button"
-              onClick={() => handleRemoveAnswer(index)}
-              className="text-slate-500 transition hover:text-slate-700"
-              aria-label="Хариулт устгах"
-            >
-              <X className="h-4 w-4" />
-            </button>
+          <div key={`answer-${index}`} className="space-y-2">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="button"
+                onClick={() => {
+                  setSelectedAnswerIndex(index);
+                  setShowCorrectAnswerError(false);
+                }}
+                className={cn(
+                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition",
+                  index === selectedAnswerIndex
+                    ? "border-[#0b5cab] bg-[#e8f1ff] shadow-[0_0_0_3px_rgba(11,92,171,0.08)]"
+                    : "border-[#cbd9ee] bg-white hover:border-[#9fbae3]",
+                )}
+                aria-label={`Хариулт ${index + 1}-ийг зөв гэж сонгох`}
+              >
+                <span
+                  className={cn(
+                    "h-2.5 w-2.5 rounded-full transition",
+                    index === selectedAnswerIndex
+                      ? "bg-[#0b5cab]"
+                      : "bg-transparent",
+                  )}
+                />
+              </button>
+              <MathAssistField
+                value={label}
+                onChange={(nextValue) => handleAnswerChange(index, nextValue)}
+                placeholder={`Хариулт ${index + 1}`}
+              />
+              <button
+                type="button"
+                onClick={() => handleRemoveAnswer(index)}
+                className="text-slate-500 transition hover:text-slate-700"
+                aria-label="Хариулт устгах"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         ))}
         {showCorrectAnswerError ? (
@@ -591,14 +736,20 @@ function QuestionBankPanel({
             </button>
           </div>
         ) : null}
-        {showQuestionError ? (
-          <p className="text-[12px] text-red-500">Асуултаа оруулна уу</p>
+        {showAnswerCountError ? (
+          <p className="text-[12px] text-red-500">
+            {minimumRequiredAnswers >= 2
+              ? "2-оос дээш хариулт оруулна уу"
+              : "Хариултаа оруулна уу"}
+          </p>
         ) : null}
         <Button
           type="button"
           onClick={handleAppendQuestion}
-          disabled={!canAppendQuestion}
-          className="w-full rounded-[12px] bg-[#0b5cab] text-white hover:bg-[#0a4f96] disabled:bg-[#c8d8ee] disabled:text-white"
+          className={cn(
+            "w-full rounded-[12px] bg-[#0b5cab] text-white hover:bg-[#0a4f96]",
+            !canAppendQuestion && "opacity-55",
+          )}
         >
           Асуулт нэмэх
         </Button>
@@ -779,14 +930,18 @@ function SharedLibraryPanel({
             >
               <div className="flex items-center gap-2">
                 <Checkbox checked />
-                <p className="text-[14px] font-medium text-slate-900">
-                  {content.previewPrompt}
-                </p>
+                <div className="text-[14px] font-medium text-slate-900">
+                  <MathPreviewText
+                    content={content.previewPrompt}
+                    contentSource="preview"
+                    className="text-[14px] leading-relaxed text-slate-900"
+                  />
+                </div>
               </div>
               <div className="mt-3 space-y-2">
                 {content.previewAnswers.slice(0, 3).map((answer, index) => (
                   <div
-                    key={answer}
+                    key={`${answer}-${index}`}
                     className={cn(
                       "rounded-[10px] border px-3 py-2 text-[13px]",
                       index === 0
@@ -794,7 +949,14 @@ function SharedLibraryPanel({
                         : "border-[#e3e9f4] bg-white text-slate-700",
                     )}
                   >
-                    {String.fromCharCode(65 + index)}. {answer}
+                    <div className="flex items-start gap-1.5">
+                      <span>{String.fromCharCode(65 + index)}.</span>
+                      <MathPreviewText
+                        content={answer}
+                        contentSource="preview"
+                        className="min-w-0 text-[13px] leading-relaxed"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -912,9 +1074,13 @@ function PreviewQuestionCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-[18px] font-semibold text-slate-900">
-              {question.question}
-            </p>
+            <div className="min-w-0 flex-1 text-[18px] font-semibold text-slate-900">
+              <MathPreviewText
+                content={question.question}
+                contentSource="preview"
+                className="text-[18px] leading-relaxed text-slate-900"
+              />
+            </div>
             <div
               className={cn(
                 "flex items-center gap-1 transition-opacity group-hover:opacity-100 md:opacity-0",
@@ -952,7 +1118,7 @@ function PreviewQuestionCard({
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             {question.answers.map((answer, index) => (
               <div
-                key={answer}
+                key={`${answer}-${index}`}
                 className={cn(
                   "rounded-[14px] px-4 py-3 text-[15px] text-slate-700",
                   index === question.correct
@@ -960,7 +1126,14 @@ function PreviewQuestionCard({
                     : "bg-[#eef2f6]",
                 )}
               >
-                {String.fromCharCode(65 + index)}. {answer}
+                <div className="flex items-start gap-1.5">
+                  <span>{String.fromCharCode(65 + index)}.</span>
+                  <MathPreviewText
+                    content={answer}
+                    contentSource="preview"
+                    className="min-w-0 text-[15px] leading-relaxed"
+                  />
+                </div>
               </div>
             ))}
           </div>

@@ -1,6 +1,7 @@
 import { GraphQLError } from "graphql";
 
 import { generateQuestionAnswerWithGemini } from "../../../../lib/generate-question-answer-gemini";
+import { normalizeGeneratedQuestionAnswer } from "../../../../lib/normalize-generated-question-answer";
 import type { GraphQLContext } from "../../../context";
 import { Difficulty, QuestionFormat } from "../../../generated/resolvers-types";
 
@@ -30,21 +31,6 @@ function parseFormat(v: unknown): QuestionFormat {
   if (s === QuestionFormat.FillIn) return QuestionFormat.FillIn;
   if (s === QuestionFormat.Written) return QuestionFormat.Written;
   return QuestionFormat.SingleChoice;
-}
-
-function ensureChoiceOptions(
-  raw: unknown,
-  correctAnswer: string,
-): { options: string[]; correctAnswer: string } {
-  const cleaned = Array.isArray(raw)
-    ? raw.map((x) => String(x).trim()).filter(Boolean)
-    : [];
-  const four = cleaned.slice(0, 4);
-  while (four.length < 4) {
-    four.push(`${String.fromCharCode(1040 + four.length)} хувилбар`);
-  }
-  const answer = four.includes(correctAnswer) ? correctAnswer : (four[0] ?? "");
-  return { options: four, correctAnswer: answer };
 }
 
 export const regenerateQuestionAnswerMutation = {
@@ -108,10 +94,10 @@ export const regenerateQuestionAnswerMutation = {
         typeof parsed.points === "number" && Number.isFinite(parsed.points)
           ? Math.max(1, Math.floor(parsed.points))
           : points ?? 1;
-      const explanation =
-        String(parsed.explanation ?? "").trim() || "Тайлбар үүсгээгүй.";
-      const correctAnswer = String(parsed.correctAnswer ?? "").trim();
-      const questionText = String(parsed.questionText ?? prompt).trim() || prompt;
+      const normalizedGenerated = normalizeGeneratedQuestionAnswer(parsed);
+      const explanation = normalizedGenerated.explanation || "Тайлбар үүсгээгүй.";
+      const correctAnswer = normalizedGenerated.correctAnswer;
+      const questionText = normalizedGenerated.questionText || prompt;
 
       if (format === QuestionFormat.Written) {
         return {
@@ -125,14 +111,16 @@ export const regenerateQuestionAnswerMutation = {
         };
       }
 
-      const normalized = ensureChoiceOptions(parsed.options, correctAnswer);
       return {
         questionText,
         format,
         difficulty,
         points: resolvedPoints,
-        options: normalized.options,
-        correctAnswer: normalized.correctAnswer,
+        options: normalizedGenerated.options,
+        correctAnswer:
+          normalizedGenerated.options.includes(correctAnswer)
+            ? correctAnswer
+            : (normalizedGenerated.options[0] ?? ""),
         explanation,
       };
     } catch (err) {
