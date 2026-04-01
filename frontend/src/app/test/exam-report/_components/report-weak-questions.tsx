@@ -1,78 +1,121 @@
 import { AlertTriangle } from "lucide-react";
+import MathPreviewText from "@/components/math-preview-text";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { WeakQuestion } from "../lib/report-adapters";
 
 interface ReportWeakQuestionsProps {
   questions: WeakQuestion[];
 }
 
-export function ReportWeakQuestions({
-  questions,
-}: ReportWeakQuestionsProps) {
-  const strongestRate = questions[0]?.errorRate ?? 0;
+const MIN_BAR_WIDTH_PERCENT = 12;
+const ACCENT_COLOR = "#EA580C";
+const LIGHT_BAR_START = [255, 237, 213] as const;
+const LIGHT_BAR_END = [254, 215, 170] as const;
+const STRONG_BAR_START = [249, 115, 22] as const;
+const STRONG_BAR_END = [234, 88, 12] as const;
 
+function clamp(value: number, min = 0, max = 1): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function mixColor(
+  light: readonly [number, number, number],
+  strong: readonly [number, number, number],
+  intensity: number,
+): string {
+  return `rgb(${light
+    .map((channel, index) => {
+      return Math.round(channel + (strong[index] - channel) * intensity);
+    })
+    .join(", ")})`;
+}
+
+function getBarFillStyle(errorRate: number) {
+  const intensity = clamp(errorRate / 100) ** 1.35;
+
+  return {
+    backgroundImage: `linear-gradient(90deg, ${mixColor(LIGHT_BAR_START, STRONG_BAR_START, intensity)} 0%, ${mixColor(LIGHT_BAR_END, STRONG_BAR_END, intensity)} 100%)`,
+  };
+}
+
+function getBarWidth(errorRate: number): string {
+  return `${Math.max(Math.round(errorRate), MIN_BAR_WIDTH_PERCENT)}%`;
+}
+
+export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
   return (
-    <Card className="rounded-[26px] border-border/80 bg-card/95 py-0 shadow-[0_18px_45px_-36px_rgba(15,23,42,0.35)]">
-      <CardHeader className="border-b border-border/70 px-6 py-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-danger/10 text-danger">
-            <AlertTriangle className="h-5 w-5" />
-          </div>
-          <div>
-            <CardTitle>Хамгийн их алдсан асуултууд</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Алдааны хувь хамгийн өндөр асуултууд
-            </p>
-          </div>
+    <Card className="h-[295px] rounded-md border border-[#eef2f8] bg-white shadow-[0_18px_45px_-36px_rgba(15,23,42,0.18)]">
+      <CardHeader className="px-8 pt-2">
+        <div className="flex items-center gap-3 text-[#1f2937]">
+          <AlertTriangle
+            className="h-6 w-6"
+            style={{ color: ACCENT_COLOR }}
+            strokeWidth={2.1}
+          />
+          <CardTitle className="text-lg font-semibold tracking-tight text-[#1f2937]">
+            Хамгийн их алдсан асуултууд
+          </CardTitle>
         </div>
       </CardHeader>
-      <CardContent className="px-6 py-5">
+      <CardContent className="flex px-8 pb-6">
         {questions.length > 0 ? (
-          <div className="space-y-5">
-            {questions.map((question) => (
-              <div key={question.label} className="space-y-2">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground">
-                      {question.label}
-                    </p>
-                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                      {question.prompt}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-semibold text-danger">
-                      {question.errorRate}%
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {question.missedCount}/{question.totalCount}
-                    </p>
-                  </div>
-                </div>
+          <div className="flex max-h-[220px] flex-1 flex-col justify-center gap-4 overflow-y-auto pr-1">
+            {questions.map((question) => {
+              const prompt =
+                question.prompt.trim() || "Асуултын текст олдсонгүй.";
 
-                <div className="h-3 overflow-hidden rounded-full bg-secondary">
-                  <div
-                    className="h-full rounded-full bg-[linear-gradient(90deg,#9a3412_0%,#c2410c_100%)]"
-                    style={{
-                      width: `${
-                        strongestRate > 0
-                          ? Math.max(
-                              Math.round(
-                                (question.errorRate / strongestRate) * 100,
-                              ),
-                              12,
-                            )
-                          : 12
-                      }%`,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
+              return (
+                <Tooltip key={question.label}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className="grid cursor-help grid-cols-[48px_minmax(0,1fr)_46px] items-center gap-5 rounded-xl outline-none transition-transform duration-200 hover:translate-x-0.5 focus-visible:ring-2 focus-visible:ring-[#EA580C]/20"
+                      tabIndex={0}
+                      aria-label={`${question.label}: ${prompt}`}
+                    >
+                      <p className="text-[0.95rem] font-semibold tracking-[0.01em] text-[#4b5563]">
+                        {question.label}
+                      </p>
+
+                      <div className="h-4 overflow-hidden rounded-full bg-[#e6ebf3]">
+                        <div
+                          className="h-full rounded-full transition-[width,background-image] duration-300"
+                          style={{
+                            ...getBarFillStyle(question.errorRate),
+                            width: getBarWidth(question.errorRate),
+                          }}
+                        />
+                      </div>
+
+                      <p
+                        className="text-right text-[0.95rem] font-semibold"
+                        style={{ color: ACCENT_COLOR }}
+                      >
+                        {question.errorRate}%
+                      </p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="top"
+                    sideOffset={8}
+                    className="block max-w-md bg-[#1f2937] px-3 py-2 text-white"
+                  >
+                    <MathPreviewText
+                      content={prompt}
+                      className="text-[12px] leading-5 text-white [&_.katex-display]:overflow-x-auto [&_.katex]:text-white"
+                    />
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
           </div>
         ) : (
-          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border bg-background/40 text-sm text-muted-foreground">
-            Алдааны статистик хараахан бүрдээгүй байна.
+          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border bg-background/40 text-sm text-muted-foreground">
+            Алдсан асуулт олдсонгүй.
           </div>
         )}
       </CardContent>

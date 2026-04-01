@@ -1,67 +1,496 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { AnalyticsScoreBucket } from "../../live-dashboard/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import { LineChart as LineChartIcon } from "lucide-react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { MOCK_SCORE_TREND_DATA } from "../lib/report-mock-data";
+import type {
+  ReportScoreTrendData,
+  ReportScoreTrendStudent,
+} from "../lib/report-adapters";
 
 interface ReportScoreChartProps {
-  data: AnalyticsScoreBucket[];
+  currentClassName: string;
+  dataSource: "mock" | "real";
+  trend: ReportScoreTrendData;
 }
 
-export function ReportScoreChart({ data }: ReportScoreChartProps) {
+interface TrendChartPoint {
+  examTitle: string | null;
+  label: string;
+  score: number | null;
+}
+
+interface ClassTrend {
+  className: string;
+  latestScore: number | null;
+  overallDelta: number | null;
+  points: TrendChartPoint[];
+  recentDelta: number | null;
+  studentCount: number;
+}
+
+interface ScoreTrendTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    payload: TrendChartPoint;
+    value: number | null;
+  }>;
+}
+
+interface ScoreAxisTickProps {
+  x?: number;
+  y?: number;
+  payload?: {
+    value?: string;
+  };
+}
+
+export function ReportScoreChart({
+  currentClassName,
+  dataSource,
+  trend,
+}: ReportScoreChartProps) {
+  const activeTrend = dataSource === "mock" ? MOCK_SCORE_TREND_DATA : trend;
+  const classTrends = useMemo(() => {
+    return buildClassTrends(activeTrend, dataSource, currentClassName);
+  }, [activeTrend, currentClassName, dataSource]);
+  const [selectedClassName, setSelectedClassName] = useState<string | null>(
+    classTrends[0]?.className ?? currentClassName,
+  );
+
+  useEffect(() => {
+    if (classTrends.length === 0) {
+      if (selectedClassName !== null) {
+        setSelectedClassName(null);
+      }
+      return;
+    }
+
+    if (!classTrends.some((item) => item.className === selectedClassName)) {
+      setSelectedClassName(classTrends[0].className);
+    }
+  }, [classTrends, selectedClassName]);
+
+  const selectedClass = useMemo(() => {
+    return (
+      classTrends.find((item) => item.className === selectedClassName) ??
+      classTrends[0] ??
+      null
+    );
+  }, [classTrends, selectedClassName]);
+
+  const chartPoints = selectedClass?.points ?? [];
+  const scoredPoints = chartPoints.filter(
+    (point): point is TrendChartPoint & { score: number } =>
+      typeof point.score === "number",
+  );
+  const chartLineType =
+    scoredPoints.length === chartPoints.length ? "natural" : "monotone";
+  const overallTone = getDeltaTone(selectedClass?.overallDelta ?? null);
+  const hasTrendData = classTrends.some((item) => {
+    return item.points.some((point) => typeof point.score === "number");
+  });
+
   return (
-    <Card className="rounded-[26px] border-border/80 bg-card/95 py-0 shadow-[0_18px_45px_-36px_rgba(15,23,42,0.35)]">
-      <CardHeader className="border-b border-border/70 px-6 py-5">
-        <CardTitle>Ангийн ахиц харагдана графикаар</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Онооны бүлэглэлээр ангийн тархалт
-        </p>
-      </CardHeader>
-      <CardContent className="px-6 py-5">
-        {data.some((item) => item.count > 0) ? (
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} barCategoryGap={18}>
-                <CartesianGrid
-                  vertical={false}
-                  strokeDasharray="3 3"
-                  stroke="hsl(var(--border))"
-                />
-                <XAxis
-                  axisLine={false}
-                  dataKey="range"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                  tickLine={false}
-                />
-                <YAxis
-                  axisLine={false}
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                  tickLine={false}
-                  width={28}
-                />
-                <Tooltip
-                  cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "0.875rem",
-                    boxShadow: "0 16px 45px rgba(15, 23, 42, 0.12)",
-                  }}
-                />
-                <Bar
-                  dataKey="count"
-                  fill="hsl(var(--primary))"
-                  radius={[8, 8, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+    <Card className="h-[295px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)]">
+      <CardContent className="flex h-full flex-col pt-2 pb-1">
+        {hasTrendData ? (
+          selectedClass ? (
+            <div className="flex h-full min-h-0 flex-col gap-2">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 space-y-3">
+                  <div className=" gap-3">
+                    <div className="flex items-center gap-3 text-[#1f2937]">
+                      <LineChartIcon
+                        className="h-6 w-6  text-[#0b5cad]"
+                        strokeWidth={2.1}
+                      />
+                      <CardTitle className="text-lg font-semibold tracking-tight text-[#1f2937]">
+                        Ангийн ахиц
+                      </CardTitle>
+                    </div>
+
+                    <div className="mt-0.5 pl-8">
+                      {classTrends.length > 1 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {classTrends.map((item) => (
+                            <button
+                              key={item.className}
+                              type="button"
+                              onClick={() =>
+                                setSelectedClassName(item.className)
+                              }
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-4 transition-colors",
+                                item.className === selectedClass.className
+                                  ? "border-[#0b5cad] bg-[#0b5cad] text-white shadow-[0_12px_22px_-18px_rgba(11,92,173,0.75)]"
+                                  : "border-slate-200 bg-slate-50 text-slate-600 hover:border-[#93c5fd] hover:bg-[#eff6ff] hover:text-[#0b5cad]",
+                              )}
+                            >
+                              {item.className}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  <HeaderStatCard
+                    label="Дундаж"
+                    tone="primary"
+                    value={formatScore(selectedClass.latestScore)}
+                  />
+                  <HeaderStatCard
+                    label="Нийт өсөлт"
+                    tone={overallTone}
+                    value={formatDelta(selectedClass.overallDelta)}
+                  />
+                  <HeaderStatCard
+                    label="Сүүлийн өсөлт"
+                    tone={getDeltaTone(selectedClass.recentDelta)}
+                    value={formatDelta(selectedClass.recentDelta)}
+                  />
+                </div>
+              </div>
+
+              <div className="relative min-h-0 flex-1 overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]">
+                <div className="h-full min-h-[156px] sm:min-h-[164px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsLineChart
+                      data={chartPoints}
+                      margin={{ bottom: 18, left: 5, right: 0, top: 10 }}
+                    >
+                      <CartesianGrid
+                        vertical={false}
+                        stroke="#eef3f8"
+                        strokeDasharray="0"
+                        strokeWidth={1}
+                      />
+                      <XAxis
+                        dataKey="label"
+                        axisLine={{ stroke: "#c7d8ec", strokeWidth: 1.5 }}
+                        interval={0}
+                        padding={{ left: 22, right: 18 }}
+                        tick={<ScoreAxisTick />}
+                        tickLine={false}
+                        tickMargin={18}
+                      />
+                      <YAxis
+                        axisLine={false}
+                        domain={[0, 100]}
+                        tick={{
+                          fill: "#6b7280",
+                          fontSize: 14,
+                          fontWeight: 600,
+                        }}
+                        ticks={[0, 25, 50, 75, 100]}
+                        tickFormatter={(value) => `${value}`}
+                        tickLine={false}
+                        tickMargin={22}
+                        width={54}
+                      />
+                      <Tooltip
+                        content={<ScoreTrendTooltip />}
+                        cursor={false}
+                        offset={8}
+                        wrapperStyle={{
+                          outline: "none",
+                          pointerEvents: "none",
+                        }}
+                      />
+                      <Line
+                        type={chartLineType}
+                        dataKey="score"
+                        stroke="#0b5cad"
+                        strokeWidth={5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        connectNulls={false}
+                        dot={{
+                          fill: "#ffffff",
+                          r: 5.5,
+                          stroke: "#0b5cad",
+                          strokeWidth: 3,
+                        }}
+                        activeDot={{
+                          fill: "#ffffff",
+                          r: 6.5,
+                          stroke: "#0b5cad",
+                          strokeWidth: 3,
+                        }}
+                      />
+                    </RechartsLineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
+              Харагдах ангийн ахицын өгөгдөл алга.
+            </div>
+          )
         ) : (
-          <div className="flex min-h-[250px] items-center justify-center rounded-2xl border border-dashed border-border bg-background/40 text-sm text-muted-foreground">
-            Онооны график гаргах өгөгдөл алга.
+          <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
+            Ангийн ахицын график гаргах хангалттай өгөгдөл алга.
           </div>
         )}
       </CardContent>
     </Card>
   );
+}
+
+function ScoreTrendTooltip({ active, payload }: ScoreTrendTooltipProps) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const point = payload[0]?.payload;
+  if (!point) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200/90 bg-white/95 px-2.5 py-1.5 shadow-[0_16px_32px_-24px_rgba(15,23,42,0.28)] backdrop-blur-sm">
+      <p className="text-[10px] font-medium text-slate-600">
+        {formatTooltipPhaseLabel(point.label)}
+      </p>
+      <p className="mt-0.5 text-sm font-semibold leading-none text-[#0b5cad]">
+        {formatScore(point.score)}
+      </p>
+    </div>
+  );
+}
+
+function formatTooltipPhaseLabel(label: string): string {
+  switch (label) {
+    case "Т/Т":
+      return "Түвшин тогтоох";
+    case "У/Д":
+      return "Улирлын дунд";
+    case "У/Э":
+      return "Жилийн эцэс";
+    default:
+      return label;
+  }
+}
+
+function ScoreAxisTick({ payload, x = 0, y = 0 }: ScoreAxisTickProps) {
+  const value = payload?.value ?? "";
+  const words = value.split(" ");
+  const shouldWrap = value.length > 16 && words.length > 2;
+  const splitIndex = shouldWrap ? Math.ceil(words.length / 2) : words.length;
+  const lines = shouldWrap
+    ? [words.slice(0, splitIndex).join(" "), words.slice(splitIndex).join(" ")]
+    : [value];
+
+  return (
+    <text
+      x={x}
+      y={y + 18}
+      textAnchor="middle"
+      fill="#4b5563"
+      fontSize="13"
+      fontWeight="600"
+    >
+      {lines.slice(0, 2).map((line, index) => (
+        <tspan key={`${value}-${index}`} x={x} dy={index === 0 ? 0 : 16}>
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
+}
+
+function HeaderStatCard({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: "down" | "neutral" | "primary" | "up";
+  value: string;
+}) {
+  const toneClassName =
+    tone === "primary"
+      ? "text-[#0b5cad]"
+      : tone === "up"
+        ? "text-emerald-600"
+        : tone === "down"
+          ? "text-rose-600"
+          : "text-slate-700";
+
+  return (
+    <div className="min-w-[72px] rounded-[16px] border border-slate-200 bg-white px-2.5 py-2 text-center shadow-[0_12px_22px_-24px_rgba(15,23,42,0.28)]">
+      <p className={cn("text-[0.82rem] font-bold leading-none", toneClassName)}>
+        {value}
+      </p>
+      <p className="mt-1 text-[10px] font-medium leading-4 text-slate-500">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function buildClassTrends(
+  trend: ReportScoreTrendData,
+  dataSource: "mock" | "real",
+  fallbackClassName: string,
+): ClassTrend[] {
+  const groups = new Map<
+    string,
+    {
+      className: string;
+      students: ReportScoreTrendStudent[];
+    }
+  >();
+
+  for (const student of trend.students) {
+    const resolvedClassName = resolveStudentClassName(
+      student,
+      dataSource,
+      fallbackClassName,
+    );
+    const current = groups.get(resolvedClassName) ?? {
+      className: resolvedClassName,
+      students: [],
+    };
+
+    current.students.push(student);
+    groups.set(resolvedClassName, current);
+  }
+
+  return [...groups.values()]
+    .map((group) => {
+      const points = trend.phases.map((phase) => {
+        const scores = group.students
+          .map((student) => {
+            return (
+              student.points.find((point) => point.key === phase.key)?.score ??
+              null
+            );
+          })
+          .filter((score): score is number => typeof score === "number");
+
+        return {
+          examTitle: phase.examTitle,
+          label: formatPhaseLabel(phase.label),
+          score: scores.length > 0 ? roundToOneDecimal(average(scores)) : null,
+        };
+      });
+      const availableScores = points
+        .map((point) => point.score)
+        .filter((score): score is number => typeof score === "number");
+      const latestScore =
+        availableScores.length > 0
+          ? availableScores[availableScores.length - 1]
+          : null;
+      const overallDelta =
+        availableScores.length >= 2
+          ? roundToOneDecimal(
+              availableScores[availableScores.length - 1] - availableScores[0],
+            )
+          : null;
+      const recentDelta =
+        availableScores.length >= 2
+          ? roundToOneDecimal(
+              availableScores[availableScores.length - 1] -
+                availableScores[availableScores.length - 2],
+            )
+          : null;
+
+      return {
+        className: group.className,
+        latestScore,
+        overallDelta,
+        points,
+        recentDelta,
+        studentCount: group.students.length,
+      };
+    })
+    .sort((left, right) => left.className.localeCompare(right.className, "mn"));
+}
+
+function formatPhaseLabel(label: string): string {
+  switch (label) {
+    case "Түвшин тогтоох":
+      return "Т/Т";
+    case "Явц":
+      return "Явц";
+    case "Улирлын дунд":
+      return "У/Д";
+    case "Жилийн эцэс":
+    case "Улирлын эцэс":
+      return "У/Э";
+    default:
+      return label;
+  }
+}
+
+function resolveStudentClassName(
+  student: ReportScoreTrendStudent,
+  dataSource: "mock" | "real",
+  fallbackClassName: string,
+): string {
+  if (student.className.trim().length > 0) {
+    return student.className;
+  }
+
+  if (dataSource === "mock") {
+    const prefix = student.studentCode.match(/^\d+[A-Z]/)?.[0];
+    if (prefix) {
+      return prefix;
+    }
+  }
+
+  return fallbackClassName;
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function roundToOneDecimal(value: number): number {
+  return Number(value.toFixed(1));
+}
+
+function formatScore(value: number | null): string {
+  if (typeof value !== "number") {
+    return "--";
+  }
+
+  return `${value.toFixed(1)}%`;
+}
+
+function formatDelta(value: number | null): string {
+  if (typeof value !== "number") {
+    return "--";
+  }
+
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}%`;
+}
+
+function getDeltaTone(value: number | null): "down" | "neutral" | "up" {
+  if (typeof value !== "number" || value === 0) {
+    return "neutral";
+  }
+
+  return value > 0 ? "up" : "down";
 }

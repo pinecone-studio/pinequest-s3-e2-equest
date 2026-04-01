@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -10,62 +8,66 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TestShell } from "../_components/test-shell";
-import { buildExamList, type DashboardApiPayload } from "../live-dashboard/lib/dashboard-adapters";
+import {
+  buildExamList,
+  type DashboardApiPayload,
+} from "../live-dashboard/lib/dashboard-adapters";
+import type { Exam } from "../live-dashboard/lib/types";
 import { ExamReport } from "./_components/exam-report";
 import {
   buildExamReportData,
-  pickDefaultReportExamId,
+  combineExamReports,
 } from "./lib/report-adapters";
+import {
+  buildMockExamReportData,
+  MOCK_REPORT_EXAMS,
+} from "./lib/report-mock-data";
 
 const POLL_INTERVAL_MS = 30_000;
+const ALL_CLASSES_VALUE = "all";
+type ReportDataSource = "mock" | "real";
 
 export default function ExamReportPage() {
-  const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<ReportDataSource>("real");
+  const [selectedClassName, setSelectedClassName] =
+    useState<string>(ALL_CLASSES_VALUE);
   const [payload, setPayload] = useState<DashboardApiPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const loadDashboard = useCallback(
-    async (showLoader = false) => {
-      if (showLoader) {
-        setIsLoading(true);
-      } else {
-        setIsRefreshing(true);
-      }
+  const loadDashboard = useCallback(async (showLoader = false) => {
+    if (showLoader) {
+      setIsLoading(true);
+    }
 
-      try {
-        const response = await fetch("/api/take-exam-dashboard?limit=80", {
-          cache: "no-store",
-        });
-        const nextPayload = (await response.json()) as DashboardApiPayload & {
-          message?: string;
-        };
+    try {
+      const response = await fetch("/api/take-exam-dashboard?limit=80", {
+        cache: "no-store",
+      });
+      const nextPayload = (await response.json()) as DashboardApiPayload & {
+        message?: string;
+      };
 
-        if (!response.ok) {
-          throw new Error(
-            nextPayload.message ?? "Тайлангийн өгөгдөл ачаалж чадсангүй.",
-          );
-        }
-
-        setPayload(nextPayload);
-        setError(null);
-        setLastUpdated(new Date());
-      } catch (nextError) {
-        setError(
-          nextError instanceof Error
-            ? nextError.message
-            : "Тайлан ачаалах үед алдаа гарлаа.",
+      if (!response.ok) {
+        throw new Error(
+          nextPayload.message ?? "Тайлангийн өгөгдөл ачаалж чадсангүй.",
         );
-      } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
       }
-    },
-    [],
-  );
+
+      setPayload(nextPayload);
+      setError(null);
+    } catch (nextError) {
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Тайлан ачаалах үед алдаа гарлаа.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadDashboard(true);
@@ -80,83 +82,129 @@ export default function ExamReportPage() {
   }, [loadDashboard]);
 
   const reportExams = useMemo(() => {
+    if (dataSource === "mock") {
+      return MOCK_REPORT_EXAMS;
+    }
+
     if (!payload) {
       return [];
     }
 
     return buildExamList(payload).filter((exam) => exam.totalStudentCount > 0);
-  }, [payload]);
+  }, [dataSource, payload]);
+
+  const classOptions = useMemo(() => {
+    return [...new Set(reportExams.map((exam) => exam.class))].sort((left, right) => {
+      return left.localeCompare(right, "mn");
+    });
+  }, [reportExams]);
 
   useEffect(() => {
-    if (!payload) {
-      return;
+    if (
+      selectedClassName !== ALL_CLASSES_VALUE &&
+      !classOptions.includes(selectedClassName)
+    ) {
+      setSelectedClassName(ALL_CLASSES_VALUE);
+    }
+  }, [classOptions, selectedClassName]);
+
+  const selectedExamIds = useMemo(() => {
+    if (reportExams.length === 0) {
+      return [];
     }
 
-    const availableIds = new Set(reportExams.map((exam) => exam.id));
-    if (selectedExamId && availableIds.has(selectedExamId)) {
-      return;
+    if (selectedClassName === ALL_CLASSES_VALUE) {
+      return pickLatestExamIdsByClass(reportExams);
     }
 
-    setSelectedExamId(pickDefaultReportExamId(payload));
-  }, [payload, reportExams, selectedExamId]);
+    const selectedExam = pickLatestExamForClass(reportExams, selectedClassName);
+    return selectedExam ? [selectedExam.id] : [];
+  }, [reportExams, selectedClassName]);
 
   const report = useMemo(() => {
-    if (!payload || !selectedExamId) {
+    if (selectedExamIds.length === 0) {
       return null;
     }
 
-    return buildExamReportData(payload, selectedExamId);
-  }, [payload, selectedExamId]);
+    const reports = selectedExamIds.flatMap((examId) => {
+      if (dataSource === "mock") {
+        const mockReport = buildMockExamReportData(examId);
+        return mockReport ? [mockReport] : [];
+      }
 
-  const headerTitle = report?.exam.title ?? "Шалгалтын тайлан";
-  const headerDescription = report?.exam
-    ? `${report.exam.subject} • ${report.exam.topic} • ${report.exam.class}`
-    : "Шалгалтын дараах нэгтгэсэн дүн, сул асуултууд, ангийн гүйцэтгэлийн тайлан.";
-  const headerMeta = (
-    <>
-      <div className="flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-success" />
-        <span>Тайлан идэвхтэй</span>
-      </div>
-      <span>Шинэчлэгдсэн {lastUpdated ? formatTimeAgo(lastUpdated) : "саяхан"}</span>
-      <span>{reportExams.length} шалгалт бэлэн</span>
-    </>
-  );
+      if (!payload) {
+        return [];
+      }
+
+      const realReport = buildExamReportData(payload, examId);
+      return realReport ? [realReport] : [];
+    });
+
+    if (reports.length === 0) {
+      return null;
+    }
+
+    if (selectedClassName === ALL_CLASSES_VALUE) {
+      return combineExamReports(reports, "Бүгд");
+    }
+
+    return reports[0] ?? null;
+  }, [dataSource, payload, selectedClassName, selectedExamIds]);
+
+  const headerTitle = "Шалгалтын тайлан";
   const headerActions = (
-    <>
+    <div className="flex flex-wrap items-center justify-end gap-3">
       <Select
-        value={selectedExamId ?? undefined}
-        onValueChange={setSelectedExamId}
+        value={selectedClassName}
+        onValueChange={setSelectedClassName}
         disabled={reportExams.length === 0}
       >
-        <SelectTrigger className="h-10 min-w-[240px] rounded-xl bg-background">
-          <SelectValue placeholder="Шалгалт сонгох" />
+        <SelectTrigger
+          aria-label="Анги сонгох"
+          className="h-11 min-w-[140px] rounded-xl border-0 bg-[#dfeaf8] px-5 text-sm font-semibold text-[#0b5cad] shadow-none focus-visible:border-[#bfdbfe] focus-visible:ring-[#bfdbfe]/60"
+        >
+          <SelectValue placeholder="Бүгд" />
         </SelectTrigger>
         <SelectContent>
-          {reportExams.map((exam) => (
-            <SelectItem key={exam.id} value={exam.id}>
-              {exam.title}
+          <SelectItem value={ALL_CLASSES_VALUE}>Бүгд</SelectItem>
+          {classOptions.map((className) => (
+            <SelectItem key={className} value={className}>
+              {className}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      <Button variant="outline" size="sm" onClick={() => void loadDashboard(false)}>
-        <RefreshCw
-          className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
-        />
-        Шинэчлэх
-      </Button>
-    </>
+
+      <ToggleGroup
+        aria-label="Өгөгдлийн төрөл"
+        type="single"
+        value={dataSource}
+        onValueChange={(value) => {
+          if (value === "real" || value === "mock") {
+            setDataSource(value);
+          }
+        }}
+        className="rounded-xl border-0 bg-[#f4efe8] p-1"
+      >
+        <ToggleGroupItem
+          value="real"
+          className="rounded-lg border-0 px-4 text-sm font-semibold text-[#8a6a57] data-[state=on]:bg-white data-[state=on]:text-[#892200] data-[state=on]:shadow-sm"
+        >
+          Real data
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="mock"
+          className="rounded-lg border-0 px-4 text-sm font-semibold text-[#8a6a57] data-[state=on]:bg-white data-[state=on]:text-[#892200] data-[state=on]:shadow-sm"
+        >
+          Mock data
+        </ToggleGroupItem>
+      </ToggleGroup>
+    </div>
   );
 
-  if (isLoading && !payload) {
+  if (dataSource === "real" && isLoading && !payload) {
     return (
-      <TestShell
-        title={headerTitle}
-        description={headerDescription}
-        meta={headerMeta}
-        actions={headerActions}
-      >
+      <TestShell title={headerTitle} actions={headerActions}>
         <div className="flex min-h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border bg-card/70 px-6 text-sm text-muted-foreground">
           Exam report өгөгдөл ачаалж байна...
         </div>
@@ -167,20 +215,18 @@ export default function ExamReportPage() {
   return (
     <TestShell
       title={headerTitle}
-      description={headerDescription}
-      meta={headerMeta}
       actions={headerActions}
       contentClassName="pb-10"
     >
-      <div className="mx-auto w-full max-w-[1440px]">
-        {error ? (
+      <div className="mx-auto w-full ">
+        {dataSource === "real" && error ? (
           <div className="mb-6 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
             {error}
           </div>
         ) : null}
 
         {report ? (
-          <ExamReport report={report} />
+          <ExamReport report={report} dataSource={dataSource} />
         ) : (
           <div className="flex min-h-[60vh] items-center justify-center rounded-[28px] border border-dashed border-border bg-card/75 p-8 text-center text-sm text-muted-foreground">
             Тайлан харуулах шалгалтын өгөгдөл олдсонгүй.
@@ -191,12 +237,22 @@ export default function ExamReportPage() {
   );
 }
 
-function formatTimeAgo(date: Date): string {
-  const diffSecs = Math.floor((Date.now() - date.getTime()) / 1000);
+function pickLatestExamIdsByClass(exams: Exam[]): string[] {
+  return [...new Set(exams.map((exam) => exam.class))]
+    .map((className) => pickLatestExamForClass(exams, className)?.id ?? null)
+    .filter((examId): examId is string => Boolean(examId));
+}
 
-  if (diffSecs < 5) return "саяхан";
-  if (diffSecs < 60) return `${diffSecs} секундын өмнө`;
-  if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)} минутын өмнө`;
+function pickLatestExamForClass(exams: Exam[], className: string): Exam | null {
+  return (
+    exams
+      .filter((exam) => exam.class === className)
+      .sort((left, right) => {
+        return getExamSortTime(right) - getExamSortTime(left);
+      })[0] ?? null
+  );
+}
 
-  return `${Math.floor(diffSecs / 3600)} цагийн өмнө`;
+function getExamSortTime(exam: Exam): number {
+  return exam.endTime?.getTime() ?? exam.startTime.getTime();
 }
