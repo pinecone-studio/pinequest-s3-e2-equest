@@ -3,7 +3,7 @@ const multer = require("multer");
 const { generateBookQuestions } = require("../lib/book-questions");
 const { parsePdfPages, renderPdfPageImageBuffer, sanitizeHumanText } = require("../lib/pdf");
 const { createBookId, getBookById, listBooks, saveBook, updateBook } = require("../lib/book-store");
-const { findExistingBookPdfPath, pdfExists, saveBookPdf } = require("../lib/book-files");
+const { pdfExists, resolveBookPdfPath, saveBookPdf } = require("../lib/book-files");
 const { buildBookStructure, findSectionById, flattenSections } = require("../lib/book-structure");
 const fs = require("node:fs/promises");
 
@@ -59,10 +59,19 @@ function parsePageNumbers(rawValue, maxPageNumber) {
   return out.sort((a, b) => a - b);
 }
 
-function parseQuestionCount(rawValue, fallback = 10) {
+function computePagesPerSectionForGeneration({ questionCount, openQuestionCount, sectionCount }) {
+  const qCount = Math.max(0, Math.trunc(Number(questionCount) || 0));
+  const openCount = Math.max(0, Math.trunc(Number(openQuestionCount) || 0));
+  const sections = Math.max(1, Math.trunc(Number(sectionCount) || 1));
+  const neededItems = qCount + openCount;
+  const base = Math.max(3, Math.ceil((neededItems * 2) / sections));
+  return Math.min(24, base);
+}
+
+function parseQuestionCount(rawValue, fallback = 10, { min = 0, max = 80 } = {}) {
   const n = Number(rawValue);
   if (!Number.isFinite(n)) return fallback;
-  return Math.min(30, Math.max(10, Math.trunc(n)));
+  return Math.min(max, Math.max(min, Math.trunc(n)));
 }
 
 function parseWindowSize(rawValue, fallback = 3) {
@@ -282,6 +291,79 @@ function normalizeDifficultyCounts(rawValue) {
   };
 }
 
+function fitDifficultyCountsToTotal(rawCounts, total, fallbackDifficulty) {
+  const target = parseNonNegativeInt(total, 0, 80);
+  if (target <= 0) {
+    return {
+      easy: 0,
+      medium: 0,
+      hard: 0,
+      total: 0,
+    };
+  }
+
+  const base = normalizeDifficultyCounts(rawCounts);
+  if (base.total <= 0) {
+    return {
+      easy: fallbackDifficulty === "easy" ? target : 0,
+      medium: fallbackDifficulty === "medium" ? target : 0,
+      hard: fallbackDifficulty === "hard" ? target : 0,
+      total: target,
+    };
+  }
+
+  const levels = ["easy", "medium", "hard"];
+  const scaled = {
+    easy: 0,
+    medium: 0,
+    hard: 0,
+  };
+  const fractions = {
+    easy: 0,
+    medium: 0,
+    hard: 0,
+  };
+
+  let used = 0;
+  for (const level of levels) {
+    const exact = (Number(base[level] || 0) / base.total) * target;
+    const floored = Math.floor(exact);
+    scaled[level] = floored;
+    fractions[level] = exact - floored;
+    used += floored;
+  }
+
+  let remainder = Math.max(0, target - used);
+  while (remainder > 0) {
+    let pick = "medium";
+    let bestFraction = -1;
+    let bestWeight = -1;
+    for (const level of levels) {
+      const fraction = Number(fractions[level] || 0);
+      const weight = Number(base[level] || 0);
+      const beatsCurrent =
+        fraction > bestFraction
+        || (fraction === bestFraction && weight > bestWeight)
+        || (fraction === bestFraction && weight === bestWeight && level === fallbackDifficulty);
+      if (beatsCurrent) {
+        pick = level;
+        bestFraction = fraction;
+        bestWeight = weight;
+      }
+    }
+    scaled[pick] += 1;
+    fractions[pick] = 0;
+    remainder -= 1;
+  }
+
+  return {
+    easy: scaled.easy,
+    medium: scaled.medium,
+    hard: scaled.hard,
+    total: target,
+  };
+}
+
 function buildDifficultyPlan({ counts, fallbackDifficulty, needed }) {
   const target = Math.max(0, Math.trunc(Number(needed) || 0));
   const items = [];
@@ -319,6 +401,137 @@ function assignDifficultyToQuestions({ questions, counts, fallbackDifficulty }) 
   }));
 }
 
+function solveEquationIntegerRoots(problemText, { minX = -30, maxX = 30 } = {}) {
+  const source = normalizeExerciseLine(problemText);
+  if (!source) return [];
+  const body = stripExerciseLabel(source);
+  if (!/[xXхХ]/.test(body)) return [];
+  if ((body.match(/=/g) || []).length !== 1) return [];
+  if (/[<>≤≥]/.test(body)) return [];
+
+  const [left, right] = body.split("=");
+  const roots = [];
+  for (let x = minX; x <= maxX; x += 1) {
+    const leftValue = evaluateMathExpression(left, { x });
+    const rightValue = evaluateMathExpression(right, { x });
+    if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) continue;
+    if (!mathValuesEqual(leftValue, rightValue, 1e-6)) continue;
+    roots.push(x);
+  }
+  return [...new Set(roots)];
+}
+
+function solveSimpleLinearEquation(problemText) {
+  const source = normalizeExerciseLine(problemText);
+  if (!source) return null;
+  const body = stripExerciseLabel(source);
+  if (!/[xXхХ]/.test(body)) return null;
+  if ((body.match(/=/g) || []).length !== 1) return null;
+  if (/[<>≤≥]/.test(body)) return null;
+  if (/\|[^|]+\|/.test(body)) return null;
+  if (/√/.test(body)) return null;
+  if (/\b(sin|cos|tan|log|ln)\b/i.test(body)) return null;
+  if (/[xXхХ]\s*(?:\^|\*\*)\s*[2-9]/.test(body) || /[²³⁴⁵⁶⁷⁸⁹]/.test(body)) return null;
+
+  const [left, right] = body.split("=");
+  const evalResidual = (x) => {
+    const leftValue = evaluateMathExpression(left, { x });
+    const rightValue = evaluateMathExpression(right, { x });
+    if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) return null;
+    return Number(leftValue) - Number(rightValue);
+  };
+
+  const f0 = evalResidual(0);
+  const f1 = evalResidual(1);
+  if (!Number.isFinite(f0) || !Number.isFinite(f1)) return null;
+
+  const a = Number(f1) - Number(f0);
+  const b = Number(f0);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (Math.abs(a) < 1e-9) return null;
+
+  const root = -b / a;
+  if (!Number.isFinite(root)) return null;
+  const verify = evalResidual(root);
+  if (!Number.isFinite(verify) || Math.abs(Number(verify)) > 1e-5) return null;
+
+  return root;
+}
+
+function extractOpenTaskCandidateExpressions(problemText) {
+  const source = normalizeExerciseLine(problemText);
+  if (!source) return [];
+  const body = stripExerciseLabel(source);
+  const out = [];
+  const seen = new Set();
+
+  const pushCandidate = (candidate) => {
+    const value = normalizeExerciseLine(candidate);
+    if (!value) return;
+    const key = value.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(value);
+  };
+
+  const absMatches = body.match(/\|[^|]{1,48}\|/g) || [];
+  for (const abs of absMatches) pushCandidate(abs);
+
+  const bySplit = body
+    .split(/[;,]/g)
+    .map((item) => normalizeExerciseLine(item))
+    .filter((item) => item.length >= 3 && item.length <= 72);
+  for (const part of bySplit) pushCandidate(part);
+
+  pushCandidate(body);
+  return out;
+}
+
+function buildOpenTaskAnswer(problemText) {
+  const source = normalizeExerciseLine(problemText);
+  if (!source) return "";
+
+  const candidates = extractOpenTaskCandidateExpressions(source);
+  for (const candidate of candidates) {
+    const roots = solveEquationIntegerRoots(candidate, { minX: -40, maxX: 40 });
+    if (roots.length === 1) {
+      return `x = ${roots[0]}`;
+    }
+    if (roots.length > 1) {
+      return `x ∈ {${roots.join(", ")}}`;
+    }
+
+    const linearRoot = solveSimpleLinearEquation(candidate);
+    if (Number.isFinite(linearRoot)) {
+      const value = formatNumberForChoice(linearRoot);
+      if (value) return `x = ${value}`;
+    }
+
+    const solved = evaluateSimpleExercise(candidate);
+    if (Number.isFinite(solved)) {
+      const value = formatNumberForChoice(solved);
+      if (value) return value;
+    }
+  }
+
+  return "";
+}
+
+function scoreOpenTaskComplexity(problemText) {
+  const source = normalizeExerciseLine(problemText);
+  if (!source) return -999;
+  const body = stripExerciseLabel(source);
+
+  let score = scoreExpressionComplexity(body);
+  if (/[xXхХ]/.test(body)) score += 2;
+  if ((body.match(/=/g) || []).length === 1) score += 2;
+  if ((body.match(/[+\-*/]/g) || []).length >= 3) score += 2;
+  if (/\|[^|]+\|/.test(body)) score += 2;
+  if (/\b(sin|cos|tan|log|ln)\b/i.test(body)) score += 3;
+  if (/√/.test(body)) score += 2;
+  return score;
+}
+
 function buildOpenEndedTasks({ exerciseProblems, openQuestionCount, difficultyCounts, fallbackDifficulty, totalScore }) {
   const needed = parseNonNegativeInt(openQuestionCount, 0, 80);
   if (needed <= 0) return [];
@@ -331,9 +544,44 @@ function buildOpenEndedTasks({ exerciseProblems, openQuestionCount, difficultyCo
     const key = normalizeProblemKey(text);
     if (!text || !key || seen.has(key)) continue;
     seen.add(key);
-    unique.push(item);
-    if (unique.length >= needed) break;
+    unique.push({
+      pageNumber: Math.trunc(Number(item?.pageNumber)),
+      text,
+      key,
+      complexity: scoreOpenTaskComplexity(text),
+      answer: buildOpenTaskAnswer(text),
+    });
   }
+
+  unique.sort((left, right) => {
+    const complexityGap = Number(right?.complexity || 0) - Number(left?.complexity || 0);
+    if (complexityGap !== 0) return complexityGap;
+    return Number(Boolean(right?.answer)) - Number(Boolean(left?.answer));
+  });
+
+  const usedKeys = new Set();
+  const pickCandidateByDifficulty = (difficultyLabel) => {
+    const level = normalizeDifficulty(difficultyLabel);
+    const inBand = (item) => {
+      const complexity = Number(item?.complexity || 0);
+      if (level === "easy") return complexity <= 4;
+      if (level === "hard") return complexity >= 8;
+      return complexity >= 5;
+    };
+
+    const pick = (predicate) =>
+      unique.find((item) => {
+        if (!item || usedKeys.has(item.key)) return false;
+        return predicate(item);
+      });
+
+    let chosen = pick((item) => inBand(item) && Boolean(item.answer));
+    if (!chosen) chosen = pick((item) => inBand(item));
+    if (!chosen) chosen = pick((item) => Boolean(item.answer));
+    if (!chosen) chosen = pick(() => true);
+    if (chosen?.key) usedKeys.add(chosen.key);
+    return chosen || null;
+  };
 
   const plan = buildDifficultyPlan({
     counts: difficultyCounts,
@@ -346,15 +594,17 @@ function buildOpenEndedTasks({ exerciseProblems, openQuestionCount, difficultyCo
 
   const tasks = [];
   for (let i = 0; i < needed; i += 1) {
-    const source = unique[i];
+    const desiredDifficulty = normalizeDifficulty(plan[i] || fallbackDifficulty);
+    const source = pickCandidateByDifficulty(desiredDifficulty);
     const sourceText = String(source?.text || "").trim();
     const prompt = sourceText
       ? `Дараах бодлогыг дэлгэрэнгүй бодоод, аргачлалаа тайлбарлан бич.\n${sourceText}`
       : "Сонгосон сэдвийн хүрээнд ижил төрлийн бодлого зохиож, бодолтын алхмуудаа тайлбарла.";
     tasks.push({
       prompt,
-      difficulty: normalizeDifficulty(plan[i] || fallbackDifficulty),
+      difficulty: desiredDifficulty,
       score: effectiveTotalScore > 0 ? baseScore + (i < remainder ? 1 : 0) : 0,
+      answer: String(source?.answer || "").trim(),
       sourcePages: Number.isFinite(Number(source?.pageNumber))
         ? [Math.trunc(Number(source.pageNumber))]
         : [],
@@ -691,6 +941,60 @@ function stripExerciseLabel(text) {
 function normalizeProblemKey(value) {
   const base = stripExerciseLabel(normalizeExerciseLine(value));
   return base.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function findClosestExerciseProblemText(sourceText, exerciseProblems) {
+  const src = normalizeExerciseLine(sourceText);
+  if (!src) return "";
+  const srcKey = normalizeProblemKey(src);
+  if (!srcKey) return "";
+
+  const items = Array.isArray(exerciseProblems) ? exerciseProblems : [];
+  const normalizedItems = items
+    .map((item) => ({
+      text: normalizeExerciseLine(item?.text || ""),
+      key: normalizeProblemKey(item?.text || ""),
+    }))
+    .filter((item) => item.text && item.key);
+  if (!normalizedItems.length) return "";
+
+  const exact = normalizedItems.find((item) => item.key === srcKey);
+  if (exact) return exact.text;
+
+  const bodySrc = stripExerciseLabel(src).toLowerCase();
+  if (bodySrc) {
+    const include = normalizedItems.find((item) => {
+      const bodyItem = stripExerciseLabel(item.text).toLowerCase();
+      return bodyItem.includes(bodySrc) || bodySrc.includes(bodyItem);
+    });
+    if (include) return include.text;
+  }
+
+  const srcTokens = new Set(
+    srcKey
+      .split(/\s+/g)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2),
+  );
+  let bestText = "";
+  let bestScore = 0;
+  for (const item of normalizedItems) {
+    const itemTokens = item.key
+      .split(/\s+/g)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2);
+    if (!itemTokens.length) continue;
+    let shared = 0;
+    for (const token of itemTokens) {
+      if (srcTokens.has(token)) shared += 1;
+    }
+    const score = shared / Math.max(srcTokens.size, itemTokens.length);
+    if (score > bestScore) {
+      bestScore = score;
+      bestText = item.text;
+    }
+  }
+  return bestScore >= 0.45 ? bestText : "";
 }
 
 function formatNumberForChoice(value) {
@@ -1268,59 +1572,116 @@ function buildLocalQuestionsFromExerciseProblems({ exerciseProblems, needed }) {
   return out;
 }
 
-function compactProblemChoice(value, maxLen = 72) {
-  const text = normalizeExerciseLine(value);
-  if (text.length <= maxLen) return text;
-  return `${text.slice(0, Math.max(24, maxLen - 3)).trim()}...`;
-}
+function buildRepeatedSolvedQuestions({
+  exerciseProblems,
+  needed,
+  saltStart = 0,
+  excludedProblemKeys = [],
+  allowRepeat = false,
+}) {
+  const count = Math.max(0, Math.trunc(Number(needed) || 0));
+  if (count <= 0) return [];
 
-function buildProblemIdentityQuestions({ exerciseProblems, needed, excludedProblemTexts = [] }) {
   const items = Array.isArray(exerciseProblems) ? exerciseProblems : [];
-  if (!items.length || needed <= 0) return [];
-
   const excluded = new Set(
-    (Array.isArray(excludedProblemTexts) ? excludedProblemTexts : [])
-      .map((value) => normalizeExerciseLine(value).toLowerCase())
+    (Array.isArray(excludedProblemKeys) ? excludedProblemKeys : [])
+      .map((value) => String(value || "").trim())
       .filter(Boolean),
   );
-  const pool = items
-    .map((item) => ({
+  const solvedPool = [];
+  for (const item of items) {
+    const sourceProblem = normalizeExerciseLine(item?.text || "");
+    if (!sourceProblem) continue;
+    const key = normalizeProblemKey(sourceProblem);
+    if (!key || excluded.has(key)) continue;
+
+    const linearRoot = solveSimpleLinearEquation(sourceProblem);
+    if (Number.isFinite(linearRoot)) {
+      const correctValue = formatNumberForChoice(linearRoot);
+      if (correctValue) {
+        solvedPool.push({
+          sourceProblem,
+          solved: Number(linearRoot),
+          correctValue,
+          key,
+          pageNumber: Math.trunc(Number(item?.pageNumber)),
+        });
+        continue;
+      }
+    }
+
+    const roots = solveEquationIntegerRoots(sourceProblem, { minX: -40, maxX: 40 });
+    if (roots.length === 1) {
+      const correctValue = formatNumberForChoice(roots[0]);
+      if (correctValue) {
+        solvedPool.push({
+          sourceProblem,
+          solved: Number(roots[0]),
+          correctValue,
+          key,
+          pageNumber: Math.trunc(Number(item?.pageNumber)),
+        });
+        continue;
+      }
+    }
+
+    const solved = evaluateSimpleExercise(sourceProblem);
+    if (!Number.isFinite(solved)) continue;
+    const correctValue = formatNumberForChoice(solved);
+    if (!correctValue) continue;
+    solvedPool.push({
+      sourceProblem,
+      solved,
+      correctValue,
+      key,
       pageNumber: Math.trunc(Number(item?.pageNumber)),
-      text: normalizeExerciseLine(item?.text),
-    }))
-    .filter((item) => item.text && !excluded.has(item.text.toLowerCase()));
-
-  const out = [];
-  const labels = ["A", "B", "C", "D"];
-  for (let i = 0; i < pool.length && out.length < needed; i += 1) {
-    const current = pool[i];
-    const distractors = [];
-    for (let j = 0; j < pool.length && distractors.length < 3; j += 1) {
-      if (j === i) continue;
-      const candidate = pool[j];
-      if (!candidate?.text) continue;
-      if (distractors.some((item) => item.text.toLowerCase() === candidate.text.toLowerCase())) continue;
-      distractors.push(candidate);
-    }
-    if (distractors.length < 3) continue;
-
-    const choicesRaw = [current, ...distractors.slice(0, 3)];
-    for (let k = choicesRaw.length - 1; k > 0; k -= 1) {
-      const j = Math.floor(Math.random() * (k + 1));
-      [choicesRaw[k], choicesRaw[j]] = [choicesRaw[j], choicesRaw[k]];
-    }
-    const correctIndex = choicesRaw.findIndex((item) => item.text === current.text);
-
-    out.push({
-      question: "Номын бодлоготой яг адил мөрийг сонго.",
-      choices: choicesRaw.map((item, idx) => `${labels[idx]}. ${compactProblemChoice(item.text)}`),
-      correctAnswer: labels[correctIndex >= 0 ? correctIndex : 0],
-      explanation: "Зөв хариу нь номын бодлогын мөртэй үг, тэмдэгтээрээ таарна.",
-      source_pages: Number.isFinite(current.pageNumber) ? [current.pageNumber] : [],
-      source_excerpt: current.text,
     });
   }
+  if (!solvedPool.length) return [];
 
+  const labels = ["A", "B", "C", "D"];
+  const out = [];
+  const maxCount = allowRepeat ? count : Math.min(count, solvedPool.length);
+  for (let i = 0; i < maxCount; i += 1) {
+    const salt = saltStart + i;
+    const item = solvedPool[(salt % solvedPool.length + solvedPool.length) % solvedPool.length];
+
+    const wrongRaw = [
+      ...buildWrongNumericChoicesWithSalt(item.solved, salt),
+      ...buildWrongNumericChoices(item.solved),
+    ];
+    const wrongValues = [];
+    const seenWrong = new Set();
+    for (const candidateRaw of wrongRaw) {
+      const candidate = formatNumberForChoice(Number(candidateRaw));
+      if (!candidate || candidate === item.correctValue || seenWrong.has(candidate)) continue;
+      seenWrong.add(candidate);
+      wrongValues.push(candidate);
+      if (wrongValues.length >= 3) break;
+    }
+    let bump = 1;
+    while (wrongValues.length < 3) {
+      const candidate = formatNumberForChoice(Number(item.solved) + bump);
+      bump += 1;
+      if (!candidate || candidate === item.correctValue || seenWrong.has(candidate)) continue;
+      seenWrong.add(candidate);
+      wrongValues.push(candidate);
+    }
+
+    const rawChoices = [item.correctValue, ...wrongValues.slice(0, 3)];
+    const shift = Math.abs(salt) % rawChoices.length;
+    const shiftedChoices = rawChoices.slice(shift).concat(rawChoices.slice(0, shift));
+    const correctIndex = shiftedChoices.indexOf(item.correctValue);
+
+    out.push({
+      question: SOLVE_QUESTION_TEXT,
+      choices: shiftedChoices.map((choice, idx) => `${labels[idx]}. ${choice}`),
+      correctAnswer: labels[correctIndex >= 0 ? correctIndex : 0],
+      explanation: `${stripExerciseLabel(item.sourceProblem)} = ${item.correctValue}`,
+      source_pages: Number.isFinite(item.pageNumber) ? [item.pageNumber] : [],
+      source_excerpt: item.sourceProblem,
+    });
+  }
   return out;
 }
 
@@ -1361,69 +1722,6 @@ function collectLooseMathProblemsFromPages(pages, { limit = 80 } = {}) {
   }
 
   return out;
-}
-
-function buildGuaranteedExerciseQuestions({ exerciseProblems, needed }) {
-  const items = Array.isArray(exerciseProblems) ? exerciseProblems : [];
-  if (!items.length || needed <= 0) return [];
-
-  const labels = ["A", "B", "C", "D"];
-  const out = [];
-  const used = new Set();
-
-  const mutateNumber = (text) => String(text || "").replace(/\d+/, (num) => String(Math.max(0, Number(num) + 1)));
-  const flipSign = (text) => {
-    const source = String(text || "");
-    if (source.includes("+")) return source.replace("+", "-");
-    if (source.includes("-")) return source.replace("-", "+");
-    return `${source} + 1`;
-  };
-  const dropAbs = (text) => String(text || "").replace(/\|/g, "");
-
-  for (const item of items) {
-    if (out.length >= needed) break;
-    const problem = normalizeExerciseLine(item?.text || "");
-    if (!problem) continue;
-    const key = problem.toLowerCase();
-    if (used.has(key)) continue;
-    used.add(key);
-
-    const wrongRaw = [
-      mutateNumber(problem),
-      flipSign(problem),
-      dropAbs(problem) || `${problem} + 0`,
-      `${problem} + 0`,
-    ];
-    const wrong = [];
-    for (const candidate of wrongRaw) {
-      const normalized = normalizeExerciseLine(candidate);
-      if (!normalized || normalized.toLowerCase() === key) continue;
-      if (wrong.some((itemValue) => itemValue.toLowerCase() === normalized.toLowerCase())) continue;
-      wrong.push(normalized);
-      if (wrong.length >= 3) break;
-    }
-    while (wrong.length < 3) {
-      wrong.push(`${problem}${wrong.length + 1}`);
-    }
-
-    const choiceValues = [problem, ...wrong.slice(0, 3)];
-    for (let i = choiceValues.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [choiceValues[i], choiceValues[j]] = [choiceValues[j], choiceValues[i]];
-    }
-    const correctIndex = choiceValues.findIndex((value) => value === problem);
-
-    out.push({
-      question: "Номын дасгалын бодлоготой яг адил илэрхийллийг сонго.",
-      choices: choiceValues.map((value, idx) => `${labels[idx]}. ${compactProblemChoice(value)}`),
-      correctAnswer: labels[correctIndex >= 0 ? correctIndex : 0],
-      explanation: "Зөв сонголт нь номон дээрх бодлогын мөртэй бүрэн таарна.",
-      source_pages: Number.isFinite(Number(item?.pageNumber)) ? [Math.trunc(Number(item.pageNumber))] : [],
-      source_excerpt: problem,
-    });
-  }
-
-  return out.slice(0, needed);
 }
 
 router.get("/", (req, res) => {
@@ -1541,8 +1839,10 @@ router.get("/:bookId/pages/:pageNumber/image", async (req, res, next) => {
       return res.status(404).json({ error: "Ном олдсонгүй. Дахин upload хийнэ үү." });
     }
 
-    const pdfPathFromStore = book?.pdfPath && pdfExists(book.pdfPath) ? book.pdfPath : "";
-    const pdfPath = pdfPathFromStore || findExistingBookPdfPath(bookId);
+    const pdfPath = await resolveBookPdfPath({
+      bookId,
+      pdfPath: String(book?.pdfPath || ""),
+    });
     if (!pdfPath) {
       return res.status(404).json({
         error:
@@ -1616,29 +1916,35 @@ router.get("/:bookId/pages", (req, res) => {
   });
 });
 
-router.get("/:bookId/file", (req, res) => {
-  const bookId = String(req.params.bookId || "");
-  const book = getBookById(bookId);
+router.get("/:bookId/file", async (req, res, next) => {
+  try {
+    const bookId = String(req.params.bookId || "");
+    const book = getBookById(bookId);
 
-  const pdfPathFromStore = book?.pdfPath && pdfExists(book.pdfPath) ? book.pdfPath : "";
-  const pdfPath = pdfPathFromStore || findExistingBookPdfPath(bookId);
-  if (!pdfPath) {
-    return res.status(404).json({
-      error:
-        "PDF олдсонгүй. Хэрвээ backend restart хийсэн бол номын мэдээлэл устдаг тул дахин upload хийх шаардлагатай байж магадгүй.",
+    const pdfPath = await resolveBookPdfPath({
+      bookId,
+      pdfPath: String(book?.pdfPath || ""),
     });
+    if (!pdfPath) {
+      return res.status(404).json({
+        error:
+          "PDF олдсонгүй. Хэрвээ backend restart хийсэн бол номын мэдээлэл устдаг тул дахин upload хийх шаардлагатай байж магадгүй.",
+      });
+    }
+
+    const download = String(req.query.download || "").trim() === "1";
+    const fileName = sanitizeDownloadName(book?.fileName || `${bookId}.pdf`);
+    res.setHeader("Content-Type", "application/pdf");
+
+    if (download) {
+      return res.download(pdfPath, fileName);
+    }
+
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+    return res.sendFile(pdfPath);
+  } catch (error) {
+    return next(error);
   }
-
-  const download = String(req.query.download || "").trim() === "1";
-  const fileName = sanitizeDownloadName(book?.fileName || `${bookId}.pdf`);
-  res.setHeader("Content-Type", "application/pdf");
-
-  if (download) {
-    return res.download(pdfPath, fileName);
-  }
-
-  res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
-  return res.sendFile(pdfPath);
 });
 
 router.post("/:bookId/reparse", async (req, res, next) => {
@@ -1649,8 +1955,10 @@ router.post("/:bookId/reparse", async (req, res, next) => {
       return res.status(404).json({ error: "Ном олдсонгүй. Дахин upload хийнэ үү." });
     }
 
-    const pdfPathFromStore = book?.pdfPath && pdfExists(book.pdfPath) ? book.pdfPath : "";
-    const pdfPath = pdfPathFromStore || findExistingBookPdfPath(bookId);
+    const pdfPath = await resolveBookPdfPath({
+      bookId,
+      pdfPath: String(book?.pdfPath || ""),
+    });
     if (!pdfPath) {
       return res.status(404).json({
         error:
@@ -1767,13 +2075,48 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
       visiblePageNumbers: visiblePageNumbersRaw,
     } = req.body || {};
 
-    const difficulty = normalizeDifficulty(difficultyRaw);
-    const difficultyCounts = normalizeDifficultyCounts(difficultyCountsRaw);
-    const requestedByDifficulty = difficultyCounts.total;
-    const parsedQuestionCount = parseQuestionCount(questionCountRaw, 10);
-    const questionCount = requestedByDifficulty > 0 ? requestedByDifficulty : parsedQuestionCount;
+    const requestedDifficulty = normalizeDifficulty(difficultyRaw);
+    const difficulty = "hard";
+    const requestedDifficultyCounts = normalizeDifficultyCounts(difficultyCountsRaw);
+    const questionCount = parseQuestionCount(questionCountRaw, 10, { min: 0, max: 80 });
     const openQuestionCount = parseNonNegativeInt(openQuestionCountRaw, 0, 80);
     const totalScore = parseNonNegativeInt(totalScoreRaw, 0, 500);
+    const testFastMode =
+      String(process.env.TEST_FAST_MODE || "1").trim() !== "0";
+    const testReadFromPdfEachTime =
+      !testFastMode
+      && String(process.env.TEST_READ_FROM_PDF_EACH_TIME || "0").trim() === "1";
+    let resolvedPdfPath = "";
+    if (testReadFromPdfEachTime) {
+      resolvedPdfPath = await resolveBookPdfPath({
+        bookId,
+        pdfPath: String(book?.pdfPath || ""),
+      });
+    }
+    let sourceBookPages = Array.isArray(book.pages) ? book.pages : [];
+    if (testReadFromPdfEachTime && resolvedPdfPath) {
+      try {
+        const pdfBuffer = await fs.readFile(resolvedPdfPath);
+        const parsedForGenerate = await parsePdfPages(pdfBuffer, { forceOcr: false });
+        if (Array.isArray(parsedForGenerate) && parsedForGenerate.length > 0) {
+          sourceBookPages = parsedForGenerate;
+        }
+      } catch {
+        // fallback to persisted OCR pages
+      }
+    }
+
+    const difficultyCounts = {
+      easy: 0,
+      medium: 0,
+      hard: questionCount,
+      total: questionCount,
+    };
+    if (questionCount <= 0 && openQuestionCount <= 0) {
+      return res.status(400).json({
+        error: "Тестийн тоо эсвэл задгай даалгаврын тооноос дор хаяж нэгийг 1+ оруулна уу.",
+      });
+    }
     const structured = ensureStructuredContent(book);
     const sectionId = String(sectionIdRaw || "").trim();
     const sectionIds = Array.from(
@@ -1783,14 +2126,30 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
           .filter(Boolean),
       ),
     );
-    const visiblePageNumbers = parsePageNumbers(visiblePageNumbersRaw, book.pages.length);
+    const visiblePageNumbers = parsePageNumbers(visiblePageNumbersRaw, sourceBookPages.length);
+    const totalRequestedItems = Math.max(0, questionCount) + Math.max(0, openQuestionCount);
+    const useStrictVisiblePages = visiblePageNumbers.length > 0 && totalRequestedItems <= 6;
+    const maxPagesPerSectionForGeneration = parseNonNegativeInt(
+      process.env.TEST_MAX_SECTION_PAGES,
+      testFastMode ? 48 : 0,
+      3000,
+    );
+    const sourceBookPageMap = new Map(
+      sourceBookPages
+        .map((page) => ({
+          pageNumber: Math.trunc(Number(page?.pageNumber)),
+          text: String(page?.text || ""),
+        }))
+        .filter((page) => Number.isFinite(page.pageNumber) && page.pageNumber >= 1)
+        .map((page) => [page.pageNumber, page]),
+    );
 
     let visiblePages = [];
     let sourceLabel = "";
 
-    if (visiblePageNumbers.length > 0) {
+    if (useStrictVisiblePages) {
       const wanted = new Set(visiblePageNumbers);
-      visiblePages = book.pages
+      visiblePages = sourceBookPages
         .filter((page) => wanted.has(page.pageNumber))
         .map((page) => ({
           pageNumber: page.pageNumber,
@@ -1804,11 +2163,16 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
       for (const id of sectionIds) {
         const located = findSectionById(structured.chapters, id);
         if (!located) continue;
-        const pages = Array.isArray(located.section?.pages) ? located.section.pages.slice(0, 3) : [];
+        const allSectionPages = Array.isArray(located.section?.pages)
+          ? located.section.pages
+          : [];
+        const pages = maxPagesPerSectionForGeneration > 0
+          ? allSectionPages.slice(0, maxPagesPerSectionForGeneration)
+          : allSectionPages;
         for (const page of pages) {
           const pageNumber = Math.trunc(Number(page?.pageNumber));
           if (!Number.isFinite(pageNumber) || pageNumber < 1 || pageMap.has(pageNumber)) continue;
-          const rawPage = (Array.isArray(book.pages) ? book.pages : []).find((item) => item.pageNumber === pageNumber);
+          const rawPage = sourceBookPageMap.get(pageNumber);
           pageMap.set(pageNumber, {
             pageNumber,
             content: cleanAnalysisPageText(rawPage?.text || page?.content || ""),
@@ -1824,18 +2188,35 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
       if (!located) {
         return res.status(404).json({ error: "Section олдсонгүй." });
       }
-      visiblePages = Array.isArray(located.section?.pages) ? located.section.pages.slice(0, 3) : [];
+      const allSectionPages = Array.isArray(located.section?.pages)
+        ? located.section.pages
+        : [];
+      const scopedPages = maxPagesPerSectionForGeneration > 0
+        ? allSectionPages.slice(0, maxPagesPerSectionForGeneration)
+        : allSectionPages;
+      visiblePages = scopedPages
+        .map((page) => {
+          const pageNumber = Math.trunc(Number(page?.pageNumber));
+          const rawPage = sourceBookPageMap.get(pageNumber);
+          return {
+            pageNumber,
+            content: cleanAnalysisPageText(rawPage?.text || page?.content || ""),
+            formulas: [],
+            examples: [],
+          };
+        })
+        .filter((page) => Number.isFinite(Number(page?.pageNumber)) && Number(page.pageNumber) >= 1);
       sourceLabel = `section:${sectionId}`;
     }
 
     if (!visiblePages.length) {
       return res.status(400).json({
-        error: "`visiblePageNumbers` (2-3 visible pages) эсвэл `sectionId` шаардлагатай.",
+        error: "`visiblePageNumbers` эсвэл `sectionId/sectionIds` шаардлагатай.",
       });
     }
 
     const extractedExerciseProblems = extractExerciseProblemsFromPages(visiblePages, {
-      limit: Math.max(200, questionCount * 15),
+      limit: Math.max(600, questionCount * 30),
     });
     const letterLabeledProblems = extractedExerciseProblems.filter((item) =>
       isLetterLabeledExerciseProblem(item?.text),
@@ -1859,7 +2240,7 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
       : preferredExerciseProblems;
     const rankedExerciseProblems = [...candidateExerciseProblems]
       .sort((left, right) => scoreExerciseProblemQuality(right?.text) - scoreExerciseProblemQuality(left?.text))
-      .slice(0, Math.max(40, questionCount * 8));
+      .slice(0, Math.max(180, questionCount * 20));
     const topStrictRanked = rankedExerciseProblems.filter((item) => isStrictExerciseProblem(item?.text));
     const topCleanStrict = topStrictRanked.filter((item) => isCleanExerciseProblem(item?.text));
     const topCleanRanked = rankedExerciseProblems.filter((item) => isCleanExerciseProblem(item?.text));
@@ -1871,14 +2252,14 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
           : topStrictRanked.length > 0
             ? topStrictRanked
             : rankedExerciseProblems;
-    let selectedExerciseProblems = sourceExerciseProblems.slice(0, Math.max(questionCount * 4, 16));
+    let selectedExerciseProblems = sourceExerciseProblems.slice(0, Math.max(questionCount * 10, 80));
     if (!selectedExerciseProblems.length) {
       selectedExerciseProblems = collectLooseMathProblemsFromPages(visiblePages, {
-        limit: Math.max(questionCount * 4, 16),
+        limit: Math.max(questionCount * 10, 80),
       });
     } else if (selectedExerciseProblems.length < questionCount) {
       const looseCandidates = collectLooseMathProblemsFromPages(visiblePages, {
-        limit: Math.max(questionCount * 6, 24),
+        limit: Math.max(questionCount * 14, 120),
       });
       const merged = [...selectedExerciseProblems];
       const seen = new Set(
@@ -1891,10 +2272,15 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
         if (!key || seen.has(key)) continue;
         seen.add(key);
         merged.push(item);
-        if (merged.length >= Math.max(questionCount * 4, 16)) break;
+        if (merged.length >= Math.max(questionCount * 10, 80)) break;
       }
       selectedExerciseProblems = merged;
     }
+    const selectedProblemKeySet = new Set(
+      selectedExerciseProblems
+        .map((item) => normalizeProblemKey(item?.text || ""))
+        .filter(Boolean),
+    );
 
     const sourceText = [
       "EXERCISE_PROBLEMS:",
@@ -1904,19 +2290,19 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
     ].join("\n");
     const visibleNumbers = visiblePages.map((page) => page.pageNumber);
     const answerKeyText = buildAnswerKeyTextFromSelection({
-      book,
+      book: { ...book, pages: sourceBookPages },
       pageNumbers: visibleNumbers,
       maxPages: 90,
     });
 
-    if (sourceText.replace(/\s+/g, "").length < 40) {
+    if (questionCount > 0 && sourceText.replace(/\s+/g, "").length < 40) {
       return res.status(400).json({
         error: "Visible content дээр хангалттай текст алга байна. Илүү тодорхой 2-3 хуудас сонгоно уу.",
       });
     }
 
-    if (!selectedExerciseProblems.length) {
-      const hintPages = findProblemPageHints(book, 12);
+    if (questionCount > 0 && !selectedExerciseProblems.length) {
+      const hintPages = findProblemPageHints({ ...book, pages: sourceBookPages }, 12);
       const hintText = hintPages.length
         ? `Бодлого ихтэй магадлалтай page: ${hintPages.join(", ")}`
         : "Номоос бодлоготой page автоматаар илрүүлж чадсангүй.";
@@ -1928,7 +2314,7 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
     const generateTimeoutMs = Number(
       process.env.TEST_GENERATE_TIMEOUT_MS
       || process.env.OLLAMA_TIMEOUT_MS
-      || 300000,
+      || (testFastMode ? 90000 : 300000),
     );
     let generation = null;
     let generationTopUp = null;
@@ -1936,27 +2322,37 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
     let generationTopUpError = null;
     let generationModeUsed = "extract";
 
-    try {
-      generation = await generateBookQuestions({
-        baseUrl: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
-        answerKeyText,
-        fillMode: "strict",
-        geminiApiKey: process.env.GEMINI_API_KEY,
-        geminiBaseUrl: process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com",
-        geminiModel: process.env.GEMINI_MODEL || "gemini-2.0-flash",
-        model: process.env.OLLAMA_MODEL || "qwen2.5:0.5b",
-        mode: "extract",
-        pageText: sourceText,
-        provider: process.env.LLM_PROVIDER || "auto",
-        questionCount,
-        timeoutMs: generateTimeoutMs,
-      });
-    } catch (error) {
-      generationError = error;
+    if (questionCount > 0) {
+      try {
+        generation = await generateBookQuestions({
+          baseUrl: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
+          answerKeyText,
+          fillMode: "strict",
+          geminiApiKey: process.env.GEMINI_API_KEY,
+          geminiBaseUrl: process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com",
+          geminiModel: process.env.GEMINI_MODEL || "gemini-2.0-flash",
+          model: process.env.OLLAMA_MODEL || "qwen2.5:0.5b",
+          mode: "extract",
+          pageText: sourceText,
+          provider: process.env.LLM_PROVIDER || "auto",
+          questionCount,
+          timeoutMs: generateTimeoutMs,
+        });
+      } catch (error) {
+        generationError = error;
+      }
+    } else {
+      generationModeUsed = "open-only";
     }
 
     let generatedQuestions = Array.isArray(generation?.questions) ? [...generation.questions] : [];
-    if (!generationError && generatedQuestions.length < questionCount) {
+    const shouldRunAiTopUp = !testFastMode;
+    if (
+      shouldRunAiTopUp
+      && questionCount > 0
+      && !generationError
+      && generatedQuestions.length < questionCount
+    ) {
       try {
         generationTopUp = await generateBookQuestions({
           baseUrl: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
@@ -1996,12 +2392,16 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
         const sourceExcerpt = String(
           question.source_excerpt || question.sourceExcerpt || "",
         ).trim();
-        const fallbackProblemFromQuestion =
-          !sourceExcerpt && looksMathLikeText(question?.question)
-            ? String(question.question || "").trim()
-            : "";
         const fallbackProblemFromExercise = String(fallbackExercise?.text || "").trim();
-        const bookProblem = sourceExcerpt || fallbackProblemFromQuestion || fallbackProblemFromExercise;
+        const closestFromSource = findClosestExerciseProblemText(
+          sourceExcerpt,
+          selectedExerciseProblems,
+        );
+        const closestFromFallback = findClosestExerciseProblemText(
+          fallbackProblemFromExercise,
+          selectedExerciseProblems,
+        );
+        const bookProblem = closestFromSource || closestFromFallback || "";
         const sourcePages = Array.isArray(question.source_pages)
           ? question.source_pages
           : Array.isArray(question.sourcePages)
@@ -2029,7 +2429,11 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
           source_excerpt: bookProblem,
         };
       })
-      .filter((question) => question.question && question.choices.length === 4);
+      .filter((question) => {
+        if (!question || !question.question || question.choices.length !== 4) return false;
+        const key = normalizeQuestionProblemKey(question);
+        return Boolean(key && selectedProblemKeySet.has(key));
+      });
 
     const mapped = mappedAll
       .sort((left, right) => {
@@ -2081,17 +2485,7 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
       questions = dedupeQuestionsByProblem([...questions, ...extraSolved], questionCount);
     }
 
-    if (questions.length < questionCount) {
-      const extraFromLoose = buildSolvedQuestionsFromExerciseProblems({
-        needed: questionCount - questions.length,
-        exerciseProblems: collectLooseMathProblemsFromPages(visiblePages, {
-          limit: Math.max(questionCount * 8, 40),
-        }),
-      });
-      questions = dedupeQuestionsByProblem([...questions, ...extraFromLoose], questionCount);
-    }
-
-    if (questions.length === 0) {
+    if (questionCount > 0 && questions.length === 0) {
       return res.status(400).json({
         error: "Сонгосон хуудсуудаас бодлого дээр суурилсан асуулт үүсгэж чадсангүй. Бодлоготой хуудсаа сонгоод дахин оролдоно уу.",
       });
@@ -2123,9 +2517,35 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
       questions = dedupeQuestionsByProblem([...questions, ...lateSolved], questionCount);
     }
 
-    questions = questions
-      .filter((question) => String(question?.question || "").trim() === SOLVE_QUESTION_TEXT)
-      .slice(0, questionCount);
+    let forcedTopUp = [];
+    if (questions.length < questionCount) {
+      const forcedPool = selectedExerciseProblems;
+      const usedProblemKeys = questions
+        .map((question) => normalizeQuestionProblemKey(question))
+        .filter(Boolean);
+      forcedTopUp = buildRepeatedSolvedQuestions({
+        needed: questionCount - questions.length,
+        exerciseProblems: forcedPool,
+        saltStart: questions.length,
+        excludedProblemKeys: usedProblemKeys,
+        allowRepeat: false,
+      });
+      questions = [...questions, ...forcedTopUp].slice(0, questionCount);
+    }
+
+    questions = dedupeQuestionsByProblem(questions, questionCount).slice(0, questionCount);
+
+    let finalRepeatTopUp = [];
+    if (questions.length < questionCount) {
+      finalRepeatTopUp = buildRepeatedSolvedQuestions({
+        needed: questionCount - questions.length,
+        exerciseProblems: selectedExerciseProblems,
+        saltStart: questions.length + 1000,
+        excludedProblemKeys: [],
+        allowRepeat: true,
+      });
+      questions = [...questions, ...finalRepeatTopUp].slice(0, questionCount);
+    }
     questions = assignDifficultyToQuestions({
       questions,
       counts: difficultyCounts,
@@ -2139,7 +2559,7 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
       totalScore,
     });
 
-    if (questions.length === 0) {
+    if (questionCount > 0 && questions.length === 0) {
       return res.status(400).json({
         error: "Бодлогуудын зөв/буруу хариуг баталгаажуулж чадсангүй. Илүү цэвэр бодлоготой хуудсаа сонгоно уу.",
       });
@@ -2182,6 +2602,9 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
           : String(generationTopUpError || "");
       warnings.push(`Нэмэлт AI топ-ап ажиллахгүй тул үлдсэнийг local fallback-р нөхлөө: ${detail}`);
     }
+    if (testFastMode) {
+      warnings.push("Fast mode ON: AI top-up алгасаад local бодолтоор хурдан нөхөв.");
+    }
     if (solvedTopUp.length > 0) {
       warnings.push(
         `Сонгосон дасгалын ${solvedTopUp.length} бодлогыг backend өөрөө бодож зөв хариутай асуулт болголоо.`,
@@ -2191,6 +2614,19 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
       warnings.push(
         `AI-аас дутуу ирсэн ${localTopUp.length} асуултыг дасгалын бодлогоос local fallback-р нөхлөө.`,
       );
+    }
+    if (forcedTopUp.length > 0) {
+      warnings.push(
+        `Тестийн тоог яг барихын тулд ${forcedTopUp.length} асуултыг нэмэлт fallback-р нөхлөө.`,
+      );
+    }
+    if (finalRepeatTopUp.length > 0) {
+      warnings.push(
+        `Тестийн тоог гүйцээхийн тулд ${finalRepeatTopUp.length} асуултыг номын бодлогоос давтан хувилбараар нөхлөө.`,
+      );
+    }
+    if (requestedDifficulty !== "hard" || requestedDifficultyCounts.total > 0) {
+      warnings.push("Тохиргоо hard-only горимд байна: бүх асуулт, задгай даалгавар `hard` түвшнээр гарна.");
     }
     if (droppedByDuplicate > 0) {
       warnings.push(
@@ -2212,12 +2648,28 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
         "AI болон стандарт fallback асуулт гаргаж чадаагүй тул бодож баталгаажсан бодлогоор fallback тест үүсгэлээ.",
       );
     }
+    if (questionCount > 0 && questions.length < questionCount) {
+      warnings.push(
+        `Хүссэн ${questionCount} асуултаас ${questions.length}-ийг л бүрдүүлж чадлаа. Илүү олон бодлоготой section сонгоод дахин оролдоно уу.`,
+      );
+    }
+
+    const questionsForExport = questions.map((question) => ({
+      question: question.question,
+      choices: question.choices,
+      correct_answer: question.correctAnswer,
+    }));
 
     return res.json({
       bookId: book.id,
       source: sourceLabel,
       difficulty,
       difficultyCountsRequested: {
+        easy: requestedDifficultyCounts.easy,
+        medium: requestedDifficultyCounts.medium,
+        hard: requestedDifficultyCounts.hard,
+      },
+      difficultyCountsApplied: {
         easy: difficultyCounts.easy,
         medium: difficultyCounts.medium,
         hard: difficultyCounts.hard,
@@ -2242,6 +2694,7 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
         prompt: String(item.prompt || "").trim(),
         difficulty: normalizeDifficulty(item.difficulty || difficulty),
         score: parseNonNegativeInt(item.score, 0, 200),
+        answer: String(item.answer || "").trim(),
         sourcePages: Array.isArray(item.sourcePages) ? item.sourcePages : [],
         sourceExcerpt: String(item.sourceExcerpt || "").trim(),
       })),
@@ -2253,6 +2706,7 @@ router.post("/:bookId/generate-test", async (req, res, next) => {
         modelUsed: generation?.modelUsed || "local-fallback",
         modeUsed: generationModeUsed,
       },
+      questionsForExport,
     });
   } catch (error) {
     return next(error);

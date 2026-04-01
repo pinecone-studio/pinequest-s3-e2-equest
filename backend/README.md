@@ -127,6 +127,20 @@ Response format:
   - `R2_SECRET_ACCESS_KEY=...`
   - `R2_BOOK_STORE_KEY=books/books.json` (optional)
 - `BOOK_STORE_BACKEND=auto` үед дээрх R2 config бүрэн байвал R2, үгүй бол local store ашиглана.
+- PDF файлуудыг R2 дээр хадгалах бол `.env` дээр:
+  - `BOOK_PDF_BACKEND=r2` (`auto` үед R2 config байвал автоматаар R2 ашиглана)
+  - `R2_PDF_BUCKET=...` (optional, байхгүй бол `R2_BUCKET` ашиглана)
+  - `R2_PDF_PREFIX=books/pdfs` (optional)
+  - `R2_PDF_CHUNKED=1` (default) -> PDF-ийг chunk + manifest хэлбэрээр R2-д хадгална
+  - `R2_PDF_CHUNK_MB=4` (optional) -> part бүрийн хэмжээ
+  - `BOOK_PDF_CACHE_LOCAL=1` (optional, R2-оос татсан PDF-ийг local cache-д хадгална)
+- Checked section-уудыг тест үүсгэх үед PDF-ээс дахин уншуулах:
+  - `TEST_READ_FROM_PDF_EACH_TIME=1`
+  - `TEST_MAX_SECTION_PAGES=0` (`0` бол checked section-ийн бүх page-ийг уншина)
+- Хурдтай/тогтвортой generate тохиргоо:
+  - `TEST_FAST_MODE=1` (AI top-up алгасч local fallback-аар хурдан нөхнө)
+  - `TEST_GENERATE_TIMEOUT_MS=90000` (AI response-г хурдан cut-off)
+  - `TEST_READ_FROM_PDF_EACH_TIME=0` (тест бүрт PDF-ийг дахин OCR хийхгүй)
 - OCR priority: `PDF_OCR_PREFERRED=auto|gemini|local-only|gemini-only` (default `auto`: Gemini key байвал Gemini OCR-ийг түрүүлж оролдоно).
 - Local OCR хэл: `LOCAL_OCR_LANG=auto` (default) үед `tesseract --list-langs`-аас боломжтой бол `mon+eng` автоматаар сонгоно.
 - OCR quality-д асуудал байвал:

@@ -99,8 +99,8 @@ async function requestJson(path, options = {}) {
 
 function clampQuestionCount(value) {
   const n = Number(value);
-  if (!Number.isFinite(n)) return 10;
-  return Math.min(30, Math.max(10, Math.trunc(n)));
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(80, Math.max(0, Math.trunc(n)));
 }
 
 function clampNonNegativeInt(value, fallback = 0, max = 200) {
@@ -872,7 +872,38 @@ function getVisibleChapterSections(chapter, chapterIdx, tocLabels) {
   return chapterSections.slice(0, ordered.length);
 }
 
+function pickAutoBookIdForSelection({ books, subject, grade }) {
+  const list = Array.isArray(books) ? books : [];
+  const safeSubject = String(subject || "").trim().toLowerCase();
+  const safeGrade = String(grade || "").trim().toLowerCase();
+  const isMath12 =
+    /математик|math|matematik/i.test(safeSubject) && /12/.test(safeGrade);
+  if (!isMath12) return "";
+
+  const candidates = list.filter((book) => {
+    const title = String(book?.title || "").toLowerCase();
+    return /матем|math|matematik/i.test(title) && /12/.test(title);
+  });
+  if (!candidates.length) return "";
+
+  const sorted = [...candidates].sort((a, b) => {
+    const aTime = Date.parse(String(a?.createdAt || "")) || 0;
+    const bTime = Date.parse(String(b?.createdAt || "")) || 0;
+    return bTime - aTime;
+  });
+  return String(sorted[0]?.id || "");
+}
+
 export default function App() {
+  // Exam meta (UI only – for now these are not sent to the backend,
+  // but they let the screen visually match the design mock).
+  const [subject, setSubject] = useState("Математик");
+  const [grade, setGrade] = useState("10 дугаар анги");
+  const [examType, setExamType] = useState("Явцын");
+  const [examName, setExamName] = useState("Явц-1 Алгебр");
+  const [durationMinutes, setDurationMinutes] = useState(30);
+  const [maxDurationMinutes, setMaxDurationMinutes] = useState(30);
+
   const [apiBaseOverride, setApiBaseOverride] = useState(() => {
     if (typeof window === "undefined") return "";
     try {
@@ -1158,19 +1189,9 @@ export default function App() {
     }
     return out;
   }, [structure.chapters, sectionSummaryById, selectedSectionIdSet, tocLabels]);
-  const difficultyTotalRequested = useMemo(
-    () =>
-      clampNonNegativeInt(difficultyCounts.easy) +
-      clampNonNegativeInt(difficultyCounts.medium) +
-      clampNonNegativeInt(difficultyCounts.hard),
-    [difficultyCounts.easy, difficultyCounts.medium, difficultyCounts.hard],
-  );
   const resolvedQuestionCount = useMemo(
-    () =>
-      difficultyTotalRequested > 0
-        ? difficultyTotalRequested
-        : clampQuestionCount(questionCount),
-    [difficultyTotalRequested, questionCount],
+    () => clampQuestionCount(questionCount),
+    [questionCount],
   );
 
   useEffect(() => {
@@ -1364,6 +1385,17 @@ export default function App() {
   }, [selectedBookId]);
 
   useEffect(() => {
+    const autoBookId = pickAutoBookIdForSelection({
+      books,
+      subject,
+      grade,
+    });
+    if (!autoBookId) return;
+    if (selectedBookId === autoBookId) return;
+    setSelectedBookId(autoBookId);
+  }, [books, subject, grade, selectedBookId]);
+
+  useEffect(() => {
     if (!selectedBookId || !selectedSectionId) return;
     void loadSectionWindow({
       bookId: selectedBookId,
@@ -1445,10 +1477,7 @@ export default function App() {
 
   async function handleGenerateTest() {
     const activeSectionIds = Array.from(selectedSectionIdSet);
-    const useVisiblePages =
-      activeSectionIds.length <= 1 &&
-      Array.isArray(sectionWindow?.visiblePageNumbers) &&
-      sectionWindow.visiblePageNumbers.length > 0;
+    const useVisiblePages = false;
     if (!selectedBookId || (!activeSectionIds.length && !selectedSectionId)) {
       setErrorMessage("Эхлээд дор хаяж нэг сэдэв сонгоно уу.");
       return;
@@ -1693,6 +1722,88 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <p className="page-title">Шалгалтын материал үүсгэх</p>
+      <section className="topbar">
+        <div>
+          <p className="panel-title">Ерөнхий мэдээлэл</p>
+        </div>
+        <div className="controls">
+          <label>
+            Хичээл
+            <select
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+            >
+              <option value="Математик">Математик</option>
+              <option value="Физик">Физик</option>
+              <option value="Хими">Хими</option>
+              <option value="Информатик">Информатик</option>
+            </select>
+          </label>
+          <label>
+            Анги
+            <select
+              value={grade}
+              onChange={(event) => setGrade(event.target.value)}
+            >
+              <option value="9 дүгээр анги">9 дүгээр анги</option>
+              <option value="10 дугаар анги">10 дугаар анги</option>
+              <option value="11 дүгээр анги">11 дүгээр анги</option>
+              <option value="12 дугаар анги">12 дугаар анги</option>
+            </select>
+          </label>
+          <label>
+            Төрөл
+            <select
+              value={examType}
+              onChange={(event) => setExamType(event.target.value)}
+            >
+              <option value="Явцын">Явцын</option>
+              <option value="Жил төгсгөх">Жил төгсгөх</option>
+              <option value="Дасгал">Дасгал</option>
+            </select>
+          </label>
+          <label>
+            Шалгалтын нэр
+            <input
+              value={examName}
+              onChange={(event) => setExamName(event.target.value)}
+              placeholder="Жишээ: Явц-1 Алгебр"
+            />
+          </label>
+          <label>
+            Үргэлжлэх минут
+            <select
+              value={durationMinutes}
+              onChange={(event) =>
+                setDurationMinutes(Number(event.target.value) || 0)
+              }
+            >
+              {[20, 30, 40, 60, 90].map((value) => (
+                <option key={value} value={value}>
+                  {value} мин
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Угтрах минут
+            <select
+              value={maxDurationMinutes}
+              onChange={(event) =>
+                setMaxDurationMinutes(Number(event.target.value) || 0)
+              }
+            >
+              {[20, 30, 40, 60, 90].map((value) => (
+                <option key={value} value={value}>
+                  {value} мин
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
+
       <section className="toolbar">
         <form onSubmit={handleUpload} className="upload-form">
           <input
@@ -2168,6 +2279,14 @@ export default function App() {
                         Задгай {idx + 1}.{" "}
                         <MathText text={task.prompt || task.question || ""} />
                       </h3>
+                      <p className="answer-line">
+                        Зөв хариу:{" "}
+                        {String(task.answer || "").trim() ? (
+                          <MathText text={task.answer || ""} />
+                        ) : (
+                          "Тооцоолж гаргах боломжгүй (задгай үнэлгээтэй)"
+                        )}
+                      </p>
                       {Number.isFinite(Number(task.score)) ? (
                         <p className="source-line">Оноо: {Number(task.score)}</p>
                       ) : null}
@@ -2343,6 +2462,14 @@ export default function App() {
                       Задгай {idx + 1}.{" "}
                       <MathText text={task.prompt || task.question || ""} />
                     </h3>
+                    <p className="answer-line">
+                      Зөв хариу:{" "}
+                      {String(task.answer || "").trim() ? (
+                        <MathText text={task.answer || ""} />
+                      ) : (
+                        "Тооцоолж гаргах боломжгүй (задгай үнэлгээтэй)"
+                      )}
+                    </p>
                     {Number.isFinite(Number(task.score)) ? (
                       <p className="source-line">Оноо: {Number(task.score)}</p>
                     ) : null}
