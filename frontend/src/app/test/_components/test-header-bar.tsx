@@ -39,6 +39,7 @@ type TestHeaderBarProps = {
   breadcrumbItems?: BreadcrumbItem[];
   description?: string;
   isTeacherRefreshing?: boolean;
+  rightSlot?: ReactNode;
   meta?: ReactNode;
   onTeacherRefresh?: (() => void) | null;
   teacherVariant?: TeacherVariant;
@@ -71,6 +72,7 @@ export function TestHeaderBar({
   breadcrumbItems,
   description,
   isTeacherRefreshing = false,
+  rightSlot,
   meta,
   onTeacherRefresh = null,
   teacherVariant = "default",

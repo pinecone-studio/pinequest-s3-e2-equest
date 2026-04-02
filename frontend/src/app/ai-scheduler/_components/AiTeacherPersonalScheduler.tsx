@@ -517,23 +517,37 @@ type CalendarLayerId =
   | "conflict";
 
 const LAYER_CHECK_BG: Record<CalendarLayerId, string> = {
-  primary: "bg-blue-100",
-  confirmed_exam: "bg-blue-100",
-  school_event: "bg-sky-300",
-  ancillary_confirmed: "bg-indigo-300",
-  personal: "bg-slate-300",
+  primary: "bg-sky-200",
+  confirmed_exam: "bg-indigo-200",
+  school_event: "bg-slate-300",
+  ancillary_confirmed: "bg-blue-200",
+  personal: "bg-gray-200",
   ai_draft: "bg-violet-200",
   conflict: "bg-rose-200",
 };
 
 const LAYER_CHECK_FG: Record<CalendarLayerId, string> = {
-  primary: "text-blue-900",
-  confirmed_exam: "text-blue-900",
-  school_event: "text-sky-950",
-  ancillary_confirmed: "text-indigo-950",
-  personal: "text-slate-900",
+  primary: "text-sky-900",
+  confirmed_exam: "text-indigo-900",
+  school_event: "text-slate-950",
+  ancillary_confirmed: "text-blue-950",
+  personal: "text-gray-900",
   ai_draft: "text-violet-950",
   conflict: "text-rose-950",
+};
+
+const LAYER_ROW_ON: Record<CalendarLayerId, string> = {
+  primary: "bg-sky-50 text-sky-950 dark:bg-sky-950/35 dark:text-sky-50 ",
+  confirmed_exam:
+    "bg-indigo-50 text-indigo-950 dark:bg-indigo-950/35 dark:text-indigo-50 ",
+  school_event:
+    "bg-slate-50 text-slate-950 dark:bg-slate-950/25 dark:text-slate-50 ",
+  ancillary_confirmed:
+    "bg-blue-50 text-blue-950 dark:bg-blue-950/25 dark:text-blue-50 ",
+  personal: "bg-gray-100 text-gray-950 dark:bg-gray-900/35 dark:text-gray-50 ",
+  ai_draft:
+    "bg-violet-50 text-violet-950 dark:bg-violet-950/30 dark:text-violet-50 rounded-br-2xl rounded-bl-2xl ",
+  conflict: "bg-rose-50 text-rose-950 dark:bg-rose-950/30 dark:text-rose-50 ",
 };
 
 const CALENDAR_LAYERS: {
@@ -1685,6 +1699,7 @@ export function AiTeacherPersonalScheduler({
                 )}
               >
                 <div className="px-3 py-2">
+                  {" "}
                   <p className="text-[14px] font-semibold tracking-wider text-black dark:text-zinc-400">
                     Багшийн хуваарь
                   </p>
@@ -1701,9 +1716,9 @@ export function AiTeacherPersonalScheduler({
                         onClick={() => toggleLayer(layer.id)}
                         className={cn(
                           "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                          on
-                            ? "bg-blue-50/80 text-zinc-900 dark:bg-blue-950/50 dark:text-zinc-100"
-                            : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/60",
+                          on ? LAYER_ROW_ON[layer.id] : undefined,
+                          !on &&
+                            "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/60",
                         )}
                       >
                         <span
@@ -1729,7 +1744,11 @@ export function AiTeacherPersonalScheduler({
                           />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[15px] font-normal">
+                          <span
+                            className={cn(
+                              "block truncate text-[13px] font-normal",
+                            )}
+                          >
                             {layer.label}
                           </span>
                         </span>
@@ -1959,14 +1978,14 @@ export function AiTeacherPersonalScheduler({
                         >
                           <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit]">
                             <div
-                              className="absolute inset-x-0 bg-zinc-400/11 dark:bg-zinc-500/20"
+                              className="absolute inset-x-0 bg-zinc-200/55 dark:bg-zinc-800/25"
                               style={{
                                 top: `${CALENDAR_BUFFER_BANDS.beforeTopPct}%`,
                                 height: `${CALENDAR_BUFFER_BANDS.beforeHeightPct}%`,
                               }}
                             />
                             <div
-                              className="absolute inset-x-0 bg-zinc-400/11 dark:bg-zinc-500/20"
+                              className="absolute inset-x-0 bg-zinc-200/55 dark:bg-zinc-800/25"
                               style={{
                                 top: `${CALENDAR_BUFFER_BANDS.afterTopPct}%`,
                                 height: `${CALENDAR_BUFFER_BANDS.afterHeightPct}%`,
@@ -1996,7 +2015,7 @@ export function AiTeacherPersonalScheduler({
                                 .map((seg) => (
                                   <div
                                     key={`school-bg-${seg.eventId}-${colIdx}-${seg.topPct}`}
-                                    className="pointer-events-none absolute left-0.5 right-0.5 z-1 select-none rounded-xl border border-amber-200/60 bg-amber-50/60 px-2 py-1.5 text-[10px] font-medium leading-tight text-amber-950/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25)] dark:border-amber-800/45 dark:bg-amber-950/35 dark:text-amber-50"
+                                    className="pointer-events-none absolute left-0.5 right-0.5 z-1 select-none rounded-xl border border-amber-200/80 bg-amber-50/85 px-2 py-1.5 text-[10px] font-medium leading-tight text-amber-950/95 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25)] dark:border-amber-800/60 dark:bg-amber-950/55 dark:text-amber-50"
                                     style={{
                                       top: `${seg.topPct}%`,
                                       height: `${seg.heightPct}%`,
@@ -2005,12 +2024,11 @@ export function AiTeacherPersonalScheduler({
                                     title="Сургуулийн нийтийн эвент (read-only) — зөөх боломжгүй"
                                     aria-readonly
                                   >
-                                    <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-900/85 dark:text-amber-200/90">
-                                      Сургууль
-                                    </span>
-                                    <span className="mt-0.5 block line-clamp-4 font-semibold">
-                                      {seg.title}
-                                    </span>
+                                    <div className="flex h-full w-full items-center justify-center text-center">
+                                      <span className="line-clamp-4 font-semibold">
+                                        {seg.title}
+                                      </span>
+                                    </div>
                                   </div>
                                 ))
                             : null}
@@ -2125,14 +2143,11 @@ export function AiTeacherPersonalScheduler({
 
                           {layerOn.personal && colIdx === 6 ? (
                             <div
-                              className="absolute left-1 right-1 top-[48%] z-1 rounded-xl border border-slate-300/80 bg-slate-100/95 px-2 py-1.5 text-[10px] text-slate-800 shadow-sm ring-1 ring-slate-300/50 dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-100 dark:ring-slate-600/60"
+                              className="absolute left-1 right-1 top-[48%] z-1 flex items-center justify-center rounded-xl border border-slate-300/90 bg-slate-100 px-2 py-1.5 text-center text-[10px] text-slate-800 shadow-sm ring-1 ring-slate-300/60 dark:border-slate-600/90 dark:bg-slate-800/95 dark:text-slate-100 dark:ring-slate-600/70"
                               style={{ minHeight: "44px" }}
-                              title="Юу гэдэг нь харагдахгүй — зөвхөн Завгүй"
+                              title="Гадуур ажил (Private)"
                             >
-                              <span className="font-medium">Хувийн</span>
-                              <span className="mt-0.5 block text-[9px] font-normal text-slate-500 dark:text-slate-400">
-                                Google Calendar
-                              </span>
+                              <span className="font-medium">Гадуур ажил</span>
                             </div>
                           ) : null}
 
@@ -2197,7 +2212,7 @@ export function AiTeacherPersonalScheduler({
                                     key={`confirmed-exam-${row.id}`}
                                     className={cn(
                                       "absolute left-1 right-1 rounded-xl border px-2 py-1.5 text-[10px] font-medium leading-tight shadow-sm",
-                                      "border-emerald-200 bg-emerald-50 text-emerald-950",
+                                      "border-indigo-200 bg-indigo-50 text-indigo-950 dark:border-indigo-700/60 dark:bg-indigo-950/35 dark:text-indigo-50",
                                     )}
                                     style={{
                                       top: `${blockTopPercent(row.startAt)}%`,
@@ -2211,7 +2226,7 @@ export function AiTeacherPersonalScheduler({
                                     }}
                                   >
                                     Баталгаажсан шалгалт
-                                    <span className="mt-0.5 block font-normal text-emerald-700">
+                                    <span className="mt-0.5 block font-normal text-indigo-700 dark:text-indigo-200">
                                       {formatBlockDuration(
                                         row.startAt.getHours(),
                                         row.startAt.getMinutes(),
@@ -2222,7 +2237,7 @@ export function AiTeacherPersonalScheduler({
                                         ? ` · Өрөө ${row.roomId}`
                                         : ""}
                                     </span>
-                                    <span className="mt-0.5 block text-[9px] font-normal text-emerald-600/90">
+                                    <span className="mt-0.5 block text-[9px] font-normal text-indigo-600/90 dark:text-indigo-200/70">
                                       {row.classId} · Баталгаажсан
                                     </span>
                                   </div>
@@ -2238,7 +2253,7 @@ export function AiTeacherPersonalScheduler({
                             <div
                               className={cn(
                                 "absolute left-1 right-1 z-1 rounded-xl border px-2 py-1.5 text-[10px] font-medium leading-tight shadow-sm",
-                                "border-indigo-300 bg-indigo-50 text-indigo-950",
+                                "border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-700/60 dark:bg-emerald-950/30 dark:text-emerald-50",
                               )}
                               style={{
                                 top: `${Math.min(top, 78)}%`,
@@ -2246,7 +2261,7 @@ export function AiTeacherPersonalScheduler({
                               }}
                             >
                               Баталгаажсан давтлага/удирдлага
-                              <span className="mt-0.5 block font-normal text-indigo-700">
+                              <span className="mt-0.5 block font-normal text-emerald-700 dark:text-emerald-200">
                                 {
                                   AI_DRAFT_INTENT_META[aiDraftIntent]
                                     .ancillarySubtypeLabel
@@ -2372,7 +2387,7 @@ export function AiTeacherPersonalScheduler({
                       <select
                         value={classId}
                         onChange={(e) => setClassId(e.target.value)}
-                        className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                        className="h-10 w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
                       >
                         {teacherClassOptions.length === 0 ? (
                           <option value="">Ангийн мэдээлэл олдсонгүй</option>

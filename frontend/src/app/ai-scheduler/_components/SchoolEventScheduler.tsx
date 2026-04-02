@@ -882,14 +882,14 @@ export function SchoolEventScheduler({
                       >
                         <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit]">
                           <div
-                            className="absolute inset-x-0 bg-zinc-400/11 dark:bg-zinc-500/20"
+                            className="absolute inset-x-0 bg-zinc-200/55 dark:bg-zinc-800/25"
                             style={{
                               top: `${CALENDAR_BUFFER_BANDS.beforeTopPct}%`,
                               height: `${CALENDAR_BUFFER_BANDS.beforeHeightPct}%`,
                             }}
                           />
                           <div
-                            className="absolute inset-x-0 bg-zinc-400/11 dark:bg-zinc-500/20"
+                            className="absolute inset-x-0 bg-zinc-200/55 dark:bg-zinc-800/25"
                             style={{
                               top: `${CALENDAR_BUFFER_BANDS.afterTopPct}%`,
                               height: `${CALENDAR_BUFFER_BANDS.afterHeightPct}%`,
