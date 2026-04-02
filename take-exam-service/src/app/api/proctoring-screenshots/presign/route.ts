@@ -1,5 +1,17 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import {
+  buildProctoringScreenshotKey,
+  type ProctoringPresignPlanResponse,
+} from "@/lib/proctoring-screenshots";
+import {
+  buildProctoringObjectUrl,
+  corsHeaders,
+  createInlineFallbackPlan,
+  getRequiredEnv,
+  getMissingStorageEnvKeys,
+  getProctoringStorageClient,
+} from "../shared";
 
 type PresignRequestBody = {
   attemptId?: string;
@@ -9,32 +21,6 @@ type PresignRequestBody = {
   mode?: string;
   studentName?: string;
   userId?: string;
-};
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-const sanitizeKeySegment = (value: string, fallback: string) => {
-  const sanitized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-_]+/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-|-$/g, "");
-
-  return sanitized || fallback;
-};
-
-const getRequiredEnv = (key: string) => {
-  const value = process.env[key]?.trim();
-  if (!value) {
-    throw new Error(`${key} environment variable is required.`);
-  }
-
-  return value;
 };
 
 export function OPTIONS() {
@@ -66,34 +52,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const bucketName = getRequiredEnv("R2_PROCTORING_BUCKET_NAME");
-    const contentType = body.contentType?.trim() || "image/jpeg";
-    const isoTimestamp = Number.isNaN(new Date(capturedAt).getTime())
-      ? new Date().toISOString()
-      : new Date(capturedAt).toISOString();
-    const safeDate = isoTimestamp.replace(/[:.]/g, "-");
-    const safeAttemptId = sanitizeKeySegment(attemptId, "attempt");
-    const safeStudentSegment = sanitizeKeySegment(studentName || userId, "user");
-    const safeEventCode = sanitizeKeySegment(eventCode, "event");
-    const safeMode = sanitizeKeySegment(body.mode ?? "limited-monitoring", "mode");
-    const key = [
-      "proctoring",
-      safeAttemptId,
-      safeStudentSegment,
-      `${safeDate}-${safeEventCode}-${safeMode}.jpg`,
-    ].join("/");
+    const missingEnvKeys = getMissingStorageEnvKeys();
+    if (missingEnvKeys.length > 0) {
+      return Response.json(createInlineFallbackPlan(missingEnvKeys), {
+        headers: corsHeaders,
+      });
+    }
 
-    const client = new S3Client({
-      region: "auto",
-      endpoint: getRequiredEnv("R2_S3_API"),
-      credentials: {
-        accessKeyId: getRequiredEnv("R2_ACCESS_KEY_ID"),
-        secretAccessKey: getRequiredEnv("R2_SECRET_ACCESS_KEY"),
-      },
+    const contentType = body.contentType?.trim() || "image/jpeg";
+    const key = buildProctoringScreenshotKey({
+      attemptId,
+      capturedAt,
+      eventCode,
+      mode: body.mode,
+      studentName,
+      userId,
     });
+    const client = getProctoringStorageClient();
 
     const command = new PutObjectCommand({
-      Bucket: bucketName,
+      Bucket: getRequiredEnv("R2_PROCTORING_BUCKET_NAME"),
       Key: key,
       ContentType: contentType,
       CacheControl: "private, max-age=31536000, immutable",
@@ -105,12 +83,11 @@ export async function POST(request: Request) {
 
     return Response.json(
       {
+        strategy: "direct-upload",
         key,
-        publicUrl: `${requestUrl.origin}/api/proctoring-screenshots/object?key=${encodeURIComponent(
-          key,
-        )}`,
+        publicUrl: buildProctoringObjectUrl(requestUrl, key),
         uploadUrl,
-      },
+      } satisfies ProctoringPresignPlanResponse,
       {
         headers: corsHeaders,
       },

@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fetchTakeExamDashboard } from "@/lib/take-exam-dashboard-api";
 import { TestShell } from "../_components/test-shell";
+import type { BreadcrumbItem } from "../_components/test-header-bar";
 import { ExamProgressMonitoring } from "./_components/exam-progress-monitoring-mock";
 import { ExamProgressOverview, type ExamProgressExamMeta } from "./_components/exam-progress-overview";
 import {
@@ -124,6 +125,16 @@ export default function ExamProgressPage() {
     () => exams.find((exam) => exam.id === selectedExamId) ?? null,
     [exams, selectedExamId],
   );
+  const breadcrumbItems: BreadcrumbItem[] = selectedExam
+    ? [
+        { href: "/test/live-dashboard", label: "Нүүр" },
+        { href: "/test/exam-progress", label: "Шалгалтын явц" },
+        { active: true, label: selectedExam.title },
+      ]
+    : [
+        { href: "/test/live-dashboard", label: "Нүүр" },
+        { active: true, label: "Шалгалтын явц" },
+      ];
   const shouldPoll = useMemo(() => {
     if (selectedExam) {
       return selectedExam.liveStudentCount > 0;
@@ -253,6 +264,7 @@ export default function ExamProgressPage() {
   if (selectedExam && selectedExamData?.exam) {
     return (
       <TestShell
+        breadcrumbItems={breadcrumbItems}
         actions={
           <Button
             variant="outline"
@@ -266,7 +278,6 @@ export default function ExamProgressPage() {
         }
         compactSidebar
         contentClassName="pb-8"
-        description={`${selectedExam.subject} • ${selectedExam.topic} • ${selectedExam.class}`}
         isTeacherRefreshing={isRefreshing}
         meta={
           <>
@@ -305,6 +316,7 @@ export default function ExamProgressPage() {
 
   return (
     <TestShell
+      breadcrumbItems={breadcrumbItems}
       title="Шалгалтын явц"
       isTeacherRefreshing={isRefreshing}
       onTeacherRefresh={() => void loadDashboard({ force: true })}

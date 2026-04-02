@@ -2,7 +2,15 @@
 
 import { useApolloClient, useMutation, useQuery } from "@apollo/client/react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
 import {
   BookOpen,
   ChevronDown,
@@ -105,7 +113,7 @@ export type PreviewQuestion = {
 const initialPreviewQuestions: PreviewQuestion[] = [];
 const mathAssistFieldClassName =
   "rounded-[20px]! border-[#dbe4f3]! bg-[#F1F4FA]! px-3! py-2.5! hover:border-[#c7d5ea]! focus-visible:border-[#b8c8e0]! focus-visible:ring-[#b8c8e0]/20";
-const answerMathAssistFieldClassName = `${mathAssistFieldClassName} h-11! min-h-11!`;
+const answerMathAssistFieldClassName = `${mathAssistFieldClassName} h-11! min-h-11! bg-white!`;
 const mathAssistFieldContentClassName =
   "pl-3 font-sans text-[14px] leading-[1.6] font-normal tracking-normal text-slate-800 [&_.katex]:text-inherit";
 
@@ -201,16 +209,14 @@ function mapLibraryExamToPreviewQuestions(
 function WorkspaceTabs({
   source,
   onSourceChange,
-  counts,
 }: {
   source: MaterialSourceId;
   onSourceChange: (source: MaterialSourceId) => void;
-  counts: Record<WorkspaceSourceId, number>;
 }) {
   const activeSource = source === "textbook" ? "question-bank" : source;
 
   return (
-    <div className="grid grid-cols-3 gap-2 rounded-[18px] border border-[#D5D7DB] bg-white p-2">
+    <div className="mx-auto max-w-[148px] space-y-1.5 rounded-[17px] border border-[#d9e2ed] bg-white p-1.5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       {workspaceSourceOptions.map((option) => {
         const Icon = option.icon;
         const active = option.id === activeSource;
@@ -221,23 +227,18 @@ function WorkspaceTabs({
             type="button"
             onClick={() => onSourceChange(option.id)}
             className={cn(
-              "relative flex h-[72px] cursor-pointer flex-col items-center justify-center gap-2 rounded-[14px] border text-[13px] font-medium transition-all",
+              "flex w-full cursor-pointer items-center gap-2 rounded-[12px] px-2.5 py-2 text-left text-[12.5px] font-medium transition-all",
               active
-                ? "border-[#01478D] bg-[#00478D] text-white shadow-[0_10px_24px_rgba(0,71,141,0.22)] hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(0,71,141,0.26)]"
-                : "border-transparent bg-white text-slate-800 hover:-translate-y-0.5 hover:bg-[#f8fbff] hover:text-slate-900 hover:shadow-[0_8px_18px_rgba(15,23,42,0.08)]",
+                ? "bg-[#0b5cab] text-white shadow-[0_10px_22px_rgba(11,92,171,0.2)]"
+                : "bg-white text-slate-900 hover:bg-[#f8fbff]",
             )}
           >
-            <Icon className="h-4 w-4" />
-            <span>
+            <Icon className="h-[15px] w-[15px] shrink-0" />
+            <span className="whitespace-nowrap">
               {option.label === "Нэгдсэн сангаас ашиглах"
                 ? "Сан"
                 : option.label}
             </span>
-            {counts[option.id] > 0 ? (
-              <span className="absolute right-2 top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1 text-[11px] font-semibold text-white">
-                {counts[option.id]}
-              </span>
-            ) : null}
           </button>
         );
       })}
@@ -248,8 +249,8 @@ function WorkspaceTabs({
 function FilePanel() {
   return (
     <div className="min-w-0 space-y-4 overflow-x-hidden">
-      <div className="rounded-[20px] bg-white p-4">
-        <div className="relative rounded-[20px] border border-dashed border-[#cfd8e3] bg-white px-6 py-8 text-center">
+      <div className="rounded-[20px] p-4">
+        <div className="relative rounded-[20px] border border-dashed border-[#cfd8e3] bg-transparent px-6 py-8 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#eef2f7] text-slate-600">
             <Upload className="h-4 w-4" />
           </div>
@@ -261,16 +262,16 @@ function FilePanel() {
           </p>
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          <button className="flex h-[44px] cursor-pointer items-center justify-center gap-2 rounded-[14px] border border-[#d9e3f0] bg-[#f4f7fb] text-[14px] font-medium text-slate-700 transition hover:bg-[#eef3f9]">
-            <FileText className="h-4 w-4 text-emerald-600" />
+        <div className="mt-4 grid grid-cols-[minmax(0,1.15fr)_minmax(0,0.82fr)_minmax(0,1fr)] gap-2">
+          <button className="flex min-w-0 h-[44px] cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[14px] border border-[#d9e3f0] bg-[#f4f7fb] px-2 text-[12px] font-medium leading-none text-slate-700 transition hover:bg-[#eef3f9] sm:text-[13px]">
+            <BookOpen className="h-4 w-4 shrink-0 text-emerald-700" />
             Сурах бичиг
           </button>
-          <button className="flex h-[44px] cursor-pointer items-center justify-center gap-2 rounded-[14px] border border-[#d9e3f0] bg-[#f4f7fb] text-[14px] font-medium text-slate-700 transition hover:bg-[#eef3f9]">
+          <button className="flex min-w-0 h-[44px] cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[14px] border border-[#d9e3f0] bg-[#f4f7fb] px-2 text-[12px] font-medium leading-none text-slate-700 transition hover:bg-[#eef3f9] sm:text-[13px]">
             <FileText className="h-4 w-4 text-rose-500" />
             PDF
           </button>
-          <button className="flex h-[44px] cursor-pointer items-center justify-center gap-2 rounded-[14px] border border-[#d9e3f0] bg-[#f4f7fb] text-[14px] font-medium text-slate-700 transition hover:bg-[#eef3f9]">
+          <button className="flex min-w-0 h-[44px] cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[14px] border border-[#d9e3f0] bg-[#f4f7fb] px-2 text-[12px] font-medium leading-none text-slate-700 transition hover:bg-[#eef3f9] sm:text-[13px]">
             <FileText className="h-4 w-4 text-blue-500" />
             DOC/DOCX
           </button>
@@ -280,11 +281,22 @@ function FilePanel() {
   );
 }
 
-function QuestionBankPanel({
-  onAppendQuestion,
-}: {
-  onAppendQuestion: (question: Omit<PreviewQuestion, "id" | "index">) => void;
-}) {
+type QuestionBankPanelHandle = {
+  fillAiDemo: () => void;
+  fillDemo: () => void;
+  reset: () => void;
+};
+
+const QuestionBankPanel = forwardRef<
+  QuestionBankPanelHandle,
+  {
+    onAppendQuestion: (question: Omit<PreviewQuestion, "id" | "index">) => void;
+    onQuestionAdded?: () => void;
+  }
+>(function QuestionBankPanel(
+  { onAppendQuestion, onQuestionAdded },
+  ref,
+) {
   const lastDemoIndexRef = useRef<number | null>(null);
   const [generateAnswer, { loading: generating }] = useMutation(
     GenerateQuestionAnswerDocument,
@@ -301,9 +313,9 @@ function QuestionBankPanel({
   const [showAnswerCountError, setShowAnswerCountError] = useState(false);
   const [showCorrectAnswerError, setShowCorrectAnswerError] = useState(false);
   const [generatedExplanation, setGeneratedExplanation] = useState("");
-  const [scoreValue, setScoreValue] = useState("1");
-  const [questionTypeValue, setQuestionTypeValue] = useState("single-choice");
-  const [difficultyValue, setDifficultyValue] = useState("medium");
+  const [scoreValue, setScoreValue] = useState("");
+  const [questionTypeValue, setQuestionTypeValue] = useState("");
+  const [difficultyValue, setDifficultyValue] = useState("");
   const isAiWorking = generating || regenerating;
   const isWrittenQuestion = questionTypeValue === "written";
   const minimumRequiredAnswers = questionTypeValue === "written" ? 1 : 2;
@@ -573,9 +585,10 @@ function QuestionBankPanel({
     setSelectedAnswerIndex(null);
     setShowCorrectAnswerError(false);
     setGeneratedExplanation("");
-    setScoreValue("1");
-    setQuestionTypeValue("single-choice");
-    setDifficultyValue("medium");
+    setScoreValue("");
+    setQuestionTypeValue("");
+    setDifficultyValue("");
+    onQuestionAdded?.();
   }
 
   function handleFillDemo() {
@@ -642,50 +655,30 @@ function QuestionBankPanel({
     setAnswers(["", "", "", ""]);
     setSelectedAnswerIndex(null);
     setGeneratedExplanation("");
-    setScoreValue("1");
-    setQuestionTypeValue("single-choice");
-    setDifficultyValue("medium");
+    setScoreValue("");
+    setQuestionTypeValue("");
+    setDifficultyValue("");
     setShowQuestionError(false);
     setShowAnswerCountError(false);
     setShowCorrectAnswerError(false);
   }
 
+  useImperativeHandle(ref, () => ({
+    fillAiDemo: handleFillAiDemo,
+    fillDemo: handleFillDemo,
+    reset: handleResetForm,
+  }));
+
   return (
     <div className="space-y-4">
-      <div>
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <label className="block text-[14px] font-medium text-slate-800">
+      <div className="space-y-3 rounded-[16px] border border-[#dbe4f3] bg-[#f4f7fb] p-4">
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <label className="block text-[14px] font-semibold text-slate-800">
             Асуулт
           </label>
-          <div className="flex items-center gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleFillDemo}
-              className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-40 shadow-none hover:border-transparent hover:bg-slate-50 hover:text-slate-500 hover:opacity-65"
-            >
-              Demo
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleFillAiDemo}
-              className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-40 shadow-none hover:border-transparent hover:bg-slate-50 hover:text-slate-500 hover:opacity-65"
-            >
-              Demo-AI
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleResetForm}
-              className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-40 shadow-none hover:border-transparent hover:bg-slate-50 hover:text-slate-500 hover:opacity-65"
-            >
-              Reset
-            </Button>
-          </div>
         </div>
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-          <div className="w-full lg:w-[50px] lg:shrink-0">
+          <div className="w-full lg:w-[82px] lg:shrink-0">
             <Select value={scoreValue} onValueChange={setScoreValue}>
               <SelectTrigger
                 title="Оноо"
@@ -711,7 +704,7 @@ function QuestionBankPanel({
                 title="Асуултын төрөл"
                 className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
               >
-                <SelectValue placeholder="Асуултын төрөл" />
+                <SelectValue placeholder="Төрөл" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="single-choice">Нэг сонголттой</SelectItem>
@@ -720,13 +713,13 @@ function QuestionBankPanel({
             </Select>
           </div>
 
-          <div className="w-full lg:w-[90px] lg:shrink-0">
+          <div className="w-full lg:w-[192px] lg:shrink-0">
             <Select value={difficultyValue} onValueChange={setDifficultyValue}>
               <SelectTrigger
                 title="Асуултын хүндрэлийн түвшин"
                 className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
               >
-                <SelectValue placeholder="Асуултын хүндрэлийн түвшин" />
+                <SelectValue placeholder="Хүндрэлийн түвшин" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="easy">Энгийн</SelectItem>
@@ -736,9 +729,6 @@ function QuestionBankPanel({
             </Select>
           </div>
         </div>
-      </div>
-
-      <div>
         <MathAssistField
           className={mathAssistFieldClassName}
           contentClassName={mathAssistFieldContentClassName}
@@ -756,6 +746,7 @@ function QuestionBankPanel({
           <p className="text-[12px] text-red-500">Асуултаа оруулна уу</p>
         ) : null}
       </div>
+
       <Button
         type="button"
         variant="outline"
@@ -771,7 +762,7 @@ function QuestionBankPanel({
         {generating ? "Үүсгэж байна..." : "Хариулт үүсгэх"}
       </Button>
 
-      <div className="space-y-3 rounded-[16px] border border-[#e2e8f0] bg-white p-4">
+      <div className="space-y-3 rounded-[16px] border border-[#dbe4f3] bg-[#f4f7fb] p-4">
         {isWrittenQuestion ? (
           <>
             <div className="space-y-1">
@@ -919,7 +910,7 @@ function QuestionBankPanel({
       </div>
     </div>
   );
-}
+});
 
 function TextbookPanel() {
   return (
@@ -1029,17 +1020,23 @@ function TextbookPanel() {
 }
 
 function SharedLibraryPanel({
+  dialogOpen,
   generalInfo,
+  hideLauncher = false,
+  onDialogOpenChange,
   onAppendExamQuestions,
   selectedSharedMaterialId,
   onSelectMaterialId,
 }: {
+  dialogOpen: boolean;
   generalInfo: {
     durationMinutes: string;
     examType: string;
     grade: string;
     subject: string;
   };
+  hideLauncher?: boolean;
+  onDialogOpenChange: (open: boolean) => void;
   onAppendExamQuestions: (questions: PreviewQuestion[]) => void;
   selectedSharedMaterialId: string;
   onSelectMaterialId: (id: string) => void;
@@ -1054,7 +1051,6 @@ function SharedLibraryPanel({
   const [questionCountFilter, setQuestionCountFilter] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [listOffset] = useState(0);
-  const [libraryDialogOpen, setLibraryDialogOpen] = useState(true);
   const [libraryExamDetailLoading, setLibraryExamDetailLoading] =
     useState(false);
   const [previewExamId, setPreviewExamId] = useState<string | null>(null);
@@ -1078,10 +1074,6 @@ function SharedLibraryPanel({
       window.clearTimeout(timeoutId);
     };
   }, [searchValue]);
-
-  useEffect(() => {
-    setLibraryDialogOpen(true);
-  }, []);
 
   const { data, loading } = useQuery(ListNewMathExamsDocument, {
     variables: {
@@ -1113,7 +1105,7 @@ function SharedLibraryPanel({
   );
 
   useEffect(() => {
-    if (!libraryDialogOpen || libraryExamSummaries.length === 0) {
+    if (!dialogOpen || libraryExamSummaries.length === 0) {
       return;
     }
 
@@ -1156,7 +1148,7 @@ function SharedLibraryPanel({
     return () => {
       cancelled = true;
     };
-  }, [client, examDetailCache, libraryDialogOpen, libraryExamSummaries]);
+  }, [client, dialogOpen, examDetailCache, libraryExamSummaries]);
 
   const teacherOptions = useMemo(() => {
     const values = Array.from(
@@ -1287,7 +1279,7 @@ function SharedLibraryPanel({
     setEditingExamQuestionId(null);
     setEditingExam(null);
     setSelectedQuestionIds([]);
-    setLibraryDialogOpen(false);
+    onDialogOpenChange(false);
     toast.success(`${selectedQuestions.length} асуулт нэмэгдлээ.`);
   }
 
@@ -1338,7 +1330,8 @@ function SharedLibraryPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-[18px] border border-[#dbe4f3] bg-white p-4">
+      {hideLauncher ? null : (
+      <div className="rounded-[18px] border border-[#dbe4f3] bg-transparent p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[15px] font-semibold text-slate-900">
@@ -1347,7 +1340,7 @@ function SharedLibraryPanel({
           </div>
           <Button
             type="button"
-            onClick={() => setLibraryDialogOpen(true)}
+            onClick={() => onDialogOpenChange(true)}
             className="cursor-pointer rounded-[12px] bg-[#0b5cab] px-4 text-white hover:bg-[#0a4f96]"
           >
             <Database className="h-4 w-4" />
@@ -1360,8 +1353,9 @@ function SharedLibraryPanel({
             : "Сонгосон анги, хичээл, шалгалтын төрөлд таарах сангийн материалууд dialog дотор харагдана."}
         </div>
       </div>
+      )}
 
-      <Dialog open={libraryDialogOpen} onOpenChange={setLibraryDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
         <DialogContent className="flex h-[min(92vh,56rem)] w-[min(100vw-1.5rem,82rem)]! max-w-none! flex-col gap-0 overflow-hidden rounded-[24px] border border-[#dfe7f3] bg-white p-0">
           <DialogHeader className="border-b border-[#e6edf7] px-5 py-4">
             <DialogTitle className="text-[18px] font-semibold text-slate-900">
@@ -2077,6 +2071,10 @@ export function MaterialBuilderWorkspaceSection({
   const [draggedQuestionId, setDraggedQuestionId] = useState<string | null>(
     null,
   );
+  const [fileDialogOpen, setFileDialogOpen] = useState(false);
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
+  const [sharedLibraryDialogOpen, setSharedLibraryDialogOpen] = useState(false);
+  const manualQuestionPanelRef = useRef<QuestionBankPanelHandle | null>(null);
   const [dragTargetQuestionId, setDragTargetQuestionId] = useState<
     string | null
   >(null);
@@ -2097,6 +2095,24 @@ export function MaterialBuilderWorkspaceSection({
     }),
     [previewQuestions],
   );
+
+  function handleSourceSelect(nextSource: MaterialSourceId) {
+    onSourceChange(nextSource);
+
+    if (nextSource === "question-bank") {
+      setManualDialogOpen(true);
+      return;
+    }
+
+    if (nextSource === "import") {
+      setFileDialogOpen(true);
+      return;
+    }
+
+    if (nextSource === "shared-library") {
+      setSharedLibraryDialogOpen(true);
+    }
+  }
 
   function handleAppendQuestion(
     question: Omit<PreviewQuestion, "id" | "index">,
@@ -2197,46 +2213,32 @@ export function MaterialBuilderWorkspaceSection({
     setDragTargetQuestionId(null);
   }
 
+  function handleAppendSharedLibraryQuestions(questions: PreviewQuestion[]) {
+    onPreviewQuestionsChange(
+      reindexQuestions([
+        ...questions.map((question, index) => ({
+          ...question,
+          id: `shared-${Date.now()}-${index + 1}`,
+        })),
+        ...previewQuestions,
+      ]),
+    );
+  }
+
   return (
     <section className="mt-5 rounded-[22px] border border-[#D5D7DB] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] sm:p-6">
-      <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
-        <div className="rounded-[20px] bg-[#F4F7FA] p-4 sm:p-5">
-          <div className="mb-4 pb-4">
-            <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">
+      <div className="grid gap-5 xl:grid-cols-[206px_minmax(0,1fr)]">
+        <div className="w-full rounded-[20px] bg-[#f4f7fb] p-3 xl:max-w-[196px]">
+          <div className="mb-3.5">
+            <h2 className="text-[15px] font-bold tracking-tight text-slate-900">
               Асуулт нэмэх
             </h2>
           </div>
 
           <WorkspaceTabs
             source={activeSource}
-            onSourceChange={onSourceChange}
-            counts={sourceCounts}
+            onSourceChange={handleSourceSelect}
           />
-
-          <div className="mt-5 rounded-[20px] border border-[#e1e8f2] bg-[#f8fbff] p-4">
-            {activeSource === "question-bank" ? (
-              <QuestionBankPanel onAppendQuestion={handleAppendQuestion} />
-            ) : null}
-            {activeSource === "import" ? <FilePanel /> : null}
-            {activeSource === "shared-library" ? (
-              <SharedLibraryPanel
-                generalInfo={generalInfo}
-                onAppendExamQuestions={(questions) => {
-                  onPreviewQuestionsChange(
-                    reindexQuestions([
-                      ...questions.map((question, index) => ({
-                        ...question,
-                        id: `shared-${Date.now()}-${index + 1}`,
-                      })),
-                      ...previewQuestions,
-                    ]),
-                  );
-                }}
-                selectedSharedMaterialId={selectedSharedMaterialId}
-                onSelectMaterialId={onSelectMaterialId}
-              />
-            ) : null}
-          </div>
         </div>
 
         <div
@@ -2246,7 +2248,7 @@ export function MaterialBuilderWorkspaceSection({
               "flex max-h-[calc(100vh-10rem)] flex-col",
           )}
         >
-          <div className="mb-4 flex items-start justify-between gap-4 pb-4">
+          <div className="flex items-start justify-between gap-4 pb-4">
             <div>
               <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">
                 Шалгалтын асуултууд
@@ -2336,6 +2338,74 @@ export function MaterialBuilderWorkspaceSection({
           </div>
         </div>
       </div>
+
+      <Dialog open={manualDialogOpen} onOpenChange={setManualDialogOpen}>
+        <DialogContent className="flex h-[min(92vh,54rem)] w-[min(100vw-1.5rem,64rem)]! max-w-none! flex-col gap-0 overflow-hidden rounded-[28px] border border-[#dfe7f3] bg-white p-0 shadow-[0_30px_80px_-28px_rgba(15,23,42,0.28)]">
+          <DialogHeader className="border-b border-[#e6edf7] px-6 py-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <DialogTitle className="text-[20px] font-semibold text-slate-900">
+                Гараар асуулт үүсгэх
+              </DialogTitle>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => manualQuestionPanelRef.current?.fillDemo()}
+                  className="h-8 cursor-pointer rounded-[10px] border-[#dbe4f3] bg-white px-2.5 text-[11px] font-medium text-slate-500 shadow-none hover:bg-slate-50 hover:text-slate-700"
+                >
+                  Demo
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => manualQuestionPanelRef.current?.fillAiDemo()}
+                  className="h-8 cursor-pointer rounded-[10px] border-[#dbe4f3] bg-white px-2.5 text-[11px] font-medium text-slate-500 shadow-none hover:bg-slate-50 hover:text-slate-700"
+                >
+                  Demo-AI
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => manualQuestionPanelRef.current?.reset()}
+                  className="h-8 cursor-pointer rounded-[10px] border-[#dbe4f3] bg-white px-2.5 text-[11px] font-medium text-slate-500 shadow-none hover:bg-slate-50 hover:text-slate-700"
+                >
+                  Reset
+                </Button>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white px-6 py-6">
+            <QuestionBankPanel
+              ref={manualQuestionPanelRef}
+              onAppendQuestion={handleAppendQuestion}
+              onQuestionAdded={() => setManualDialogOpen(false)}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={fileDialogOpen} onOpenChange={setFileDialogOpen}>
+        <DialogContent className="flex h-[min(92vh,42rem)] w-[min(100vw-1.5rem,56rem)]! max-w-none! flex-col gap-0 overflow-hidden rounded-[28px] border border-[#dfe7f3] bg-white p-0 shadow-[0_30px_80px_-28px_rgba(15,23,42,0.28)]">
+          <DialogHeader className="border-b border-[#e6edf7] px-6 py-5">
+            <DialogTitle className="text-[20px] font-semibold text-slate-900">
+              Файлаас асуулт оруулах
+            </DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white px-6 py-6">
+            <FilePanel />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <SharedLibraryPanel
+        dialogOpen={sharedLibraryDialogOpen}
+        generalInfo={generalInfo}
+        hideLauncher
+        onDialogOpenChange={setSharedLibraryDialogOpen}
+        onAppendExamQuestions={handleAppendSharedLibraryQuestions}
+        selectedSharedMaterialId={selectedSharedMaterialId}
+        onSelectMaterialId={onSelectMaterialId}
+      />
     </section>
   );
 }

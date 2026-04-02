@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Select,
   SelectContent,
@@ -9,7 +15,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { fetchRuntimeJson } from "@/lib/runtime-api";
 import { TestShell } from "../_components/test-shell";
 import {
   buildExamList,
@@ -26,12 +31,15 @@ import { fetchTakeExamDashboard } from "@/lib/take-exam-dashboard-api";
 import {
   formatGroupLabel,
   getMongolianLetterOrder,
+  normalizeGroupValue,
   parseClassName,
 } from "./lib/report-format";
 
 const POLL_INTERVAL_MS = 30_000;
 const ALL_GRADES_VALUE = "all";
 const ALL_GROUPS_VALUE = "all";
+const ALL_TYPES_VALUE = "all";
+const UNKNOWN_CLASS_VALUE = "__unknown_class__";
 type ReportDataSource = "mock" | "real";
 const TAKE_EXAM_GRAPHQL_URL =
   "https://take-exam-service.tsetsegulziiocherdene.workers.dev/api/graphql";
@@ -40,6 +48,7 @@ export default function ExamReportPage() {
   const [dataSource, setDataSource] = useState<ReportDataSource>("real");
   const [selectedGrade, setSelectedGrade] = useState<string>(ALL_GRADES_VALUE);
   const [selectedGroup, setSelectedGroup] = useState<string>(ALL_GROUPS_VALUE);
+  const [selectedType, setSelectedType] = useState<string>(ALL_TYPES_VALUE);
   const [payload, setPayload] = useState<DashboardApiPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -126,14 +135,13 @@ export default function ExamReportPage() {
   }, [classMeta]);
 
   const groupOptions = useMemo(() => {
-    if (selectedGrade === ALL_GRADES_VALUE) {
-      return [];
-    }
-
     const groups = new Set<string>();
     for (const item of classMeta) {
-      if (item.grade === selectedGrade && item.group) {
-        groups.add(item.group);
+      if (
+        item.group &&
+        (selectedGrade === ALL_GRADES_VALUE || item.grade === selectedGrade)
+      ) {
+        groups.add(normalizeGroupValue(item.group));
       }
     }
 
@@ -152,13 +160,6 @@ export default function ExamReportPage() {
   }, [gradeOptions, selectedGrade]);
 
   useEffect(() => {
-    if (selectedGrade === ALL_GRADES_VALUE) {
-      if (selectedGroup !== ALL_GROUPS_VALUE) {
-        setSelectedGroup(ALL_GROUPS_VALUE);
-      }
-      return;
-    }
-
     if (
       selectedGroup !== ALL_GROUPS_VALUE &&
       !groupOptions.includes(selectedGroup)
@@ -172,19 +173,31 @@ export default function ExamReportPage() {
       return [];
     }
 
-    if (selectedGrade === ALL_GRADES_VALUE) {
-      return pickLatestExamIdsByClass(reportExams);
-    }
+    const gradeScopedExams =
+      selectedGrade === ALL_GRADES_VALUE
+        ? reportExams
+        : reportExams.filter((exam) => {
+            return parseClassName(exam.class).grade === selectedGrade;
+          });
 
     if (selectedGroup === ALL_GROUPS_VALUE) {
-      const gradeExams = reportExams.filter((exam) => {
-        return parseClassName(exam.class).grade === selectedGrade;
+      return pickLatestExamIdsByClass(gradeScopedExams);
+    }
+
+    if (selectedGrade === ALL_GRADES_VALUE) {
+      const groupExams = reportExams.filter((exam) => {
+        return (
+          normalizeGroupValue(parseClassName(exam.class).group) ===
+          selectedGroup
+        );
       });
-      return pickLatestExamIdsByClass(gradeExams);
+      return pickLatestExamIdsByClass(groupExams);
     }
 
     const selectedClassName = classMeta.find(
-      (item) => item.grade === selectedGrade && item.group === selectedGroup,
+      (item) =>
+        item.grade === selectedGrade &&
+        normalizeGroupValue(item.group) === selectedGroup,
     )?.className;
     if (!selectedClassName) {
       return [];
@@ -204,16 +217,29 @@ export default function ExamReportPage() {
 
     return (
       classMeta.find(
-        (item) => item.grade === selectedGrade && item.group === selectedGroup,
+        (item) =>
+          item.grade === selectedGrade &&
+          normalizeGroupValue(item.group) === selectedGroup,
       )?.className ?? null
     );
   }, [classMeta, selectedGrade, selectedGroup]);
 
   const aggregateClassLabelForChart = useMemo(() => {
     if (
-      selectedGrade === ALL_GRADES_VALUE ||
+      selectedGrade === ALL_GRADES_VALUE &&
+      selectedGroup === ALL_GROUPS_VALUE
+    ) {
+      return null;
+    }
+
+    if (
+      selectedGrade === ALL_GRADES_VALUE &&
       selectedGroup !== ALL_GROUPS_VALUE
     ) {
+      return `${formatGroupLabel(selectedGroup)} бүлэг`;
+    }
+
+    if (selectedGroup !== ALL_GROUPS_VALUE) {
       return null;
     }
 
@@ -243,8 +269,21 @@ export default function ExamReportPage() {
       return null;
     }
 
-    if (selectedGrade === ALL_GRADES_VALUE) {
+    if (
+      selectedGrade === ALL_GRADES_VALUE &&
+      selectedGroup === ALL_GROUPS_VALUE
+    ) {
       return combineExamReports(reports, "Бүгд");
+    }
+
+    if (
+      selectedGrade === ALL_GRADES_VALUE &&
+      selectedGroup !== ALL_GROUPS_VALUE
+    ) {
+      return combineExamReports(
+        reports,
+        `${formatGroupLabel(selectedGroup)} бүлэг`,
+      );
     }
 
     if (selectedGroup === ALL_GROUPS_VALUE) {
@@ -255,99 +294,121 @@ export default function ExamReportPage() {
   }, [dataSource, payload, selectedExamIds, selectedGrade, selectedGroup]);
 
   const headerTitle = "Шалгалтын тайлан";
-  const headerActions = (
-    <div className="flex flex-wrap items-center justify-end gap-3">
-      <Select
-        value={selectedGrade}
-        onValueChange={setSelectedGrade}
-        disabled={reportExams.length === 0}
-      >
-        <SelectTrigger
-          aria-label="Анги сонгох"
-          className="h-11 min-w-[140px] rounded-xl border-0 bg-[#dfeaf8] px-5 text-sm font-semibold text-[#0b5cad] shadow-none focus-visible:border-[#bfdbfe] focus-visible:ring-[#bfdbfe]/60"
+  const headerBreadcrumb = <HeaderTitle title={headerTitle} />;
+  const filterBar = (
+    <div className="mb-6 flex min-h-[76px] w-full items-center rounded-[20px] border-0 bg-transparent px-5 py-4 sm:px-6">
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+        <ToggleGroup
+          aria-label="Өгөгдлийн төрөл"
+          type="single"
+          value={dataSource}
+          onValueChange={(value) => {
+            if (value === "real" || value === "mock") {
+              setDataSource(value);
+            }
+          }}
+          className="rounded-[14px] border border-[#dbe3ee] bg-white p-1 shadow-none"
         >
-          <SelectValue placeholder="Анги" />
-        </SelectTrigger>
-        <SelectContent
-          position="popper"
-          align="start"
-          className="min-w-[140px] max-w-[180px]"
-        >
-          <SelectItem value={ALL_GRADES_VALUE}>Анги</SelectItem>
-          {gradeOptions.map((grade) => (
-            <SelectItem key={grade} value={grade}>
-              {grade}-р анги
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          <ToggleGroupItem
+            value="real"
+            className="rounded-[10px] border-0 px-3 py-2 text-sm font-semibold text-slate-500 aria-pressed:bg-transparent data-[state=on]:bg-[#edf5ff] data-[state=on]:text-[#0b5cab] data-[state=on]:shadow-none"
+          >
+            Бодит дата
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="mock"
+            className="rounded-[10px] border-0 px-3 py-2 text-sm font-semibold text-slate-500 aria-pressed:bg-transparent data-[state=on]:bg-[#edf5ff] data-[state=on]:text-[#0b5cab] data-[state=on]:shadow-none"
+          >
+            Жишиг дата
+          </ToggleGroupItem>
+        </ToggleGroup>
 
-      <Select
-        value={selectedGroup}
-        onValueChange={setSelectedGroup}
-        disabled={
-          reportExams.length === 0 || selectedGrade === ALL_GRADES_VALUE
-        }
-      >
-        <SelectTrigger
-          aria-label="Бүлэг сонгох"
-          className="relative h-11 min-w-[140px] rounded-xl border-0 bg-[#eef4fb] px-5 text-sm font-semibold text-[#0b5cad] shadow-none focus-visible:border-[#bfdbfe] focus-visible:ring-[#bfdbfe]/60 [&_[data-slot=select-value]]:hidden"
+        <Select
+          value={selectedGrade}
+          onValueChange={setSelectedGrade}
+          disabled={reportExams.length === 0}
         >
-          <SelectValue />
-          <span className="truncate">
-            {selectedGroup === ALL_GROUPS_VALUE
-              ? "Бүлэг"
-              : formatGroupLabel(selectedGroup)}
-          </span>
-        </SelectTrigger>
-        <SelectContent
-          position="popper"
-          align="start"
-          className="min-w-[140px] max-w-[180px]"
-        >
-          <SelectItem value={ALL_GROUPS_VALUE}>Бүгд</SelectItem>
-          {groupOptions.map((group) => (
-            <SelectItem key={group} value={group}>
-              {formatGroupLabel(group)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          <SelectTrigger
+            aria-label="Анги сонгох"
+            className={FILTER_TRIGGER_CLASSNAME}
+          >
+            <SelectValue placeholder="Анги" />
+          </SelectTrigger>
+          <SelectContent
+            position="popper"
+            align="end"
+            className="min-w-[110px] max-w-[180px]"
+          >
+            <SelectItem value={ALL_GRADES_VALUE}>Анги</SelectItem>
+            {gradeOptions.map((grade) => (
+              <SelectItem key={grade} value={grade}>
+                {grade}-р анги
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      <ToggleGroup
-        aria-label="Өгөгдлийн төрөл"
-        type="single"
-        value={dataSource}
-        onValueChange={(value) => {
-          if (value === "real" || value === "mock") {
-            setDataSource(value);
-          }
-        }}
-        className="rounded-none border-0 bg-transparent p-0 shadow-none"
-      >
-        <ToggleGroupItem
-          value="real"
-          className="rounded-none border-0 px-4 py-2 text-sm font-semibold text-[#8a6a57] aria-pressed:bg-transparent data-[state=on]:bg-[#f1e6dc] data-[state=on]:text-[#7b2d18] data-[state=on]:shadow-[0_8px_16px_-12px_rgba(139,34,0,0.35)]"
+        <Select
+          value={selectedGroup}
+          onValueChange={setSelectedGroup}
+          disabled={reportExams.length === 0}
         >
-          Бодит дата
-        </ToggleGroupItem>
-        <ToggleGroupItem
-          value="mock"
-          className="rounded-none border-0 px-4 py-2 text-sm font-semibold text-[#8a6a57] aria-pressed:bg-transparent data-[state=on]:bg-[#f1e6dc] data-[state=on]:text-[#7b2d18] data-[state=on]:shadow-[0_8px_16px_-12px_rgba(139,34,0,0.35)]"
-        >
-          Жишиг дата
-        </ToggleGroupItem>
-      </ToggleGroup>
+          <SelectTrigger
+            aria-label="Бүлэг сонгох"
+            className={FILTER_TRIGGER_CLASSNAME}
+          >
+            <SelectValue
+              placeholder={
+                selectedGroup === ALL_GROUPS_VALUE
+                  ? "Бүлэг"
+                  : formatGroupLabel(selectedGroup)
+              }
+            />
+          </SelectTrigger>
+          <SelectContent
+            position="popper"
+            align="end"
+            className="min-w-[110px] max-w-[180px]"
+          >
+            <SelectItem value={ALL_GROUPS_VALUE}>Бүлэг</SelectItem>
+            {groupOptions.map((group) => (
+              <SelectItem key={group} value={group}>
+                {formatGroupLabel(group)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={selectedType} onValueChange={setSelectedType}>
+          <SelectTrigger
+            aria-label="Төрөл сонгох"
+            className={FILTER_TRIGGER_CLASSNAME}
+          >
+            <SelectValue placeholder="Төрөл" />
+          </SelectTrigger>
+          <SelectContent
+            position="popper"
+            align="end"
+            className="min-w-[110px] max-w-[180px]"
+          >
+            <SelectItem value={ALL_TYPES_VALUE}>Төрөл</SelectItem>
+            <SelectItem value="progress">Явц</SelectItem>
+            <SelectItem value="quarter">Улирал</SelectItem>
+            <SelectItem value="state">Улсын</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 
   if (dataSource === "real" && isLoading && !payload) {
     return (
       <TestShell
+        breadcrumb={headerBreadcrumb}
         title={headerTitle}
-        actions={headerActions}
         sidebarCollapsible
       >
+        {filterBar}
         <div className="flex min-h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border bg-card/70 px-6 text-sm text-muted-foreground">
           Exam report өгөгдөл ачаалж байна...
         </div>
@@ -357,11 +418,12 @@ export default function ExamReportPage() {
 
   return (
     <TestShell
+      breadcrumb={headerBreadcrumb}
       title={headerTitle}
-      actions={headerActions}
-      contentClassName="pb-10"
+      contentClassName="!px-8 !pb-10"
       sidebarCollapsible
     >
+      {filterBar}
       <div className="w-full">
         {dataSource === "real" && error ? (
           <div className="mb-6 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
@@ -383,6 +445,17 @@ export default function ExamReportPage() {
         )}
       </div>
     </TestShell>
+  );
+}
+
+const FILTER_TRIGGER_CLASSNAME =
+  "!h-[41px] w-[108px] min-w-[108px] shrink-0  border border-[#d9e2ec] !bg-white px-4 text-[15px] font-medium text-slate-700 shadow-none hover:bg-white focus-visible:border-[#d9e2ec] focus-visible:ring-0 data-[placeholder]:text-slate-700 [&_[data-slot=select-value]]:max-w-[60px] [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left";
+
+function HeaderTitle({ title }: { title: string }): ReactNode {
+  return (
+    <div className="text-[18px] font-bold tracking-tight text-slate-900 sm:text-[20px]">
+      {title}
+    </div>
   );
 }
 
@@ -411,8 +484,4 @@ const UNKNOWN_CLASS_VALUE = "__unknown_class__";
 function normalizeClassValue(value: string) {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : UNKNOWN_CLASS_VALUE;
-}
-
-function formatClassLabel(value: string) {
-  return value === UNKNOWN_CLASS_VALUE ? "Тодорхойгүй анги" : value;
 }

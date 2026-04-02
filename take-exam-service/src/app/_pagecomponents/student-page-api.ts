@@ -36,6 +36,13 @@ import type {
   TeacherTestSummary,
 } from "@/lib/exam-service/types";
 import {
+  buildProctoringScreenshotKey,
+  isDirectUploadProctoringPlan,
+  isInlineFallbackProctoringPlan,
+  type ProctoringPresignPlanResponse,
+  type ProctoringScreenshotMetadata,
+} from "@/lib/proctoring-screenshots";
+import {
   mockStudentPortalClient,
   USE_MOCK_DATA,
 } from "@/lib/mock/student-portal-client";
@@ -71,6 +78,9 @@ let dashboardCache:
     }
   | null = null;
 let dashboardRequestInFlight: Promise<DashboardPayload> | null = null;
+let proctoringUploadCapability: "unknown" | "direct-upload" | "inline-fallback" =
+  "unknown";
+let loggedInlineFallbackReason: string | null = null;
 
 export type AttemptActivityInput = {
   code: string;
@@ -84,10 +94,13 @@ export type AttemptActivityInput = {
   title: string;
 };
 
-type ProctoringScreenshotPresignResponse = {
+type ProctoringFallbackUploadResponse = {
   key: string;
   publicUrl: string;
-  uploadUrl: string;
+};
+
+type ProctoringUploadError = Error & {
+  shouldUseInlineFallback?: boolean;
 };
 
 export type UploadProctoringScreenshotInput = {
@@ -140,7 +153,60 @@ const resolveProctoringPresignUrl = () =>
   resolveProctoringRouteUrl("/api/proctoring-screenshots/presign");
 
 const resolveProctoringFallbackUploadUrl = () =>
-  resolveProctoringRouteUrl("/api/proctoring-screenshots/upload");
+  "/api/proctoring-screenshots/upload";
+
+const createUploadError = (
+  message: string,
+  shouldUseInlineFallback = false,
+): ProctoringUploadError =>
+  Object.assign(new Error(message), {
+    shouldUseInlineFallback,
+  });
+
+const extractUploadErrorMessage = (payload: unknown, fallbackMessage: string) => {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string" &&
+    payload.message.trim()
+  ) {
+    return payload.message;
+  }
+
+  return fallbackMessage;
+};
+
+const isStorageUnavailablePayload = (payload: unknown) => {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  if ("code" in payload && payload.code === "storage_not_configured") {
+    return true;
+  }
+
+  return isInlineFallbackProctoringPlan(payload);
+};
+
+const isInlineFallbackUploadError = (error: unknown) =>
+  Boolean(
+    error &&
+      typeof error === "object" &&
+      "shouldUseInlineFallback" in error &&
+      error.shouldUseInlineFallback,
+  );
+
+const rememberInlineFallbackCapability = (reason?: string) => {
+  proctoringUploadCapability = "inline-fallback";
+
+  if (!reason || loggedInlineFallbackReason === reason) {
+    return;
+  }
+
+  loggedInlineFallbackReason = reason;
+  console.warn(`Proctoring screenshot storage is unavailable. ${reason}`);
+};
 
 const uploadProctoringImageDirectly = async ({
   blob,
@@ -162,6 +228,74 @@ const uploadProctoringImageDirectly = async ({
   }
 };
 
+const readJsonResponse = async <T>(response: Response): Promise<T | null> => {
+  const text = await response.text();
+  if (!text.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+};
+
+const uploadProctoringImageViaAppRoute = async ({
+  blob,
+  key,
+  metadata,
+}: {
+  blob: Blob;
+  key: string;
+  metadata: ProctoringScreenshotMetadata;
+}) => {
+  const formData = new FormData();
+  formData.append("key", key);
+  formData.append("attemptId", metadata.attemptId);
+  formData.append("capturedAt", metadata.capturedAt);
+  formData.append("eventCode", metadata.eventCode);
+  formData.append("mode", metadata.mode ?? "limited-monitoring");
+  formData.append("studentName", metadata.studentName ?? "");
+  formData.append("userId", metadata.userId);
+  formData.append("file", blob, `${metadata.eventCode || "capture"}.jpg`);
+
+  const response = await fetch(resolveProctoringFallbackUploadUrl(), {
+    method: "POST",
+    body: formData,
+  });
+  const payload = await readJsonResponse<
+    | ProctoringFallbackUploadResponse
+    | {
+        code?: string;
+        message?: string;
+      }
+  >(response);
+
+  if (!response.ok) {
+    throw createUploadError(
+      extractUploadErrorMessage(
+        payload,
+        "Screenshot fallback upload амжилтгүй боллоо.",
+      ),
+      response.status === 503 || isStorageUnavailablePayload(payload),
+    );
+  }
+
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !("key" in payload) ||
+    typeof payload.key !== "string" ||
+    !("publicUrl" in payload) ||
+    typeof payload.publicUrl !== "string"
+  ) {
+    throw createUploadError("Screenshot fallback upload хариу дутуу байна.");
+  }
+
+  return payload;
+};
+
 const blobToDataUrl = async (blob: Blob) => {
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
@@ -178,6 +312,15 @@ const blobToDataUrl = async (blob: Blob) => {
 
   return `data:${blob.type || "image/jpeg"};base64,${base64}`;
 };
+
+const buildInlineScreenshotResult = async ({
+  attemptId,
+  blob,
+  eventCode,
+}: Pick<UploadProctoringScreenshotInput, "attemptId" | "blob" | "eventCode">) => ({
+  key: `inline/${attemptId}/${eventCode}/${Date.now()}.jpg`,
+  publicUrl: await blobToDataUrl(blob),
+});
 
 const gqlRequest = async <TData, TVariables>(
   document: TypedDocumentNode<TData, TVariables>,
@@ -702,6 +845,24 @@ export const uploadProctoringScreenshotRequest = async ({
     };
   }
 
+  if (proctoringUploadCapability === "inline-fallback") {
+    return buildInlineScreenshotResult({
+      attemptId,
+      blob,
+      eventCode,
+    });
+  }
+
+  const metadata: ProctoringScreenshotMetadata = {
+    attemptId,
+    capturedAt,
+    eventCode,
+    mode,
+    studentName,
+    userId,
+  };
+  const fallbackKey = buildProctoringScreenshotKey(metadata);
+
   try {
     const presignUrl = resolveProctoringPresignUrl();
     const presignResponse = await fetch(presignUrl, {
@@ -720,22 +881,40 @@ export const uploadProctoringScreenshotRequest = async ({
       }),
     });
 
-    const presignPayload = (await presignResponse.json()) as
-      | ProctoringScreenshotPresignResponse
-      | { error?: string; message?: string };
+    const presignPayload = await readJsonResponse<
+      | ProctoringPresignPlanResponse
+      | {
+          code?: string;
+          error?: string;
+          message?: string;
+        }
+    >(presignResponse);
 
-    if (!presignResponse.ok) {
-      throw new Error(
-        "message" in presignPayload && presignPayload.message
-          ? presignPayload.message
-          : "Screenshot upload URL үүсгэж чадсангүй.",
+    if (isInlineFallbackProctoringPlan(presignPayload)) {
+      rememberInlineFallbackCapability(
+        presignPayload.message ||
+          "Presign endpoint client-side inline fallback руу шилжлээ.",
       );
+      return buildInlineScreenshotResult({
+        attemptId,
+        blob,
+        eventCode,
+      });
     }
 
-    const { key, publicUrl, uploadUrl } =
-      presignPayload as ProctoringScreenshotPresignResponse;
-    let resolvedKey = key;
-    let resolvedPublicUrl = publicUrl;
+    if (!presignResponse.ok || !isDirectUploadProctoringPlan(presignPayload)) {
+      const fallbackUpload = await uploadProctoringImageViaAppRoute({
+        blob,
+        key: fallbackKey,
+        metadata,
+      });
+
+      return fallbackUpload;
+    }
+
+    proctoringUploadCapability = "direct-upload";
+
+    const { key, publicUrl, uploadUrl } = presignPayload;
 
     try {
       await uploadProctoringImageDirectly({
@@ -743,54 +922,42 @@ export const uploadProctoringScreenshotRequest = async ({
         uploadUrl,
       });
     } catch (error) {
-      console.warn("Direct R2 upload failed, falling back to app upload route.", error);
+      console.warn(
+        "Direct R2 upload failed, falling back to app upload route.",
+        error,
+      );
 
-      const formData = new FormData();
-      formData.append("key", key);
-      formData.append("file", blob, `${eventCode || "capture"}.jpg`);
-
-      const fallbackResponse = await fetch(resolveProctoringFallbackUploadUrl(), {
-        method: "POST",
-        body: formData,
+      const fallbackUpload = await uploadProctoringImageViaAppRoute({
+        blob,
+        key,
+        metadata,
       });
-      const fallbackPayload = (await fallbackResponse.json()) as
-        | { key: string; publicUrl: string }
-        | { message?: string };
 
-      if (!fallbackResponse.ok) {
-        throw new Error(
-          "message" in fallbackPayload && fallbackPayload.message
-            ? fallbackPayload.message
-            : "Screenshot fallback upload амжилтгүй боллоо.",
-        );
-      }
-
-      if (
-        !("key" in fallbackPayload) ||
-        !("publicUrl" in fallbackPayload)
-      ) {
-        throw new Error("Screenshot fallback upload хариу дутуу байна.");
-      }
-
-      resolvedKey = fallbackPayload.key;
-      resolvedPublicUrl = fallbackPayload.publicUrl;
+      return fallbackUpload;
     }
 
     return {
-      key: resolvedKey,
-      publicUrl: resolvedPublicUrl,
+      key,
+      publicUrl,
     };
   } catch (error) {
+    if (isInlineFallbackUploadError(error) || isStorageUnavailablePayload(error)) {
+      rememberInlineFallbackCapability(
+        error instanceof Error
+          ? error.message
+          : "Screenshot storage temporarily unavailable.",
+      );
+    }
+
     console.warn(
       "Screenshot upload failed, falling back to inline data URL evidence.",
       error,
     );
-    const inlineUrl = await blobToDataUrl(blob);
-
-    return {
-      key: `inline/${attemptId}/${eventCode}/${Date.now()}.jpg`,
-      publicUrl: inlineUrl,
-    };
+    return buildInlineScreenshotResult({
+      attemptId,
+      blob,
+      eventCode,
+    });
   }
 };
 

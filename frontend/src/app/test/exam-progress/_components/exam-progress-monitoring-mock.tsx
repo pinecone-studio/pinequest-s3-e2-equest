@@ -48,6 +48,7 @@ type ExamProgressMonitoringProps = {
 
 type MonitoringTab = "monitoring" | "performance";
 type EventTone = "danger" | "info" | "muted" | "warning";
+type PerformanceQuestionFilter = "all" | "correct" | "incorrect" | "open";
 type StudentConnectionState = "idle" | "offline" | "online";
 type StudentStatusTone = "danger" | "muted" | "online" | "warning";
 
@@ -84,6 +85,7 @@ type DisplayEvent = {
 
 type StudentRow = {
   attemptBadges: EventBadge[];
+  attemptCount: number;
   connectionState: StudentConnectionState;
   id: string;
   name: string;
@@ -156,6 +158,17 @@ export function ExamProgressMonitoring({
     reviewAttempts[0]?.questions[0]?.id ?? null,
   );
   const [isScoreEditing, setIsScoreEditing] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     setLocalReviewAttempts(reviewAttempts);
@@ -236,15 +249,7 @@ export function ExamProgressMonitoring({
   const selectedAttemptScoreLabel = selectedAttempt
     ? formatAttemptPoints(selectedAttempt)
     : "Хүлээгдэж байна";
-  const selectedQuestionReviewed = Boolean(
-    selectedAttempt && selectedQuestion && isQuestionReviewed(selectedAttempt, selectedQuestion),
-  );
-  const canEditSelectedQuestionScore = Boolean(
-    selectedQuestion &&
-      (selectedQuestion.requiresManualReview ||
-        selectedQuestion.reviewState === "pending" ||
-        isOpenEndedQuestion(selectedQuestion)),
-  );
+  const canEditSelectedQuestionScore = Boolean(selectedQuestion);
 
   const totalStudentCount = Math.max(exam.totalStudentCount, students.length);
   const activeStudentCount = students.filter(
@@ -264,6 +269,7 @@ export function ExamProgressMonitoring({
     submitted: String(submittedCount),
     warnings: padCount(warningCount),
   };
+  const remainingTimeLabel = formatRemainingTime(exam.endTime, currentTime);
 
   return (
     <section className="min-h-full space-y-6">
@@ -279,21 +285,29 @@ export function ExamProgressMonitoring({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-10">
-        <button
-          type="button"
-          onClick={() => setActiveTab("monitoring")}
-          className={tabClassName(activeTab === "monitoring")}
-        >
-          Шалгалтын явцын хяналт
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("performance")}
-          className={tabClassName(activeTab === "performance")}
-        >
-          Гүйцэтгэлийн хяналт
-        </button>
+      <div className="flex flex-wrap items-end justify-between gap-5">
+        <div className="flex flex-wrap items-end gap-10">
+          <button
+            type="button"
+            onClick={() => setActiveTab("monitoring")}
+            className={tabClassName(activeTab === "monitoring")}
+          >
+            Шалгалтын явцын хяналт
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("performance")}
+            className={tabClassName(activeTab === "performance")}
+          >
+            Гүйцэтгэлийн хяналт
+          </button>
+        </div>
+
+        {activeTab === "performance" && remainingTimeLabel ? (
+          <div className="inline-flex h-[42px] items-center rounded-[12px] border border-[#0b5cab] bg-white px-5 text-[14px] font-semibold text-slate-900">
+            Үлдсэн хугацаа {remainingTimeLabel}
+          </div>
+        ) : null}
       </div>
 
       {activeTab === "monitoring" ? (
@@ -335,9 +349,6 @@ export function ExamProgressMonitoring({
 
               {studentRows.length > 0 ? (
                 studentRows.slice(0, 6).map((row) => {
-                  const PrimaryAttemptIcon =
-                    row.attemptBadges[0]?.icon ?? AlertTriangle;
-
                   return (
                     <button
                       key={row.id}
@@ -352,10 +363,11 @@ export function ExamProgressMonitoring({
                         <span className={statusDotClass(row.statusTone)} />
                         <span className={statusTextClass(row.statusTone)}>{row.statusLabel}</span>
                       </span>
-                      <span className="flex items-center">
-                        <span className="inline-flex h-12 w-12 items-center justify-center rounded-[16px] border border-slate-200 bg-white text-[#ff6a1a] shadow-[0_6px_14px_rgba(15,23,42,0.05)]">
-                          <PrimaryAttemptIcon className="h-5 w-5" />
-                        </span>
+                      <span className="flex items-center justify-center">
+                        <AttemptStackIndicator
+                          attemptBadges={row.attemptBadges}
+                          attemptCount={row.attemptCount}
+                        />
                       </span>
                       <span className="flex items-center">
                         {row.connectionState === "offline" ? (
@@ -455,30 +467,30 @@ export function ExamProgressMonitoring({
               }
             }}
           >
-            <DialogContent className="max-w-5xl overflow-hidden rounded-[30px] border border-[#e5edf6] bg-white p-0 shadow-[0_24px_80px_rgba(15,23,42,0.16)] sm:max-w-5xl">
+            <DialogContent className="w-[min(100vw-2rem,64rem)]! max-w-none overflow-hidden rounded-[22px] border border-[#dfe7f2] bg-white p-0 shadow-[0_16px_46px_rgba(15,23,42,0.1)] [&>button:last-child]:right-5 [&>button:last-child]:top-4 [&>button:last-child]:h-6 [&>button:last-child]:w-6 [&>button:last-child]:rounded-full [&>button:last-child]:border-0 [&>button:last-child]:bg-transparent [&>button:last-child]:p-0 [&>button:last-child]:text-slate-900 [&>button:last-child]:opacity-100 [&>button:last-child]:shadow-none [&>button:last-child]:ring-0 [&>button:last-child]:transition-none [&>button:last-child]:hover:bg-transparent [&>button:last-child]:hover:text-slate-900 [&>button:last-child]:focus:outline-none [&>button:last-child]:focus-visible:ring-0 sm:max-w-none">
               {selectedStudent ? (
                 <>
-                  <DialogHeader className="border-b border-[#e8edf5] px-8 py-7">
-                    <DialogTitle className="text-[22px] font-bold text-slate-900">
+                  <DialogHeader className="px-5 py-4">
+                    <DialogTitle className="text-[17px] font-bold text-slate-900">
                       {selectedStudent.name}
                     </DialogTitle>
-                    <DialogDescription className="mt-1 text-[15px] text-slate-500">
-                      Бүртгэгдсэн хяналтын үйлдлүүд
+                    <DialogDescription className="mt-1 text-[12px] text-slate-500">
+                      Бүртгэгдсэн үйлдлүүд
                     </DialogDescription>
                   </DialogHeader>
 
-                  <div className="space-y-7 px-8 py-8">
-                    <section className="rounded-[24px] border border-[#e6edf7] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+                  <div className="space-y-6 border-t border-[#e8edf5] px-5 py-5">
+                    <section className="space-y-3.5">
                       <div className="flex items-center justify-between gap-4">
-                        <h3 className="text-[18px] font-bold text-slate-900">
-                          Хуулах оролдлого
+                        <h3 className="text-[15px] font-bold text-slate-900">
+                          Сэжигтэй үйлдлүүд
                         </h3>
-                        <span className="rounded-full bg-[#f4f7fb] px-4 py-2 text-[13px] font-semibold text-slate-500">
-                          {selectedStudent.attemptBadges.length} бүртгэл
+                        <span className="rounded-full bg-[#eaf3ff] px-3.5 py-1.5 text-[12px] font-semibold text-[#0b5cab]">
+                          {selectedStudent.risk} бүртгэл
                         </span>
                       </div>
 
-                      <div className="mt-5 flex flex-wrap gap-3">
+                      <div className="flex flex-wrap gap-2">
                         {selectedStudent.attemptBadges.map((attempt) => (
                           <div key={attempt.id} className={attemptBadgeClass(attempt.tone)}>
                             <attempt.icon className="h-4 w-4 shrink-0" />
@@ -488,48 +500,43 @@ export function ExamProgressMonitoring({
                       </div>
                     </section>
 
-                    <section className="rounded-[24px] border border-[#e6edf7] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+                    <section className="space-y-3.5">
                       <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <h3 className="text-[18px] font-bold text-slate-900">
-                            Дэлгэцийн зургууд
-                          </h3>
-                          <p className="mt-1 text-[14px] text-slate-500">
-                            Бүртгэгдсэн дэлгэцийн баримтууд
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-[#eef5ff] px-4 py-2 text-[13px] font-semibold text-[#0b5cab]">
+                        <h3 className="text-[15px] font-bold text-slate-900">
+                          Бүртгэгдсэн дэлгэцийн зургууд
+                        </h3>
+                        <span className="rounded-full bg-[#eaf3ff] px-3.5 py-1.5 text-[12px] font-semibold text-[#0b5cab]">
                           {selectedStudent.screenshots.length} зураг
                         </span>
                       </div>
 
                       {selectedStudent.screenshots.length > 0 ? (
-                        <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                           {selectedStudent.screenshots.map((screenshot) => (
                             <article
                               key={screenshot.id}
-                              className="overflow-hidden rounded-[22px] border border-[#e6edf7] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+                              className="overflow-hidden rounded-[16px] border border-[#dfe7f2] bg-white"
                             >
-                              <div className="relative aspect-[16/10] overflow-hidden border-b border-[#e8edf5] bg-[#edf3fb]">
+                              <div className="relative aspect-[16/9] overflow-hidden border-b border-[#e8edf5] bg-[#edf3fb]">
                                 <ScreenshotPreviewImage
                                   src={screenshot.url}
                                   fallbackSrc={screenshot.fallbackUrl}
                                   alt={`${selectedStudent.name} - ${screenshot.caption}`}
                                 />
                               </div>
-                              <div className="space-y-1 px-5 py-4">
-                                <p className="text-[15px] font-semibold text-slate-900">
+                              <div className="space-y-1 px-3.5 py-3">
+                                <p className="text-[13px] font-semibold text-slate-900">
                                   {screenshot.caption}
                                 </p>
-                                <p className="text-[13px] text-slate-500">
-                                  {screenshot.occurredLabel}
+                                <p className="text-[11px] text-slate-500">
+                                  Үүсгэсэн: {screenshot.occurredLabel.split(" • ")[0] ?? screenshot.occurredLabel}
                                 </p>
                               </div>
                             </article>
                           ))}
                         </div>
                       ) : (
-                        <div className="mt-6 rounded-[20px] border border-dashed border-[#d9e2ec] px-5 py-12 text-center text-[15px] text-slate-500">
+                        <div className="rounded-[14px] border border-dashed border-[#d9e2ec] px-4 py-7 text-center text-[12px] text-slate-500">
                           Энэ сурагчийн дэлгэцийн зураг хараахан бүртгэгдээгүй байна.
                         </div>
                       )}
@@ -546,11 +553,13 @@ export function ExamProgressMonitoring({
           canEditSelectedQuestionScore={canEditSelectedQuestionScore}
           incorrectCount={incorrectCount}
           isScoreEditing={isScoreEditing}
+          openEndedCount={selectedAttempt?.questions.filter(
+            (question) =>
+              question.requiresManualReview || isOpenEndedQuestion(question),
+          ).length ?? 0}
           selectedAttempt={selectedAttempt}
           selectedAttemptScoreLabel={selectedAttemptScoreLabel}
-          selectedQuestion={selectedQuestion}
           selectedQuestionId={selectedQuestionId}
-          selectedQuestionReviewed={selectedQuestionReviewed}
           selectedReviewAttemptId={selectedReviewAttemptId}
           onAwardPoints={(points) => {
             if (!selectedAttempt || !selectedQuestion) {
@@ -631,11 +640,10 @@ function PerformanceTabContent({
   canEditSelectedQuestionScore,
   incorrectCount,
   isScoreEditing,
+  openEndedCount,
   selectedAttempt,
   selectedAttemptScoreLabel,
-  selectedQuestion,
   selectedQuestionId,
-  selectedQuestionReviewed,
   selectedReviewAttemptId,
   onAwardPoints,
   onMarkAttemptReviewed,
@@ -649,11 +657,10 @@ function PerformanceTabContent({
   canEditSelectedQuestionScore: boolean;
   incorrectCount: number;
   isScoreEditing: boolean;
+  openEndedCount: number;
   selectedAttempt: SubmittedAttempt | null;
   selectedAttemptScoreLabel: string;
-  selectedQuestion: QuestionReview | null;
   selectedQuestionId: string | null;
-  selectedQuestionReviewed: boolean;
   selectedReviewAttemptId: string | null;
   onAwardPoints: (points: number) => void;
   onMarkAttemptReviewed: () => void;
@@ -663,9 +670,47 @@ function PerformanceTabContent({
   onSetScoreEditing: (nextValue: boolean) => void;
   reviewAttempts: SubmittedAttempt[];
 }) {
+  const [questionFilter, setQuestionFilter] =
+    useState<PerformanceQuestionFilter>("all");
   const pendingCount = reviewAttempts.filter(
     (attempt) => attempt.status !== "reviewed",
   ).length;
+  const selectedAttemptScoreSummary = selectedAttempt
+    ? `${selectedAttemptScoreLabel} (${calculateAttemptPercentage(selectedAttempt)}%)`
+    : "0/0 (0%)";
+  const filteredQuestions = selectedAttempt.questions.filter((question) => {
+    if (questionFilter === "correct") {
+      return question.reviewState === "correct";
+    }
+    if (questionFilter === "incorrect") {
+      return question.reviewState === "incorrect";
+    }
+    if (questionFilter === "open") {
+      return question.requiresManualReview || isOpenEndedQuestion(question);
+    }
+
+    return true;
+  });
+  const visibleSelectedQuestion =
+    filteredQuestions.find((question) => question.id === selectedQuestionId) ?? null;
+  const visibleSelectedQuestionReviewed = Boolean(
+    visibleSelectedQuestion &&
+      isQuestionReviewed(selectedAttempt, visibleSelectedQuestion),
+  );
+
+  useEffect(() => {
+    if (filteredQuestions.length === 0) {
+      return;
+    }
+
+    const stillVisible = filteredQuestions.some(
+      (question) => question.id === selectedQuestionId,
+    );
+
+    if (!stillVisible) {
+      onSelectQuestion(filteredQuestions[0]?.id ?? null);
+    }
+  }, [filteredQuestions, onSelectQuestion, selectedQuestionId]);
 
   if (!selectedAttempt) {
     return (
@@ -676,16 +721,16 @@ function PerformanceTabContent({
   }
 
   return (
-    <div className="grid gap-7 xl:grid-cols-[0.92fr_1.28fr]">
-      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-        <div className="border-b border-slate-200 px-7 py-7">
-          <h2 className="text-[18px] font-bold text-slate-900">Хянах дараалал</h2>
+    <div className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
+      <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+        <div className="border-b border-slate-200 px-6 py-6">
+          <h2 className="text-[18px] font-semibold text-slate-900">Хянах дараалал</h2>
           <p className="mt-1 text-[14px] text-slate-500">
             {pendingCount} материал хүлээгдэж байна
           </p>
         </div>
 
-        <div className="grid grid-cols-[1.5fr_0.8fr_0.5fr] border-b border-slate-200 px-7 py-5 text-[14px] font-bold text-slate-900">
+        <div className="grid grid-cols-[1.45fr_0.8fr_0.45fr] border-b border-slate-200 px-6 py-4 text-[14px] font-medium text-slate-900">
           <span>Сурагчдын нэрс</span>
           <span>Төлөв</span>
           <span>Оноо</span>
@@ -700,17 +745,17 @@ function PerformanceTabContent({
                 key={attempt.id}
                 type="button"
                 onClick={() => onSelectAttempt(attempt.id)}
-                className={`grid w-full grid-cols-[1.5fr_0.8fr_0.5fr] items-center border-b border-slate-100 px-7 py-5 text-left transition-colors hover:bg-slate-50 ${
-                  isSelected ? "bg-[#fbfcfe]" : "bg-white"
+                className={`grid w-full grid-cols-[1.45fr_0.8fr_0.45fr] items-center border-b border-slate-100 px-6 py-4 text-left transition-colors hover:bg-slate-50 ${
+                  isSelected ? "bg-[#fafcff]" : "bg-white"
                 }`}
               >
                 <span className="flex items-center gap-4">
-                  <span className="h-10 w-10 rounded-full bg-[#d4d6da]" />
+                  <span className="h-9 w-9 rounded-full bg-[#d4d6da]" />
                   <span className="min-w-0">
-                    <span className="block truncate text-[16px] font-semibold text-slate-900">
+                    <span className="block truncate text-[15px] font-semibold text-slate-900">
                       {attempt.studentName}
                     </span>
-                    <span className="block text-[14px] text-slate-500">
+                    <span className="block text-[13px] text-slate-500">
                       {formatShortTime(attempt.submissionTime)}
                     </span>
                   </span>
@@ -720,9 +765,9 @@ function PerformanceTabContent({
                     {formatReviewStatusLabel(attempt.status)}
                   </span>
                 </span>
-                <span className="flex items-center justify-end gap-3 text-[16px] font-semibold text-slate-800">
-                  <span>{formatAttemptPoints(attempt)}</span>
-                  <ChevronRight className="h-5 w-5 text-slate-700" />
+                <span className="flex items-center justify-end gap-2 text-[16px] font-medium text-slate-800">
+                  <span>{formatAttemptPercent(attempt)}</span>
+                  <ChevronRight className="h-4 w-4 text-slate-700" />
                 </span>
               </button>
             );
@@ -730,45 +775,65 @@ function PerformanceTabContent({
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-7 py-7">
+      <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
           <div>
-            <h2 className="text-[18px] font-bold text-slate-900">
+            <h2 className="text-[18px] font-semibold text-slate-900">
               {selectedAttempt.studentName}
             </h2>
-            <p className="mt-1 text-[14px] text-slate-500">
-              Оноо: {selectedAttemptScoreLabel}
-            </p>
           </div>
           <Button
             disabled={selectedAttempt.status === "reviewed"}
             onClick={onMarkAttemptReviewed}
-            className="h-[56px] rounded-[14px] bg-[#0b5cab] px-8 text-[16px] font-semibold shadow-[0_16px_30px_rgba(11,92,171,0.22)] hover:bg-[#094f95]"
+            className="h-[52px] rounded-[14px] bg-[#0b5cab] px-8 text-[15px] font-semibold shadow-[0_12px_24px_rgba(11,92,171,0.2)] hover:bg-[#094f95]"
           >
             Бүгдийг батлах
           </Button>
         </div>
 
-        <div className="border-b border-slate-200 px-7 py-5">
-          <div className="flex flex-wrap items-center gap-10 text-[14px] font-semibold">
-            <span className="flex items-center gap-2 text-slate-900">
-              <ClipboardCheck className="h-5 w-5 text-[#0b5cab]" />
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-4">
+          <div className="flex flex-wrap items-center gap-7 text-[14px] font-medium">
+            <button
+              type="button"
+              onClick={() => setQuestionFilter("all")}
+              className={performanceFilterTabClass(questionFilter === "all")}
+            >
+              <ClipboardCheck className="h-4 w-4 text-[#0b5cab]" />
               Бүгд: {selectedAttempt.questions.length}
-            </span>
-            <span className="flex items-center gap-2 text-slate-900">
-              <CheckCircle2 className="h-5 w-5 text-[#179c35]" />
-              Зөв хариулсан: {correctCount}
-            </span>
-            <span className="flex items-center gap-2 text-slate-900">
-              <XCircle className="h-5 w-5 text-[#ff3b30]" />
-              Буруу хариулсан: {incorrectCount}
-            </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuestionFilter("correct")}
+              className={performanceFilterTabClass(questionFilter === "correct")}
+            >
+              <CheckCircle2 className="h-4 w-4 text-[#179c35]" />
+              Зөв: {correctCount}
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuestionFilter("incorrect")}
+              className={performanceFilterTabClass(questionFilter === "incorrect")}
+            >
+              <XCircle className="h-4 w-4 text-[#ff3b30]" />
+              Буруу: {incorrectCount}
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuestionFilter("open")}
+              className={performanceFilterTabClass(questionFilter === "open")}
+            >
+              <PenLine className="h-4 w-4 text-slate-700" />
+              Нээлттэй: {openEndedCount}
+            </button>
           </div>
+          <p className="text-[15px] font-semibold text-slate-700">
+            Оноо: {selectedAttemptScoreSummary}
+          </p>
         </div>
 
-        <div className="grid min-h-[700px] xl:grid-cols-[280px_1fr]">
+        <div className="grid min-h-[680px] xl:grid-cols-[232px_1fr]">
           <aside className="border-r border-slate-200 bg-white">
-            {selectedAttempt.questions.map((question) => {
+            {filteredQuestions.map((question) => {
               const isSelected = question.id === selectedQuestionId;
               const isReviewed = isQuestionReviewed(selectedAttempt, question);
 
@@ -778,23 +843,26 @@ function PerformanceTabContent({
                   type="button"
                   onClick={() => onSelectQuestion(question.id)}
                   className={cn(
-                    "flex w-full items-center justify-between border-b border-slate-100 px-7 py-5 text-left transition-colors",
-                    isReviewed
-                      ? "bg-[#edf8f1] hover:bg-[#e6f5ec]"
-                      : isSelected
-                        ? "bg-[#f7f9fc]"
-                        : "hover:bg-slate-50",
+                    "flex w-full items-center justify-between border-b border-slate-100 px-5 py-4 text-left transition-colors hover:bg-slate-50",
+                    isSelected && "bg-[#f2f6fb]",
                   )}
                 >
-                  <span
-                    className={cn(
-                      "text-[16px]",
-                      isReviewed || isSelected
-                        ? "font-semibold text-slate-900"
-                        : "text-slate-500",
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    {isSelected ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b5cab]" />
+                    ) : (
+                      <span className="w-4 shrink-0" />
                     )}
-                  >
-                    Асуулт {question.questionNumber}
+                    <span
+                      className={cn(
+                        "truncate text-[15px]",
+                        isReviewed || isSelected
+                          ? "font-semibold text-slate-900"
+                          : "text-slate-500",
+                      )}
+                    >
+                      Асуулт {question.questionNumber}
+                    </span>
                   </span>
                   <QuestionStateIcon
                     reviewState={question.reviewState}
@@ -805,112 +873,103 @@ function PerformanceTabContent({
             })}
           </aside>
 
-          <div className="flex flex-col px-7 py-7">
-            {selectedQuestion ? (
+          <div className="flex flex-col px-6 py-5">
+            {visibleSelectedQuestion ? (
               <>
                 <div>
-                  <h3 className="text-[16px] font-semibold text-slate-900">
-                    Асуулт {selectedQuestion.questionNumber}
+                  <h3 className="text-[16px] font-medium text-slate-900">
+                    Асуулт {visibleSelectedQuestion.questionNumber}
                   </h3>
-                  <div className="mt-6 rounded-[16px] border border-slate-200 bg-[#f4f7fd] px-6 py-5 text-[16px] font-medium text-slate-800">
-                    {normalizeDisplayText(selectedQuestion.questionText)}
+                  <div className="mt-4 rounded-[14px] border border-slate-200 bg-[#f3f6fc] px-5 py-4 text-[15px] font-medium text-slate-800">
+                    {normalizeDisplayText(visibleSelectedQuestion.questionText)}
                   </div>
                 </div>
 
-                <div className="mt-8 flex items-center justify-between gap-4">
-                  <h4 className="text-[16px] font-semibold text-slate-900">
+                <div className="mt-7 flex items-center justify-between gap-4">
+                  <h4 className="text-[15px] font-semibold text-slate-900">
                     Сурагчийн хариулт
                   </h4>
-                  <span className={questionPointsClass(selectedQuestion.reviewState)}>
-                    {selectedQuestion.points}/{selectedQuestion.maxPoints} оноо
+                  <span className={questionPointsClass(visibleSelectedQuestion.reviewState)}>
+                    {visibleSelectedQuestion.points}/{visibleSelectedQuestion.maxPoints} оноо
                   </span>
                 </div>
 
-                <div className={studentAnswerClass(selectedQuestion.reviewState)}>
-                  {normalizeDisplayText(selectedQuestion.studentAnswer)}
-                </div>
-
-                <div className="mt-6">
-                  <h4 className="text-[16px] font-semibold text-slate-900">
-                    Зөв хариулт
-                  </h4>
-                  <div className="mt-4 rounded-[16px] border border-emerald-200 bg-emerald-50 px-6 py-5 text-[16px] font-medium text-slate-800">
-                    {normalizeCorrectAnswerText(selectedQuestion.correctAnswer)}
-                  </div>
+                <div className={studentAnswerClass(visibleSelectedQuestion.reviewState)}>
+                  {normalizeDisplayText(visibleSelectedQuestion.studentAnswer)}
                 </div>
 
                 {canEditSelectedQuestionScore ? (
-                  <div className="mt-6 rounded-[18px] border border-[#d7e3f3] bg-[#f8fbff] px-5 py-5">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <div>
-                        <p className="text-[15px] font-semibold text-slate-900">
-                          Даалгаврын оноо
-                        </p>
-                        <p className="mt-1 text-[13px] text-slate-500">
-                          Задгай хариулттай асуултад оноог гараар өгч болно.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => onSetScoreEditing(!isScoreEditing)}
-                        className="inline-flex items-center gap-2 text-[14px] font-semibold text-[#0b5cab]"
-                      >
-                        <PenLine className="h-4 w-4" />
-                        {isScoreEditing ? "Оноо хадгалах" : "Оноо өөрчлөх"}
-                      </button>
-                    </div>
-
-                    <div className="mt-4 flex items-center gap-3">
-                      <input
-                        type="number"
-                        min={0}
-                        max={selectedQuestion.maxPoints}
-                        step={1}
-                        disabled={!isScoreEditing}
-                        value={selectedQuestion.points}
-                        onChange={(event) => {
-                          onAwardPoints(Number(event.target.value));
-                        }}
-                        className={cn(
-                          "h-11 w-24 rounded-[12px] border border-slate-200 bg-white px-4 text-[15px] font-semibold text-slate-900 outline-none",
-                          isScoreEditing
-                            ? "border-[#0b5cab] ring-2 ring-[#dbeafe]"
-                            : "cursor-default bg-slate-50 text-slate-500",
-                        )}
-                      />
-                      <span className="text-[15px] text-slate-500">
-                        / {selectedQuestion.maxPoints} оноо
-                      </span>
-                    </div>
+                  <div className="mt-4 flex items-center gap-3">
+                    <span className="text-[14px] text-slate-600">Оноо</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={visibleSelectedQuestion.maxPoints}
+                      step={1}
+                      disabled={!isScoreEditing}
+                      value={visibleSelectedQuestion.points}
+                      onChange={(event) => {
+                        onAwardPoints(Number(event.target.value));
+                      }}
+                      className={cn(
+                        "h-10 w-24 rounded-[12px] border border-slate-200 bg-white px-4 text-[14px] font-semibold text-slate-900 outline-none",
+                        isScoreEditing
+                          ? "border-[#0b5cab] ring-2 ring-[#dbeafe]"
+                          : "cursor-default bg-slate-50 text-slate-500",
+                      )}
+                    />
+                    <span className="text-[14px] text-slate-500">
+                      / {visibleSelectedQuestion.maxPoints} оноо
+                    </span>
                   </div>
                 ) : null}
 
+                <div className="mt-6">
+                  <h4 className="text-[15px] font-semibold text-slate-900">
+                    Зөв хариулт
+                  </h4>
+                  <div className="mt-4 rounded-[14px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-[15px] font-medium text-slate-800">
+                    {normalizeCorrectAnswerText(visibleSelectedQuestion.correctAnswer)}
+                  </div>
+                </div>
+
                 <div className="mt-8">
-                  <h4 className="text-[16px] font-semibold text-slate-900">
+                  <h4 className="text-[15px] font-semibold text-slate-900">
                     Зөв хариултын тайлбар
                   </h4>
-                  <div className="mt-4 whitespace-pre-line rounded-[16px] border border-slate-200 bg-[#f4f7fd] px-6 py-5 text-[16px] leading-8 text-slate-800">
-                    {resolveQuestionExplanation(selectedQuestion)}
+                  <div className="mt-4 whitespace-pre-line rounded-[14px] border border-slate-200 bg-[#f3f6fc] px-5 py-4 text-[15px] leading-7 text-slate-800">
+                    {resolveQuestionExplanation(visibleSelectedQuestion)}
                   </div>
                 </div>
 
                 <div className="mt-auto flex items-center justify-between gap-4 pt-8">
                   <button
                     type="button"
-                    onClick={() => onSetScoreEditing(!isScoreEditing)}
-                    className="inline-flex items-center gap-3 text-[16px] font-semibold text-slate-900"
+                    disabled={!canEditSelectedQuestionScore}
+                    onClick={() => {
+                      if (!canEditSelectedQuestionScore) {
+                        return;
+                      }
+                      onSetScoreEditing(!isScoreEditing);
+                    }}
+                    className={cn(
+                      "inline-flex items-center gap-3 text-[15px] font-semibold",
+                      canEditSelectedQuestionScore
+                        ? "text-slate-900"
+                        : "cursor-not-allowed text-slate-400",
+                    )}
                   >
                     <PenLine className="h-5 w-5" />
-                    Оноо өөрчлөх
+                    {isScoreEditing ? "Оноо хадгалах" : "Оноо өөрчлөх"}
                   </button>
 
                   <Button
                     variant="outline"
-                    disabled={selectedAttempt.status === "reviewed" && selectedQuestionReviewed}
+                    disabled={visibleSelectedQuestionReviewed}
                     onClick={onMarkQuestionReviewed}
                     className={cn(
-                      "h-[56px] rounded-[16px] px-8 text-[16px] font-semibold",
-                      selectedQuestionReviewed
+                      "h-[52px] rounded-[14px] px-8 text-[15px] font-semibold",
+                      visibleSelectedQuestionReviewed
                         ? "border-[#179c35] bg-[#179c35] text-white hover:bg-[#14862e]"
                         : "border-[#0b5cab] text-[#0b5cab] hover:bg-[#f4f8ff]",
                     )}
@@ -921,7 +980,9 @@ function PerformanceTabContent({
               </>
             ) : (
               <div className="flex min-h-[320px] items-center justify-center text-[15px] text-slate-500">
-                Асуулт сонгоно уу.
+                {filteredQuestions.length === 0
+                  ? "Сонгосон ангилалд асуулт алга."
+                  : "Асуулт сонгоно уу."}
               </div>
             )}
           </div>
@@ -1084,10 +1145,11 @@ function buildStudentRows(
 
       return {
         attemptBadges,
+        attemptCount: suspiciousStudentEvents.length,
         connectionState: toConnectionState(student.monitoringState),
         id: student.id,
         name: student.name,
-        risk: student.warningCount + student.dangerCount,
+        risk: uniqueAttemptBadges.length,
         scoreLabel:
           latestAttempt?.score !== undefined ? `${latestAttempt.score}%` : "Хүлээгдэж байна",
         screenshots,
@@ -1205,21 +1267,21 @@ function QuestionStateIcon({
 }) {
   if (reviewed) {
     return (
-      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#179c35] text-white shadow-[0_4px_10px_rgba(23,156,53,0.18)]">
-        <CheckCircle2 className="h-3.5 w-3.5" />
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#179c35] text-white shadow-[0_3px_8px_rgba(23,156,53,0.16)]">
+        <CheckCircle2 className="h-3 w-3" />
       </span>
     );
   }
 
   if (reviewState === "correct") {
-    return <CheckCircle2 className="h-6 w-6 text-[#179c35]" />;
+    return <CheckCircle2 className="h-5 w-5 text-[#179c35]" />;
   }
 
   if (reviewState === "incorrect") {
-    return <XCircle className="h-6 w-6 text-[#ff3b30]" />;
+    return <XCircle className="h-5 w-5 text-[#ff3b30]" />;
   }
 
-  return <TriangleAlert className="h-6 w-6 text-[#f59e0b]" />;
+  return <TriangleAlert className="h-5 w-5 text-[#f59e0b]" />;
 }
 
 function tabClassName(isActive: boolean) {
@@ -1228,14 +1290,23 @@ function tabClassName(isActive: boolean) {
     : "pb-3 text-[16px] font-bold text-slate-900 opacity-80";
 }
 
+function performanceFilterTabClass(isActive: boolean) {
+  return cn(
+    "flex items-center gap-2 border-b-[3px] pb-3 transition-colors",
+    isActive
+      ? "border-slate-900 text-slate-900"
+      : "border-transparent text-slate-900/90 hover:text-slate-900",
+  );
+}
+
 function reviewStatusBadgeClass(status: SubmittedAttempt["status"]) {
   switch (status) {
     case "reviewed":
-      return "inline-flex rounded-full border border-[#9de2c1] bg-[#daf5e8] px-4 py-2 text-[13px] font-medium text-[#119a62]";
+      return "inline-flex rounded-full border border-[#9de2c1] bg-[#daf5e8] px-3.5 py-1.5 text-[13px] font-medium text-[#119a62]";
     case "in-review":
-      return "inline-flex rounded-full border border-[#c7d7ec] bg-[#eef5ff] px-4 py-2 text-[13px] font-medium text-[#0b5cab]";
+      return "inline-flex rounded-full border border-[#c7d7ec] bg-[#eef5ff] px-3.5 py-1.5 text-[13px] font-medium text-[#0b5cab]";
     default:
-      return "inline-flex rounded-full border border-[#f3d6aa] bg-[#fff3df] px-4 py-2 text-[13px] font-medium text-[#cf7c10]";
+      return "inline-flex rounded-full border border-[#f3d6aa] bg-[#fff3df] px-3.5 py-1.5 text-[13px] font-medium text-[#cf7c10]";
   }
 }
 
@@ -1311,16 +1382,94 @@ function alertIconClass(tone: EventTone) {
   }
 }
 
+function attemptIndicatorToneClasses(tone: EventTone) {
+  switch (tone) {
+    case "danger":
+      return {
+        border: "border-[#f0c6bf]",
+        icon: "text-[#c33f2c]",
+        layer: "bg-[#fff8f6]",
+      };
+    case "info":
+      return {
+        border: "border-[#c7d7ec]",
+        icon: "text-[#0b5cab]",
+        layer: "bg-[#f5f9ff]",
+      };
+    case "muted":
+      return {
+        border: "border-[#d9e1eb]",
+        icon: "text-slate-500",
+        layer: "bg-[#fafbfd]",
+      };
+    default:
+      return {
+        border: "border-[#f1d4ac]",
+        icon: "text-[#cf7c10]",
+        layer: "bg-[#fffaf1]",
+      };
+  }
+}
+
+function AttemptStackIndicator({
+  attemptBadges,
+  attemptCount,
+}: Pick<StudentRow, "attemptBadges" | "attemptCount">) {
+  const primaryBadge = attemptBadges[0];
+  const PrimaryIcon = primaryBadge?.icon ?? AppWindow;
+  const tone = primaryBadge?.tone ?? "muted";
+  const classes = attemptIndicatorToneClasses(tone);
+
+  if (attemptCount === 0) {
+    return (
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded-[16px] border border-slate-200 bg-white text-slate-400 shadow-[0_6px_14px_rgba(15,23,42,0.05)]">
+        <PrimaryIcon className="h-5 w-5" />
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex w-full items-center justify-center">
+      <div className="relative h-8 w-[44px] shrink-0">
+        <span
+          className={cn(
+            "absolute left-4 top-0 h-8 w-8 rounded-[11px] border shadow-[0_3px_8px_rgba(15,23,42,0.05)]",
+            classes.border,
+            classes.layer,
+          )}
+          aria-hidden="true"
+        />
+        <span
+          className={cn(
+            "absolute left-2 top-0 h-8 w-8 rounded-[11px] border shadow-[0_3px_8px_rgba(15,23,42,0.06)]",
+            classes.border,
+            classes.layer,
+          )}
+          aria-hidden="true"
+        />
+        <span
+          className={cn(
+            "absolute left-0 top-0 inline-flex h-8 w-8 items-center justify-center rounded-[11px] border bg-white shadow-[0_6px_14px_rgba(15,23,42,0.08)]",
+            classes.border,
+          )}
+        >
+          <PrimaryIcon className={cn("h-4 w-4", classes.icon)} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function attemptBadgeClass(tone: EventTone) {
   switch (tone) {
     case "danger":
-      return "inline-flex items-center gap-2 rounded-full border border-[#f3c2bc] bg-[#fff4f2] px-4 py-2 text-[13px] font-semibold text-[#c33f2c]";
+      return "inline-flex items-center gap-1.5 rounded-full border border-[#f3d6aa] bg-[#fff7ea] px-3.5 py-1.5 text-[12px] font-medium text-[#cf7c10]";
     case "info":
-      return "inline-flex items-center gap-2 rounded-full border border-[#c7d7ec] bg-[#eef5ff] px-4 py-2 text-[13px] font-semibold text-[#0b5cab]";
+      return "inline-flex items-center gap-1.5 rounded-full border border-[#c7d7ec] bg-[#eef5ff] px-3.5 py-1.5 text-[12px] font-medium text-[#0b5cab]";
     case "muted":
-      return "inline-flex items-center gap-2 rounded-full border border-[#d7dee8] bg-[#f7f9fc] px-4 py-2 text-[13px] font-semibold text-slate-600";
+      return "inline-flex items-center gap-1.5 rounded-full border border-[#d7dee8] bg-[#f7f9fc] px-3.5 py-1.5 text-[12px] font-medium text-slate-600";
     default:
-      return "inline-flex items-center gap-2 rounded-full border border-[#f3d6aa] bg-[#fff7ea] px-4 py-2 text-[13px] font-semibold text-[#cf7c10]";
+      return "inline-flex items-center gap-1.5 rounded-full border border-[#f3d6aa] bg-[#fff7ea] px-3.5 py-1.5 text-[12px] font-medium text-[#cf7c10]";
   }
 }
 
@@ -1480,6 +1629,27 @@ function formatAttemptPoints(attempt: SubmittedAttempt) {
   return `${totalAwardedPoints}/${totalMaxPoints}`;
 }
 
+function calculateAttemptPercentage(attempt: SubmittedAttempt) {
+  const totalAwardedPoints = attempt.questions.reduce(
+    (sum, question) => sum + clampPoints(question.points, question.maxPoints),
+    0,
+  );
+  const totalMaxPoints = attempt.questions.reduce(
+    (sum, question) => sum + question.maxPoints,
+    0,
+  );
+
+  if (totalMaxPoints === 0) {
+    return 0;
+  }
+
+  return Math.round((totalAwardedPoints / totalMaxPoints) * 100);
+}
+
+function formatAttemptPercent(attempt: SubmittedAttempt) {
+  return `${attempt.score ?? calculateAttemptPercentage(attempt)}%`;
+}
+
 function normalizeDisplayText(value?: string) {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : "Хариу оруулаагүй";
@@ -1589,4 +1759,18 @@ function formatRelativeTime(date: Date) {
   }
 
   return formatDateTime(date);
+}
+
+function formatRemainingTime(endTime: Date | undefined, currentTime: number) {
+  if (!endTime) {
+    return null;
+  }
+
+  const remainingMs = Math.max(0, endTime.getTime() - currentTime);
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }

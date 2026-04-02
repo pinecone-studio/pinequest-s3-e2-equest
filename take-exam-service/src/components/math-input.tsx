@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ChangeEvent } from "react"
 import {
   ArrowLeft,
   ArrowRight,
@@ -420,6 +420,7 @@ export function MathInput({
   const initialLatex = value ?? defaultValue
   const isControlled = value !== undefined
   const editorRef = useRef<HTMLDivElement | null>(null)
+  const fallbackTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fieldRef = useRef<MathFieldInstance | null>(null)
   const changeHandlersRef = useRef({ onChange, onValueChange })
   const latexRef = useRef(initialLatex)
@@ -429,6 +430,7 @@ export function MathInput({
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("basic")
   const [latex, setLatex] = useState(initialLatex)
+  const [manualTextMode, setManualTextMode] = useState(false)
   const [librariesReady, setLibrariesReady] = useState({
     katex: false,
     mathquill: false,
@@ -526,10 +528,12 @@ export function MathInput({
     if (latexRef.current) {
       suppressEditRef.current = true
       field.latex(latexRef.current)
-      queueMicrotask(() => {
-        suppressEditRef.current = false
-      })
     }
+
+    queueMicrotask(() => {
+      suppressEditRef.current = false
+      field.focus()
+    })
 
     const handleEnterKey = (rawEvent: Event) => {
       const event = rawEvent as KeyboardEvent
@@ -679,6 +683,11 @@ export function MathInput({
   }
 
   function clear() {
+    if (!fieldRef.current) {
+      syncLatex("", { notify: true, pushHistory: true })
+      return
+    }
+
     applyProgrammaticChange((field) => {
       field.latex("")
     })
@@ -687,11 +696,17 @@ export function MathInput({
   function undo() {
     const previous = undoStackRef.current.pop()
 
-    if (previous === undefined || !fieldRef.current) {
+    if (previous === undefined) {
       return
     }
 
     redoStackRef.current.push(latexRef.current)
+
+    if (!fieldRef.current) {
+      syncLatex(previous, { notify: true, pushHistory: false })
+      return
+    }
+
     suppressEditRef.current = true
     fieldRef.current.latex(previous)
     fieldRef.current.focus()
@@ -705,11 +720,17 @@ export function MathInput({
   function redo() {
     const next = redoStackRef.current.pop()
 
-    if (next === undefined || !fieldRef.current) {
+    if (next === undefined) {
       return
     }
 
     undoStackRef.current.push(latexRef.current)
+
+    if (!fieldRef.current) {
+      syncLatex(next, { notify: true, pushHistory: false })
+      return
+    }
+
     suppressEditRef.current = true
     fieldRef.current.latex(next)
     fieldRef.current.focus()
@@ -724,6 +745,35 @@ export function MathInput({
   const keyboardDisabled = isPaletteMode
     ? false
     : !librariesReady.mathquill || Boolean(libraryError)
+  const useNativeTextareaFallback = !isPaletteMode && keyboardDisabled
+
+  useEffect(() => {
+    if (isPaletteMode) {
+      return
+    }
+
+    if (keyboardDisabled || manualTextMode) {
+      const textarea = fallbackTextareaRef.current
+
+      if (!textarea) {
+        return
+      }
+
+      textarea.focus()
+
+      try {
+        const caretIndex = textarea.value.length
+        textarea.setSelectionRange(caretIndex, caretIndex)
+      } catch {
+        // Ignore browsers that do not support selection APIs here.
+      }
+
+      return
+    }
+
+    fieldRef.current?.focus()
+  }, [isPaletteMode, keyboardDisabled, manualTextMode])
+
   const textFormattingActions = [
     {
       icon: Bold,
@@ -787,6 +837,44 @@ export function MathInput({
     clear()
   }
 
+  function syncMathFieldLatex(nextValue: string) {
+    if (!fieldRef.current) {
+      return
+    }
+
+    suppressEditRef.current = true
+    fieldRef.current.latex(nextValue)
+
+    queueMicrotask(() => {
+      suppressEditRef.current = false
+    })
+  }
+
+  function handleTextModeToggle() {
+    if (isPaletteMode) {
+      onInsertLatex?.("\\text{}", 1)
+      return
+    }
+
+    if (keyboardDisabled) {
+      fallbackTextareaRef.current?.focus()
+      return
+    }
+
+    setManualTextMode((current) => !current)
+  }
+
+  function handleFallbackTextareaChange(event: ChangeEvent<HTMLTextAreaElement>) {
+    const nextValue = event.target.value
+
+    syncLatex(event.target.value, {
+      notify: true,
+      pushHistory: true,
+    })
+
+    syncMathFieldLatex(nextValue)
+  }
+
   return (
     <div
       className={cn(
@@ -808,7 +896,9 @@ export function MathInput({
             <div className="grid grid-cols-6 items-center gap-1 border-b border-slate-200 pb-2 text-slate-900">
               <button
                 type="button"
+                aria-label="Insert text block"
                 className="flex h-10 items-center justify-center rounded-xl text-[1.15rem] font-medium transition hover:bg-slate-100"
+                onClick={handleTextModeToggle}
                 onMouseDown={(event) => event.preventDefault()}
               >
                 abc
@@ -886,7 +976,15 @@ export function MathInput({
             <div className="grid grid-cols-7 gap-2">
               <button
                 type="button"
-                className="flex h-11 items-center justify-center gap-2 rounded-full border border-slate-200/90 bg-white text-sm font-semibold text-slate-700 shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+                aria-label={manualTextMode ? "Switch to math editor" : "Open text input"}
+                aria-pressed={manualTextMode}
+                className={cn(
+                  "flex h-11 items-center justify-center gap-2 rounded-full border text-sm font-semibold shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5",
+                  manualTextMode || keyboardDisabled
+                    ? "border-sky-300 bg-sky-50 text-sky-700 hover:border-sky-400 hover:bg-sky-100"
+                    : "border-slate-200/90 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                )}
+                onClick={handleTextModeToggle}
                 onMouseDown={(event) => event.preventDefault()}
               >
                 <Type className="size-4" />
@@ -896,7 +994,7 @@ export function MathInput({
                 type="button"
                 aria-label="Undo"
                 className="flex h-11 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
-                disabled={undoStackRef.current.length === 0 || keyboardDisabled}
+                disabled={undoStackRef.current.length === 0}
                 onClick={undo}
                 onMouseDown={(event) => event.preventDefault()}
               >
@@ -906,7 +1004,7 @@ export function MathInput({
                 type="button"
                 aria-label="Redo"
                 className="flex h-11 items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-[0_14px_24px_-18px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
-                disabled={redoStackRef.current.length === 0 || keyboardDisabled}
+                disabled={redoStackRef.current.length === 0}
                 onClick={redo}
                 onMouseDown={(event) => event.preventDefault()}
               >
@@ -946,7 +1044,7 @@ export function MathInput({
                 type="button"
                 aria-label="Clear input"
                 className="flex h-11 items-center justify-center rounded-full border border-rose-200/90 bg-rose-50 text-rose-600 shadow-[0_14px_24px_-18px_rgba(244,63,94,0.32)] transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-100 disabled:opacity-50"
-                disabled={!latex || keyboardDisabled}
+                disabled={!latex}
                 onClick={handleClear}
                 onMouseDown={(event) => event.preventDefault()}
               >
@@ -961,17 +1059,67 @@ export function MathInput({
               </div>
 
               <div className="rounded-[30px] border border-slate-200 bg-white px-5 py-4 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.12)]">
-                <div
-                  ref={editorRef}
-                  aria-label="Math input"
-                  className="math-input-editor min-h-20 w-full text-[1.55rem] text-slate-900"
-                />
-                {!latex && (
-                  <p className="pointer-events-none mt-2 text-sm text-slate-400">
-                    {placeholder}
-                  </p>
+                {useNativeTextareaFallback ? (
+                  <>
+                    <textarea
+                      aria-label="Math input"
+                      ref={fallbackTextareaRef}
+                      value={latex}
+                      onChange={handleFallbackTextareaChange}
+                      placeholder={placeholder}
+                      spellCheck={false}
+                      className="min-h-20 w-full resize-y border-0 bg-transparent text-[1rem] leading-7 text-slate-900 outline-none"
+                    />
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      {libraryError
+                        ? "Математикийн keyboard ачаалагдсангүй. Түр fallback text input ашиглаж байна."
+                        : "Математикийн keyboard ачаалж байна. Энэ хооронд энд шууд бичиж болно."}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      ref={editorRef}
+                      aria-label="Math input"
+                      className="math-input-editor min-h-20 w-full text-[1.55rem] text-slate-900"
+                    />
+                    {!latex && (
+                      <p className="pointer-events-none mt-2 text-sm text-slate-400">
+                        {placeholder}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
+
+              {manualTextMode && !useNativeTextareaFallback ? (
+                <div className="mt-3 rounded-[24px] border border-sky-200 bg-sky-50/70 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
+                      ABC MODE
+                    </p>
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-sky-700 transition hover:text-sky-900"
+                      onClick={() => setManualTextMode(false)}
+                    >
+                      Буцаах
+                    </button>
+                  </div>
+                  <textarea
+                    ref={fallbackTextareaRef}
+                    aria-label="Text input"
+                    value={latex}
+                    onChange={handleFallbackTextareaChange}
+                    placeholder="Үсэг, хувьсагч эсвэл LaTeX энд бичнэ үү..."
+                    spellCheck={false}
+                    className="min-h-20 w-full resize-y rounded-[18px] border border-sky-200 bg-white px-3 py-2.5 text-[1rem] leading-7 text-slate-900 outline-none transition focus:border-sky-300"
+                  />
+                  <p className="mt-2 text-xs leading-5 text-sky-800/80">
+                    Энд бичсэн утга дээрх MathQuill талбарт шууд sync хийгдэнэ.
+                  </p>
+                </div>
+              ) : null}
 
               {libraryError && (
                 <p className="mt-3 rounded-2xl border border-rose-200/90 bg-rose-50 px-3 py-2 text-sm text-rose-600">

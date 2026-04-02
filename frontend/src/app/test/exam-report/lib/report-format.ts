@@ -48,26 +48,47 @@ const LATIN_TO_MONGOLIAN_MAP: Record<string, string> = {
   E: "Д",
 };
 
+function cleanGroupText(value: string): string {
+  return value
+    .toUpperCase()
+    .replace(/\b(?:АНГИ|БҮЛЭГ|CLASS|GRADE|SECTION)\b/gu, " ")
+    .replace(/[-–—./,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function normalizeGroupValue(group?: string | null): string {
+  const cleaned = cleanGroupText(group ?? "");
+  const match = cleaned.match(/[A-ZА-ЯӨҮЁ]/u);
+  if (!match?.[0]) {
+    return cleaned;
+  }
+
+  return LATIN_TO_MONGOLIAN_MAP[match[0]] ?? match[0];
+}
+
 export function parseClassName(className: string): {
   grade: string | null;
   group: string | null;
 } {
   const trimmed = className.trim();
-  const match = trimmed.match(/^(\d{1,2})\s*(.+)?$/);
-  if (!match) {
+  const gradeMatch = trimmed.match(/\d{1,2}/);
+  if (!gradeMatch || gradeMatch.index === undefined) {
     return { grade: null, group: null };
   }
 
-  const grade = match[1] ?? null;
-  const group = (match[2] ?? "").trim() || null;
+  const grade = gradeMatch[0] ?? null;
+  const trailingText = trimmed
+    .slice(gradeMatch.index + grade.length)
+    .replace(/^\s*[-–—.,/)]*\s*/u, "")
+    .trim();
+  const group = normalizeGroupValue(trailingText) || null;
 
   return { grade, group };
 }
 
 export function formatGroupLabel(group: string): string {
-  const normalized = group.trim().toUpperCase();
-  const mapped = LATIN_TO_MONGOLIAN_MAP[normalized] ?? normalized;
-  return mapped;
+  return normalizeGroupValue(group);
 }
 
 export function formatClassLabel(className: string): string {

@@ -795,7 +795,7 @@ export function MathAssistField({
             {multiline && supportsWholeRichTextEditor ? (
               <div className={cn(sharedProps.className, "relative")}>
                 {editableValue ? null : (
-                  <span className="pointer-events-none absolute left-2.5 top-2 text-muted-foreground">
+                  <span className="pointer-events-none absolute left-6 top-3 text-muted-foreground">
                     {placeholder}
                   </span>
                 )}
@@ -859,58 +859,60 @@ export function MathAssistField({
             )}
           </>
         )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className={cn(
-            "absolute right-1 top-1 cursor-pointer bg-transparent text-slate-500 hover:bg-transparent hover:text-[#0b5cab]",
-            isKeyboardOpen && "bg-transparent text-[#0b5cab]",
-          )}
-          onClick={() => {
-            setIsEditing(true);
-            setIsKeyboardOpen((current) => !current);
-
-            requestAnimationFrame(() => {
-              if (activeTextIndex !== null) {
-                inlineTextEditorRef.current?.focus();
-                return;
-              }
-
-              if (activeMathIndex !== null) {
-                inlineMathEditorRef.current?.focus();
-                return;
-              }
-
-              if (usesRenderedMathEditor) {
-                beginMathEditing();
-                return;
-              }
-
-              inputRef.current?.focus();
-              syncSelection();
-            });
-          }}
-        >
-          <Keyboard />
-        </Button>
-        {secondaryAction ? (
+        <div className="absolute top-1/2 right-1 z-10 flex -translate-y-1/2 flex-col items-center gap-1">
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
             className={cn(
-              "absolute right-1 top-8 cursor-pointer bg-transparent text-slate-500 hover:bg-transparent hover:text-[#0b5cab]",
-              secondaryAction.active && "bg-transparent text-[#0b5cab]",
+              "h-9 w-9 cursor-pointer rounded-md bg-transparent p-0 text-slate-500 hover:bg-[#eff5ff] hover:text-[#0b5cab]",
+              isKeyboardOpen && "bg-[#eff5ff] text-[#0b5cab]",
             )}
             onClick={() => {
               setIsEditing(true);
-              secondaryAction.onClick();
+              setIsKeyboardOpen((current) => !current);
+
+              requestAnimationFrame(() => {
+                if (activeTextIndex !== null) {
+                  inlineTextEditorRef.current?.focus();
+                  return;
+                }
+
+                if (activeMathIndex !== null) {
+                  inlineMathEditorRef.current?.focus();
+                  return;
+                }
+
+                if (usesRenderedMathEditor) {
+                  beginMathEditing();
+                  return;
+                }
+
+                inputRef.current?.focus();
+                syncSelection();
+              });
             }}
           >
-            {secondaryAction.icon}
+            <Keyboard className="h-[18px] w-[18px]" />
           </Button>
-        ) : null}
+          {secondaryAction ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className={cn(
+                "h-9 w-9 cursor-pointer rounded-md bg-transparent p-0 text-slate-500 hover:bg-[#eff5ff] hover:text-[#0b5cab]",
+                secondaryAction.active && "bg-[#eff5ff] text-[#0b5cab]",
+              )}
+              onClick={() => {
+                setIsEditing(true);
+                secondaryAction.onClick();
+              }}
+            >
+              {secondaryAction.icon}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {shouldShowLivePreview ? (

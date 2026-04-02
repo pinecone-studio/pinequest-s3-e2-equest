@@ -30,29 +30,48 @@ export type MaterialBuilderGeneralInfo = {
   subject: MaterialBuilderSubject;
 };
 
-type GeneralInfoSectionProps = {
-  onChange: (next: MaterialBuilderGeneralInfo) => void;
-  value: MaterialBuilderGeneralInfo;
+type Props = {
+  onApplyDemo: () => void;
+  values: GeneralInfoValues;
+  onChange: (next: GeneralInfoValues) => void;
+  onReset: () => void;
+  showUtilityActions?: boolean;
 };
 
 export function GeneralInfoSection({
   onChange,
-  value,
-}: GeneralInfoSectionProps) {
-  function patch(partial: Partial<MaterialBuilderGeneralInfo>) {
-    onChange({
-      ...value,
-      ...partial,
-    });
-  }
-
+  onReset,
+  showUtilityActions = true,
+}: Props) {
   return (
     <section className="rounded-[18px] border border-[#e3e9f4] bg-white px-5 py-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] sm:px-6">
-      <div className="mb-5 flex items-center gap-2 text-[15px] font-semibold text-slate-900">
-        <span className="inline-flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[#b9d7ff] bg-[#eef6ff] text-[#3b82f6]">
-          <Info className="h-3 w-3" />
-        </span>
-        Ерөнхий мэдээлэл
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[16px] font-semibold text-slate-900">
+          <span className="inline-flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[#b9d7ff] bg-[#eef6ff] text-[#3b82f6]">
+            <Info className="h-3 w-3" />
+          </span>
+          Ерөнхий мэдээлэл
+        </div>
+        {showUtilityActions ? (
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onApplyDemo}
+              className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-55 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
+            >
+              Demo
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onReset}
+              className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-55 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
+            >
+              Reset
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">

@@ -32,14 +32,11 @@ export interface WeakQuestion {
   label: string;
   missedCount: number;
   prompt: string;
+  questionType?: string | null;
   totalCount: number;
 }
 
-export type ScoreTrendPhaseKey =
-  | "baseline"
-  | "progress"
-  | "midterm"
-  | "final";
+export type ScoreTrendPhaseKey = "baseline" | "progress" | "midterm" | "final";
 
 export interface ReportScoreTrendPhase {
   examId: string | null;
@@ -104,7 +101,9 @@ export function pickDefaultReportExamId(
     return null;
   }
 
-  const exams = buildExamList(payload).filter((exam) => exam.totalStudentCount > 0);
+  const exams = buildExamList(payload).filter(
+    (exam) => exam.totalStudentCount > 0,
+  );
   const completedExam =
     exams
       .filter((exam) => Boolean(exam.endTime))
@@ -210,18 +209,23 @@ export function combineExamReports(
   const summaryAverage =
     scores.length > 0
       ? Number(
-          (scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(
-            1,
-          ),
+          (
+            scores.reduce((sum, score) => sum + score, 0) / scores.length
+          ).toFixed(1),
         )
       : null;
   const highestScore = scores.length > 0 ? Math.max(...scores) : null;
   const lowestScore = scores.length > 0 ? Math.min(...scores) : null;
   const failingCount = students.filter((student) => {
-    return typeof student.score === "number" && student.score < FAILING_SCORE_THRESHOLD;
+    return (
+      typeof student.score === "number" &&
+      student.score < FAILING_SCORE_THRESHOLD
+    );
   }).length;
   const scoreDistribution = combineScoreDistribution(reports);
-  const startTime = Math.min(...reports.map((report) => report.exam.startTime.getTime()));
+  const startTime = Math.min(
+    ...reports.map((report) => report.exam.startTime.getTime()),
+  );
   const endTimes = reports
     .map((report) => report.exam.endTime?.getTime())
     .filter((value): value is number => typeof value === "number");
@@ -244,7 +248,9 @@ export function combineExamReports(
       liveStudentCount: reports.reduce((sum, report) => {
         return sum + report.exam.liveStudentCount;
       }, 0),
-      questionCount: Math.max(...reports.map((report) => report.exam.questionCount)),
+      questionCount: Math.max(
+        ...reports.map((report) => report.exam.questionCount),
+      ),
       startTime: new Date(startTime),
       subject: resolveCombinedExamField(
         reports.map((report) => report.exam.subject),
@@ -292,7 +298,11 @@ function buildScoreTrendData(
       return {
         ...exam,
         description: source?.description ?? "",
-        phaseHint: inferScoreTrendPhase(exam.title, exam.topic, source?.description),
+        phaseHint: inferScoreTrendPhase(
+          exam.title,
+          exam.topic,
+          source?.description,
+        ),
         sortTime: exam.endTime?.getTime() ?? exam.startTime.getTime(),
       };
     })
@@ -318,7 +328,9 @@ function buildScoreTrendData(
       continue;
     }
 
-    for (const attempt of payload.attempts.filter((item) => item.testId === phase.examId)) {
+    for (const attempt of payload.attempts.filter(
+      (item) => item.testId === phase.examId,
+    )) {
       const current = studentMap.get(attempt.studentId) ?? {
         className: attempt.criteria?.className ?? selectedExam.class,
         id: attempt.studentId,
@@ -358,13 +370,15 @@ function buildScoreTrendData(
         .map((point) => point.score)
         .filter((score): score is number => typeof score === "number");
       const latestScore =
-        availableScores.length > 0 ? availableScores[availableScores.length - 1] : null;
+        availableScores.length > 0
+          ? availableScores[availableScores.length - 1]
+          : null;
       const overallDelta =
         availableScores.length >= 2
           ? Number(
-              (availableScores[availableScores.length - 1] - availableScores[0]).toFixed(
-                1,
-              ),
+              (
+                availableScores[availableScores.length - 1] - availableScores[0]
+              ).toFixed(1),
             )
           : null;
       const recentDelta =
@@ -406,20 +420,39 @@ function buildWeakQuestions(
   examId: string,
 ): WeakQuestion[] {
   const materialQuestions =
-    payload.testMaterial?.testId === examId ? payload.testMaterial.questions : [];
+    payload.testMaterial?.testId === examId
+      ? payload.testMaterial.questions
+      : [];
   const questionOrder = new Map(
-    materialQuestions.map((question, index) => [question.questionId, index] as const),
+    materialQuestions.map(
+      (question, index) => [question.questionId, index] as const,
+    ),
   );
   const questionPrompt = new Map(
-    materialQuestions.map((question) => [question.questionId, question.prompt] as const),
+    materialQuestions.map(
+      (question) => [question.questionId, question.prompt] as const,
+    ),
+  );
+  const questionType = new Map(
+    materialQuestions.map(
+      (question) => [question.questionId, question.type] as const,
+    ),
   );
 
   const questionStats = new Map<
     string,
-    { missedCount: number; order: number; prompt: string; totalCount: number }
+    {
+      missedCount: number;
+      order: number;
+      prompt: string;
+      questionType?: string | null;
+      totalCount: number;
+    }
   >();
 
-  for (const attempt of payload.attempts.filter((item) => item.testId === examId)) {
+  for (const attempt of payload.attempts.filter(
+    (item) => item.testId === examId,
+  )) {
     for (const result of attempt.result?.questionResults ?? []) {
       const current = questionStats.get(result.questionId) ?? {
         missedCount: 0,
@@ -428,6 +461,8 @@ function buildWeakQuestions(
           questionPrompt.get(result.questionId) ??
           result.prompt ??
           `Асуулт ${result.questionId}`,
+        questionType:
+          questionType.get(result.questionId) ?? result.questionType ?? null,
         totalCount: 0,
       };
 
@@ -449,6 +484,7 @@ function buildWeakQuestions(
       label: formatQuestionLabel(stat.order, questionId),
       missedCount: stat.missedCount,
       prompt: stat.prompt,
+      questionType: stat.questionType,
       totalCount: stat.totalCount,
     }))
     .filter((question) => question.missedCount > 0)
@@ -526,12 +562,7 @@ function inferScoreTrendPhase(
   }
 
   if (
-    hasScoreTrendKeyword(haystack, [
-      "явц",
-      "progress",
-      "practice",
-      "давтлага",
-    ])
+    hasScoreTrendKeyword(haystack, ["явц", "progress", "practice", "давтлага"])
   ) {
     return "progress";
   }
@@ -578,7 +609,8 @@ function pickScoreTrendPhases(
 
   if (selectedExam && !usedIds.has(selectedExam.id)) {
     const fallbackPhase =
-      selectedExam.phaseHint ?? inferPhaseByPosition(candidates, selectedExam.id);
+      selectedExam.phaseHint ??
+      inferPhaseByPosition(candidates, selectedExam.id);
     if (!picks.has(fallbackPhase)) {
       picks.set(fallbackPhase, selectedExam);
       usedIds.add(selectedExam.id);
@@ -599,9 +631,7 @@ function pickScoreTrendPhases(
     "progress",
     candidates.find((candidate, index) => {
       return (
-        index > 0 &&
-        index < candidates.length - 1 &&
-        !usedIds.has(candidate.id)
+        index > 0 && index < candidates.length - 1 && !usedIds.has(candidate.id)
       );
     }) ??
       candidates.find((candidate) => !usedIds.has(candidate.id)) ??
@@ -644,7 +674,9 @@ function pickMidtermScoreTrendCandidate(
   candidates: TrendExamCandidate[],
   usedIds: Set<string>,
 ): TrendExamCandidate | null {
-  const remaining = candidates.filter((candidate) => !usedIds.has(candidate.id));
+  const remaining = candidates.filter(
+    (candidate) => !usedIds.has(candidate.id),
+  );
   if (remaining.length === 0) {
     return null;
   }
@@ -656,7 +688,9 @@ function inferPhaseByPosition(
   candidates: TrendExamCandidate[],
   selectedExamId: string,
 ): ScoreTrendPhaseKey {
-  const index = candidates.findIndex((candidate) => candidate.id === selectedExamId);
+  const index = candidates.findIndex(
+    (candidate) => candidate.id === selectedExamId,
+  );
 
   if (index <= 0) {
     return "baseline";
@@ -673,10 +707,14 @@ function inferPhaseByPosition(
 function getAttemptScore(
   attempt: DashboardApiPayload["attempts"][number],
 ): number | null {
-  return attempt.result?.percentage ?? attempt.percentage ?? attempt.score ?? null;
+  return (
+    attempt.result?.percentage ?? attempt.percentage ?? attempt.score ?? null
+  );
 }
 
-function toStudentStatus(status: DashboardApiPayload["attempts"][number]["status"]): StudentStatus {
+function toStudentStatus(
+  status: DashboardApiPayload["attempts"][number]["status"],
+): StudentStatus {
   switch (status) {
     case "in_progress":
       return "in-progress";
@@ -691,7 +729,10 @@ function toStudentStatus(status: DashboardApiPayload["attempts"][number]["status
   }
 }
 
-function compareReportStudents(left: ReportStudentRow, right: ReportStudentRow) {
+function compareReportStudents(
+  left: ReportStudentRow,
+  right: ReportStudentRow,
+) {
   const rightScore = right.score ?? -1;
   const leftScore = left.score ?? -1;
 
@@ -705,15 +746,22 @@ function compareReportStudents(left: ReportStudentRow, right: ReportStudentRow) 
 function combineWeakQuestions(reports: ExamReportData[]): WeakQuestion[] {
   const totals = new Map<
     string,
-    { label: string; missedCount: number; prompt: string; totalCount: number }
+    {
+      label: string;
+      missedCount: number;
+      prompt: string;
+      questionType?: string | null;
+      totalCount: number;
+    }
   >();
 
   for (const question of reports.flatMap((report) => report.weakQuestions)) {
-    const key = `${question.label}::${question.prompt}`;
+    const key = `${question.label}::${question.prompt}::${question.questionType ?? ""}`;
     const current = totals.get(key) ?? {
       label: question.label,
       missedCount: 0,
       prompt: question.prompt,
+      questionType: question.questionType,
       totalCount: 0,
     };
 
@@ -731,6 +779,7 @@ function combineWeakQuestions(reports: ExamReportData[]): WeakQuestion[] {
       label: question.label,
       missedCount: question.missedCount,
       prompt: question.prompt,
+      questionType: question.questionType,
       totalCount: question.totalCount,
     }))
     .sort((left, right) => {
@@ -742,9 +791,12 @@ function combineWeakQuestions(reports: ExamReportData[]): WeakQuestion[] {
     });
 }
 
-function combineScoreTrendData(reports: ExamReportData[]): ReportScoreTrendData {
+function combineScoreTrendData(
+  reports: ExamReportData[],
+): ReportScoreTrendData {
   const phases =
-    reports.find((report) => report.scoreTrend.phases.length > 0)?.scoreTrend.phases ??
+    reports.find((report) => report.scoreTrend.phases.length > 0)?.scoreTrend
+      .phases ??
     SCORE_TREND_PHASES.map((phase) => ({
       examId: null,
       examTitle: null,
@@ -759,9 +811,14 @@ function combineScoreTrendData(reports: ExamReportData[]): ReportScoreTrendData 
 }
 
 function combineRiskDistribution(reports: ExamReportData[]) {
-  const totals = new Map<string, { color: string; name: string; value: number }>();
+  const totals = new Map<
+    string,
+    { color: string; name: string; value: number }
+  >();
 
-  for (const slice of reports.flatMap((report) => report.analytics.riskDistribution)) {
+  for (const slice of reports.flatMap(
+    (report) => report.analytics.riskDistribution,
+  )) {
     const current = totals.get(slice.name) ?? {
       color: slice.color,
       name: slice.name,

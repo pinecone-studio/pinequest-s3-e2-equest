@@ -1,11 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fetchRuntimeJson } from "@/lib/runtime-api";
 import { fetchTakeExamDashboard } from "@/lib/take-exam-dashboard-api";
 import { TestShell } from "../_components/test-shell";
+import type { BreadcrumbItem } from "../_components/test-header-bar";
 import { ExamDashboard } from "./_components/exam-dashboard";
 import { TeacherExamGallery } from "./_components/teacher-exam-gallery";
 import {
@@ -68,6 +70,7 @@ type CreatedExamListApiResponse = {
 };
 
 export default function ExamMonitoringApp() {
+  const router = useRouter();
   const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
   const [createdExams, setCreatedExams] = useState<Exam[]>([]);
   const [createdExamsError, setCreatedExamsError] = useState<string | null>(
@@ -197,10 +200,7 @@ export default function ExamMonitoringApp() {
       }
 
       try {
-        const nextPayload = await fetchTakeExamDashboard(
-          40,
-          selectedExamId,
-        );
+        const nextPayload = await fetchTakeExamDashboard(40, selectedExamId);
 
         setPayload(nextPayload);
         setDashboardError(null);
@@ -261,11 +261,16 @@ export default function ExamMonitoringApp() {
     }
 
     return {
-      attempts: payload.attempts.filter((attempt) => attempt.testId === selectedExamId),
+      attempts: payload.attempts.filter(
+        (attempt) => attempt.testId === selectedExamId,
+      ),
       exam:
-        payload.availableTests.find((test) => test.id === selectedExamId) ?? null,
+        payload.availableTests.find((test) => test.id === selectedExamId) ??
+        null,
       testMaterial:
-        payload.testMaterial?.testId === selectedExamId ? payload.testMaterial : null,
+        payload.testMaterial?.testId === selectedExamId
+          ? payload.testMaterial
+          : null,
     };
   }, [payload, selectedExamId]);
 
@@ -312,13 +317,15 @@ export default function ExamMonitoringApp() {
       },
       testMaterial: selectedExamPayload.testMaterial
         ? {
-            questions: selectedExamPayload.testMaterial.questions.map((question) => ({
-              competency: question.competency,
-              points: question.points,
-              prompt: question.prompt,
-              questionId: question.questionId,
-              type: question.type,
-            })),
+            questions: selectedExamPayload.testMaterial.questions.map(
+              (question) => ({
+                competency: question.competency,
+                points: question.points,
+                prompt: question.prompt,
+                questionId: question.questionId,
+                type: question.type,
+              }),
+            ),
           }
         : null,
     });
@@ -361,7 +368,9 @@ export default function ExamMonitoringApp() {
           authUrl,
           authMethod: "POST",
         });
-        const channel = realtime.channels.get(`exam-monitoring:${selectedExamId}`);
+        const channel = realtime.channels.get(
+          `exam-monitoring:${selectedExamId}`,
+        );
         const subscribedEvents = [
           "attempt.started",
           "attempt.saved",
@@ -413,6 +422,42 @@ export default function ExamMonitoringApp() {
             state: "disconnected",
           });
         };
+        let didDisposeRealtime = false;
+        const disposeRealtime = () => {
+          if (didDisposeRealtime) {
+            return;
+          }
+          didDisposeRealtime = true;
+
+          try {
+            realtime.connection.off(handleConnectionState);
+          } catch {
+            // Ignore realtime listener cleanup failures.
+          }
+
+          try {
+            for (const eventName of subscribedEvents) {
+              channel.unsubscribe(eventName, handleRealtimeMessage);
+            }
+          } catch {
+            // Ignore realtime channel cleanup failures.
+          }
+
+          const currentState = realtime.connection.state;
+          if (
+            currentState === "closed" ||
+            currentState === "closing" ||
+            currentState === "failed"
+          ) {
+            return;
+          }
+
+          try {
+            realtime.close();
+          } catch {
+            // Ignore realtime close failures.
+          }
+        };
 
         try {
           for (const eventName of subscribedEvents) {
@@ -428,25 +473,11 @@ export default function ExamMonitoringApp() {
             lastCheckedAt: new Date().toISOString(),
             state: "failed",
           });
-          try {
-            realtime.close();
-          } catch {
-            // Ignore realtime cleanup failures.
-          }
+          disposeRealtime();
           return;
         }
 
-        cleanup = () => {
-          try {
-            realtime.connection.off(handleConnectionState);
-            for (const eventName of subscribedEvents) {
-              channel.unsubscribe(eventName, handleRealtimeMessage);
-            }
-            realtime.close();
-          } catch {
-            // Ignore realtime cleanup failures.
-          }
-        };
+        cleanup = disposeRealtime;
       })
       .catch((error) => {
         setAblyStatus({
@@ -539,6 +570,13 @@ export default function ExamMonitoringApp() {
     : selectedCreatedExam
       ? `${selectedCreatedExam.subject} • ${selectedCreatedExam.topic} • ${selectedCreatedExam.class}`
       : "Шалгалтуудаа нэг дороос сонгож, идэвхтэй явц ба үнэлгээний хяналтыг удирдана.";
+  const breadcrumbItems: BreadcrumbItem[] = selectedExamId
+    ? [
+        { href: "/test/live-dashboard", label: "Нүүр" },
+        { href: "/test/live-dashboard", label: "Миний шалгалтууд" },
+        { active: true, label: headerTitle },
+      ]
+    : [];
 
   const headerMeta = (
     <>
@@ -568,7 +606,9 @@ export default function ExamMonitoringApp() {
         />
         <span>{formatOllamaStatusLabel(ollamaStatus)}</span>
       </div>
-      <span>Шинэчлэгдсэн {lastUpdated ? formatTimeAgo(lastUpdated) : "саяхан"}</span>
+      <span>
+        Шинэчлэгдсэн {lastUpdated ? formatTimeAgo(lastUpdated) : "саяхан"}
+      </span>
     </>
   );
 
@@ -596,6 +636,7 @@ export default function ExamMonitoringApp() {
   if (isCreatedExamsLoading) {
     return (
       <TestShell
+        breadcrumbItems={breadcrumbItems}
         title="Миний шалгалтууд"
         sidebarCollapsible
         teacherVariant="switcher"
@@ -612,6 +653,7 @@ export default function ExamMonitoringApp() {
   if (!selectedExamId) {
     return (
       <TestShell
+        breadcrumbItems={breadcrumbItems}
         title="Миний шалгалтууд"
         sidebarCollapsible
         teacherVariant="switcher"
@@ -619,7 +661,11 @@ export default function ExamMonitoringApp() {
         <TeacherExamGallery
           exams={createdExams}
           error={createdExamsError}
-          onSelectExam={(exam) => setSelectedExamId(exam.id)}
+          onSelectExam={(exam) =>
+            router.push(
+              `/test/material-builder?examId=${encodeURIComponent(exam.id)}`,
+            )
+          }
         />
       </TestShell>
     );
@@ -628,6 +674,7 @@ export default function ExamMonitoringApp() {
   if (isLoading && !payload) {
     return (
       <TestShell
+        breadcrumbItems={breadcrumbItems}
         title={headerTitle}
         description={headerDescription}
         actions={headerActions}
@@ -645,6 +692,7 @@ export default function ExamMonitoringApp() {
   if (!selectedExamData?.exam) {
     return (
       <TestShell
+        breadcrumbItems={breadcrumbItems}
         title={headerTitle}
         description={headerDescription}
         actions={headerActions}
@@ -652,8 +700,8 @@ export default function ExamMonitoringApp() {
       >
         <div className="px-8 py-10">
           <div className="rounded-[22px] border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500">
-            Энэ шалгалтын live monitoring өгөгдөл одоогоор take-exam-service дээр
-            олдсонгүй.
+            Энэ шалгалтын live monitoring өгөгдөл одоогоор take-exam-service
+            дээр олдсонгүй.
           </div>
         </div>
       </TestShell>
@@ -662,6 +710,7 @@ export default function ExamMonitoringApp() {
 
   return (
     <TestShell
+      breadcrumbItems={breadcrumbItems}
       title={headerTitle}
       description={headerDescription}
       meta={headerMeta}
@@ -695,9 +744,7 @@ function formatTimeAgo(date: Date): string {
   return `${Math.floor(diffSecs / 60)} минутын өмнө`;
 }
 
-function getConnectionDotClass(
-  state: AblyConnectionStatus["state"],
-): string {
+function getConnectionDotClass(state: AblyConnectionStatus["state"]): string {
   switch (state) {
     case "connected":
       return "bg-success";
@@ -732,7 +779,9 @@ function formatAblyStatusLabel(status: AblyConnectionStatus | null): string {
   }
 }
 
-function formatOllamaStatusLabel(status: OllamaConnectionStatus | null): string {
+function formatOllamaStatusLabel(
+  status: OllamaConnectionStatus | null,
+): string {
   if (!status) {
     return "Ollama AI шалгаж байна";
   }
@@ -748,7 +797,9 @@ function formatOllamaStatusLabel(status: OllamaConnectionStatus | null): string 
   return "Ollama AI холбогдоогүй";
 }
 
-function mapApiCreatedExamToExam(exam: CreatedExamListApiResponse["exams"][number]): Exam {
+function mapApiCreatedExamToExam(
+  exam: CreatedExamListApiResponse["exams"][number],
+): Exam {
   return {
     averageScore: undefined,
     class: exam.class,
@@ -846,7 +897,9 @@ async function fetchCreatedExamsDirect(): Promise<CreatedExamListApiResponse> {
       const exam = detail.status === "fulfilled" ? detail.value : null;
       const sessionMeta = exam?.sessionMeta;
       const gradeLabel =
-        typeof sessionMeta?.grade === "number" ? `${sessionMeta.grade}-р анги` : "";
+        typeof sessionMeta?.grade === "number"
+          ? `${sessionMeta.grade}-р анги`
+          : "";
       const groupLabel = sessionMeta?.groupClass?.trim() ?? "";
       const startTime = exam?.createdAt ?? summary.updatedAt;
       const durationMinutes =
@@ -854,7 +907,8 @@ async function fetchCreatedExamsDirect(): Promise<CreatedExamListApiResponse> {
 
       return {
         class:
-          [gradeLabel, groupLabel].filter(Boolean).join(" ") || "Тодорхойгүй анги",
+          [gradeLabel, groupLabel].filter(Boolean).join(" ") ||
+          "Тодорхойгүй анги",
         durationMinutes,
         endTime:
           durationMinutes && startTime
@@ -864,7 +918,10 @@ async function fetchCreatedExamsDirect(): Promise<CreatedExamListApiResponse> {
             : null,
         examType: sessionMeta?.examType?.trim() || null,
         id: summary.examId,
-        questionCount: Math.max((exam?.mathCount ?? 0) + (exam?.mcqCount ?? 0), 0),
+        questionCount: Math.max(
+          (exam?.mathCount ?? 0) + (exam?.mcqCount ?? 0),
+          0,
+        ),
         startTime,
         subject: sessionMeta?.subject?.trim() || "Математик",
         title: exam?.title ?? summary.title,
@@ -902,10 +959,12 @@ function readCreatedExamsCache(): Exam[] | null {
 
     const parsed = JSON.parse(raw) as {
       expiresAt?: number;
-      exams?: Array<Omit<Exam, "startTime" | "endTime"> & {
-        endTime?: string;
-        startTime: string;
-      }>;
+      exams?: Array<
+        Omit<Exam, "startTime" | "endTime"> & {
+          endTime?: string;
+          startTime: string;
+        }
+      >;
     };
 
     if (!parsed.expiresAt || parsed.expiresAt < Date.now() || !parsed.exams) {

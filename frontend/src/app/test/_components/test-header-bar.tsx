@@ -1,7 +1,15 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, RefreshCw, UserRound } from "lucide-react";
+import {
+  ChevronRight,
+  ChevronDown,
+  House,
+  RefreshCw,
+  UserRound,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,9 +27,16 @@ type TeacherProfile = {
   role: string;
 };
 
+export type BreadcrumbItem = {
+  active?: boolean;
+  href?: string;
+  label: string;
+};
+
 type TestHeaderBarProps = {
   actions?: ReactNode;
-  rightSlot?: ReactNode;
+  breadcrumb?: ReactNode;
+  breadcrumbItems?: BreadcrumbItem[];
   description?: string;
   isTeacherRefreshing?: boolean;
   meta?: ReactNode;
@@ -52,7 +67,8 @@ const MOCK_TEACHERS: TeacherProfile[] = [
 
 export function TestHeaderBar({
   actions,
-  rightSlot,
+  breadcrumb,
+  breadcrumbItems,
   description,
   isTeacherRefreshing = false,
   meta,
@@ -60,9 +76,8 @@ export function TestHeaderBar({
   teacherVariant = "default",
   title,
 }: TestHeaderBarProps) {
-  const [selectedTeacherId, setSelectedTeacherId] = useState(
-    MOCK_TEACHERS[0].id,
-  );
+  const pathname = usePathname();
+  const [selectedTeacherId, setSelectedTeacherId] = useState(MOCK_TEACHERS[0].id);
 
   useEffect(() => {
     const storedTeacherId = window.localStorage.getItem(STORAGE_KEY);
@@ -81,15 +96,18 @@ export function TestHeaderBar({
   const selectedTeacher =
     MOCK_TEACHERS.find((teacher) => teacher.id === selectedTeacherId) ??
     MOCK_TEACHERS[0];
+  const resolvedBreadcrumbItems = breadcrumbItems ?? buildBreadcrumbItems(pathname, title);
+  const shouldRenderBreadcrumb =
+    breadcrumb !== undefined || resolvedBreadcrumbItems.length > 0;
 
   return (
     <header className="row-start-1 col-start-2 flex items-center justify-between border-b border-slate-200 bg-white px-8">
       <div className="min-w-0">
-        <h1 className="truncate text-[30px] font-bold tracking-[-0.03em] text-slate-900">
-          {title}
-        </h1>
+        {shouldRenderBreadcrumb
+          ? breadcrumb ?? <TestBreadcrumb items={resolvedBreadcrumbItems} />
+          : null}
         {description ? (
-          <p className="mt-1 truncate text-[13px] font-medium text-slate-500">
+          <p className="mt-2 truncate text-[13px] font-medium text-slate-500">
             {description}
           </p>
         ) : null}
@@ -121,6 +139,95 @@ export function TestHeaderBar({
       </div>
     </header>
   );
+}
+
+function TestBreadcrumb({ items }: { items: BreadcrumbItem[] }) {
+  return (
+    <nav
+      aria-label="breadcrumb"
+      className="inline-flex max-w-full items-center gap-2 rounded-[24px] border border-[#e7edf5] bg-white p-2 pr-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)]"
+    >
+      {items.map((item, index) => {
+        const isLast = index === items.length - 1;
+
+        return (
+          <div key={`${item.label}-${index}`} className="flex min-w-0 items-center gap-2">
+            {index === 0 ? (
+              item.href ? (
+                <Link
+                  href={item.href}
+                  className="inline-flex items-center gap-2 rounded-[18px] px-3 py-2 text-[15px] font-semibold text-slate-900 transition hover:bg-[#f4f7fb]"
+                >
+                  <House className="h-4 w-4 text-slate-700" />
+                  {item.label}
+                </Link>
+              ) : (
+                <span className="inline-flex items-center gap-2 rounded-[18px] px-3 py-2 text-[15px] font-semibold text-slate-900">
+                  <House className="h-4 w-4 text-slate-700" />
+                  {item.label}
+                </span>
+              )
+            ) : item.active ? (
+              <span className="inline-flex items-center whitespace-nowrap rounded-[18px] bg-[#e8f2fd] px-4 py-2 text-[15px] font-semibold text-[#0b5cab]">
+                {item.label}
+              </span>
+            ) : item.href ? (
+              <Link
+                href={item.href}
+                className="inline-flex items-center whitespace-nowrap rounded-[18px] px-3 py-2 text-[15px] font-semibold text-slate-900 transition hover:bg-[#f4f7fb]"
+              >
+                {item.label}
+              </Link>
+            ) : (
+              <span className="inline-flex items-center whitespace-nowrap rounded-[18px] px-3 py-2 text-[15px] font-semibold text-slate-900">
+                {item.label}
+              </span>
+            )}
+
+            {!isLast ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" /> : null}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+function buildBreadcrumbItems(pathname: string, title: string): BreadcrumbItem[] {
+  const homeItem: BreadcrumbItem = { href: "/test/live-dashboard", label: "Нүүр" };
+
+  if (pathname.startsWith("/test/material-builder")) {
+    return [homeItem, { active: true, label: "Шалгалтын материал үүсгэх" }];
+  }
+
+  if (pathname.startsWith("/test/live-dashboard")) {
+    if (title !== "Миний шалгалтууд") {
+      return [
+        homeItem,
+        { href: "/test/live-dashboard", label: "Миний шалгалтууд" },
+        { active: true, label: title },
+      ];
+    }
+
+    return [homeItem, { active: true, label: "Миний шалгалтууд" }];
+  }
+
+  if (pathname.startsWith("/test/exam-progress")) {
+    if (title !== "Шалгалтын явц") {
+      return [
+        homeItem,
+        { href: "/test/exam-progress", label: "Шалгалтын явц" },
+        { active: true, label: title },
+      ];
+    }
+
+    return [homeItem, { active: true, label: "Шалгалтын явц" }];
+  }
+
+  if (pathname.startsWith("/test/exam-report")) {
+    return [homeItem, { active: true, label: "Шалгалтын тайлан" }];
+  }
+
+  return [homeItem, { active: true, label: title }];
 }
 
 function TeacherControl({

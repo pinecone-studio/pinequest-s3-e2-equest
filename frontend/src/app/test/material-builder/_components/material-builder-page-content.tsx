@@ -1,10 +1,33 @@
 "use client";
 
-import { useApolloClient, useMutation } from "@apollo/client/react";
-import { useEffect, useMemo, useState } from "react";
+import { useLazyQuery, useMutation } from "@apollo/client/react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  GripVertical,
+  Loader2,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  ListNewMathExamsDocument,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { MathAssistField } from "@/components/exam/math-exam-assist-field";
+import MathPreviewText from "@/components/math-preview-text";
+import { normalizeBackendMathText } from "@/lib/normalize-math-text";
+import {
+  ConfirmExamVariantsDocument,
+  GetExamVariantJobDocument,
+  GetNewMathExamDocument,
   SaveNewMathExamDocument,
 } from "@/gql/create-exam-documents";
 import {
@@ -14,6 +37,7 @@ import {
 } from "@/gql/graphql";
 import { Button } from "@/components/ui/button";
 import { TestShell } from "../../_components/test-shell";
+import type { BreadcrumbItem } from "../../_components/test-header-bar";
 import {
   GeneralInfoSection,
   type MaterialBuilderExamType,
@@ -46,8 +70,55 @@ import {
 } from "@/features/textbook-processing/persisted-material-cache";
 import { useTextbookMaterialLibrary } from "@/features/textbook-processing/use-textbook-material-library";
 
-const DEFAULT_GENERAL_INFO: MaterialBuilderGeneralInfo = {
-  durationMinutes: 30,
+type GeneratedVariant = {
+  id: string;
+  variantNumber: number;
+  title: string;
+  status?: string | null;
+  confirmedAt?: string | null;
+  savedAt?: string | null;
+  savedExamId?: string | null;
+  questions: Array<{
+    id: string;
+    position: number;
+    type: string;
+    prompt: string;
+    options?: string[] | null;
+    correctAnswer?: string | null;
+    explanation?: string | null;
+  }>;
+};
+
+type ExistingExamQuestion = {
+  answerLatex?: string | null;
+  correctOption?: number | null;
+  id: string;
+  options?: string[] | null;
+  points?: number | null;
+  prompt: string;
+  responseGuide?: string | null;
+  type: string;
+};
+
+type ExistingExam = {
+  examId: string;
+  questions: ExistingExamQuestion[];
+  sessionMeta?: {
+    durationMinutes?: number | null;
+    examType?: string | null;
+    grade?: number | null;
+    groupClass?: string | null;
+    subject?: string | null;
+    variantCount?: number | null;
+    withVariants?: boolean | null;
+  } | null;
+  title: string;
+};
+
+const defaultGeneralInfo: GeneralInfoValues = {
+  subject: "",
+  grade: "",
+  examType: "",
   examName: "",
   examType: "progress",
   grade: 10,
@@ -130,18 +201,15 @@ function buildTextbookSaveInput(
     };
   });
 
-  const mathQuestions = textbookState.generatedTest.openQuestions.map((task) => ({
-    type: MathExamQuestionType.Math,
-    prompt: task.prompt.trim() || "Задгай даалгавар",
-    points: normalizePoints(task.score || task.points),
-    responseGuide: buildResponseGuide(task.answer, task.sourceExcerpt),
-    answerLatex: task.answer.trim() || undefined,
-  }));
-
-  const questions = [...mcqQuestions, ...mathQuestions];
-  const totalPoints = questions.reduce(
-    (sum, question) => sum + normalizePoints(question.points),
-    0,
+function buildBaseExamInput(args: {
+  examId?: string;
+  generalInfo: GeneralInfoValues;
+  previewQuestions: PreviewQuestion[];
+  hasGeneratedVariants: boolean;
+  generatedVariantsCount: number;
+}) {
+  const mcqQuestions = args.previewQuestions.filter(
+    (question) => question.questionType !== "written",
   );
   const topics = textbookState.selectedSectionTitles.filter((title) =>
     title.trim().length > 0,
@@ -290,8 +358,22 @@ function mergeTextbookLibraryItems(
 }
 
 export default function MaterialBuilderPageContent() {
-  const apolloClient = useApolloClient();
-  const [saveNewMathExamMutation] = useMutation(SaveNewMathExamDocument);
+  const searchParams = useSearchParams();
+  const editingExamId = searchParams.get("examId")?.trim() ?? "";
+  const isEditingExistingExam = editingExamId.length > 0;
+  const builderTitle = isEditingExistingExam
+    ? "Шалгалт үүсгэх"
+    : "Шалгалтын материал үүсгэх";
+  const breadcrumbItems: BreadcrumbItem[] = isEditingExistingExam
+    ? [
+        { href: "/test/live-dashboard", label: "Нүүр" },
+        { href: "/test/live-dashboard", label: "Миний шалгалтууд" },
+        { active: true, label: builderTitle },
+      ]
+    : [
+        { href: "/test/live-dashboard", label: "Нүүр" },
+        { active: true, label: builderTitle },
+      ];
   const [source, setSource] = useState<MaterialSourceId>("question-bank");
   const [generalInfo, setGeneralInfo] =
     useState<MaterialBuilderGeneralInfo>(DEFAULT_GENERAL_INFO);
@@ -309,18 +391,38 @@ export default function MaterialBuilderPageContent() {
   const [selectedTextbookLibraryId, setSelectedTextbookLibraryId] = useState<string | null>(
     null,
   );
-  const [queuedImportedTextbookId, setQueuedImportedTextbookId] = useState<string | null>(
-    null,
-  );
+  const [draggedConfirmedQuestion, setDraggedConfirmedQuestion] = useState<{
+    questionId: string;
+    variantId: string;
+  } | null>(null);
+  const [dragTargetConfirmedQuestion, setDragTargetConfirmedQuestion] =
+    useState<{
+      questionId: string;
+      variantId: string;
+    } | null>(null);
+  const [savingExam, setSavingExam] = useState(false);
+  const [savingVariantAsExam, setSavingVariantAsExam] = useState(false);
   const [savedExamId, setSavedExamId] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [hasHydratedImportedTextbooks, setHasHydratedImportedTextbooks] = useState(false);
-  const {
-    isLoading: isLoadingTextbookLibrary,
-    items: persistedTextbookMaterials,
-  } = useTextbookMaterialLibrary({
-    grade: generalInfo.grade,
-    subject: generalInfo.subject,
+  const [persistedVariantCount, setPersistedVariantCount] = useState(0);
+  const [isHydratingExistingExam, setIsHydratingExistingExam] = useState(
+    isEditingExistingExam,
+  );
+  const hydratedExamIdRef = useRef<string | null>(null);
+  const variantToastIdRef = useRef<string | number | null>(null);
+
+  const [requestExamVariants, { loading: requestingVariants }] = useMutation(
+    RequestExamVariantsDocument,
+  );
+  const [confirmExamVariants, { loading: confirmingVariants }] = useMutation(
+    ConfirmExamVariantsDocument,
+  );
+  const [saveExamVariants] = useMutation(SaveExamVariantsDocument);
+  const [saveNewMathExam] = useMutation(SaveNewMathExamDocument);
+  const [fetchExistingExam] = useLazyQuery(GetNewMathExamDocument, {
+    fetchPolicy: "no-cache",
+  });
+  const [fetchVariantJob] = useLazyQuery(GetExamVariantJobDocument, {
+    fetchPolicy: "no-cache",
   });
 
   const activeImportedTextbook =
@@ -329,12 +431,99 @@ export default function MaterialBuilderPageContent() {
     () => mergeTextbookLibraryItems(importedTextbooks, persistedTextbookMaterials),
     [importedTextbooks, persistedTextbookMaterials],
   );
-  const selectedTextbookLibrary =
-    textbookLibraryItems.find((item) => item.id === selectedTextbookLibraryId) || null;
-  const queuedImportedTextbook =
-    importedTextbooks.find((item) => item.id === queuedImportedTextbookId) ||
-    textbookLibraryItems.find((item) => item.id === queuedImportedTextbookId) ||
-    null;
+  const resolvedVariantCount =
+    confirmedVariants.length > 0
+      ? confirmedVariants.length
+      : persistedVariantCount;
+
+  useEffect(() => {
+    if (!isEditingExistingExam) {
+      hydratedExamIdRef.current = null;
+      setGeneralInfo(defaultGeneralInfo);
+      setSource("question-bank");
+      setSelectedSharedMaterialId(sharedLibraryMaterials[0]?.id ?? "");
+      setVariantDialogOpen(false);
+      setVariantViewerOpen(false);
+      setVariantCount("2");
+      setPreviewQuestions([]);
+      setVariantJobId(null);
+      setGeneratedVariants([]);
+      setSelectedVariantId(null);
+      setCheckedVariantIds([]);
+      setConfirmedVariantIds([]);
+      setEditingQuestionId(null);
+      setSavingExam(false);
+      setSavingVariantAsExam(false);
+      setSavedExamId(null);
+      setPersistedVariantCount(0);
+      setIsHydratingExistingExam(false);
+      return;
+    }
+
+    if (hydratedExamIdRef.current === editingExamId) {
+      return;
+    }
+
+    let cancelled = false;
+    setIsHydratingExistingExam(true);
+
+    void fetchExistingExam({
+      variables: { examId: editingExamId },
+    })
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        const exam = (
+          result.data as { getNewMathExam?: ExistingExam | null } | undefined
+        )?.getNewMathExam;
+
+        if (!exam) {
+          throw new Error("Сонгосон шалгалтын мэдээлэл олдсонгүй.");
+        }
+
+        setGeneralInfo(mapExistingExamToGeneralInfo(exam));
+        setSource("question-bank");
+        setSelectedSharedMaterialId(sharedLibraryMaterials[0]?.id ?? "");
+        setVariantDialogOpen(false);
+        setVariantViewerOpen(false);
+        setPreviewQuestions(mapExistingExamToPreviewQuestions(exam));
+        setVariantJobId(null);
+        setGeneratedVariants([]);
+        setSelectedVariantId(null);
+        setCheckedVariantIds([]);
+        setConfirmedVariantIds([]);
+        setEditingQuestionId(null);
+        setSavedExamId(exam.examId);
+        setPersistedVariantCount(
+          exam.sessionMeta?.withVariants
+            ? Math.max(exam.sessionMeta?.variantCount ?? 0, 0)
+            : 0,
+        );
+        hydratedExamIdRef.current = editingExamId;
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Сонгосон шалгалтыг нээж чадсангүй.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsHydratingExistingExam(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editingExamId, fetchExistingExam, isEditingExistingExam]);
 
   useEffect(() => {
     setSavedExamId(null);
@@ -363,8 +552,26 @@ export default function MaterialBuilderPageContent() {
       return;
     }
 
-    persistImportedTextbookCards(importedTextbooks);
-  }, [hasHydratedImportedTextbooks, importedTextbooks]);
+    try {
+      const title = generalInfo.examName.trim();
+      if (!title) {
+        toast.error("Шалгалтын нэрээ оруулна уу.");
+        return;
+      }
+
+      let baseExamId = savedExamId;
+      if (!baseExamId) {
+        const saveResult = await saveNewMathExam({
+          variables: {
+            input: buildBaseExamInput({
+              examId: undefined,
+              generalInfo,
+              previewQuestions,
+              hasGeneratedVariants: resolvedVariantCount > 0,
+              generatedVariantsCount: resolvedVariantCount,
+            }),
+          },
+        });
 
   async function handleSave() {
     if (source !== "textbook" && source !== "import") {
@@ -485,97 +692,754 @@ export default function MaterialBuilderPageContent() {
       return;
     }
 
-    setSelectedTextbookLibraryId(importId);
-    setQueuedImportedTextbookId(importId);
+    try {
+      setSavingExam(true);
+
+      const input = {
+        ...buildBaseExamInput({
+          examId: savedExamId ?? undefined,
+          generalInfo,
+          previewQuestions,
+          hasGeneratedVariants: resolvedVariantCount > 0,
+          generatedVariantsCount: resolvedVariantCount,
+        }),
+      };
+
+      const result = await saveNewMathExam({ variables: { input } });
+      const examId = (
+        result.data as
+          | {
+              saveNewMathExam?: {
+                examId?: string | null;
+              } | null;
+            }
+          | undefined
+      )?.saveNewMathExam?.examId;
+
+      if (!examId) {
+        throw new Error("Хариу дээр examId ирсэнгүй.");
+      }
+
+      setSavedExamId(examId);
+      setPersistedVariantCount(resolvedVariantCount);
+      toast.success("Шалгалт өгөгдлийн санд амжилттай хадгалагдлаа.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Шалгалт хадгалах үед алдаа гарлаа.",
+      );
+    } finally {
+      setSavingExam(false);
+    }
   }
+
+  const pageHeading = generalInfo.examName.trim();
 
   return (
     <TestShell
-      title="Шалгалтын материал үүсгэх"
-      description="Шалгалтын ерөнхий мэдээлэл, материалын эх сурвалж, хугацааг эндээс тохируулна."
-      contentClassName="bg-[#eef3ff] px-6 py-0 sm:px-8 lg:px-10"
+      breadcrumbItems={breadcrumbItems}
+      title={builderTitle}
+      contentClassName="px-6 py-0 sm:px-8 lg:px-10"
+      hideSidebar={isEditingExistingExam}
+      sidebarCollapsible={!isEditingExistingExam}
+      teacherVariant={isEditingExistingExam ? "none" : undefined}
     >
       <div className="min-h-[calc(100vh-3rem)] w-full pb-10 pt-1">
-        <GeneralInfoSection value={generalInfo} onChange={setGeneralInfo} />
-        <SourceSelector source={source} onChange={setSource} />
-        {source === "question-bank" ? <QuestionBankSection /> : null}
-        {source === "import" ? (
-          <div className="space-y-5">
-            <ImportSection
-              activeImportId={activeImportedTextbookId}
-              importedTextbooks={importedTextbooks}
-              onTextbookPicked={handleTextbookPicked}
-              onOpenImportedTextbook={handleOpenImportedTextbook}
-            />
-            {activeImportedTextbook ? (
-              <TextbookSection
-                activeImportId={activeImportedTextbookId}
-                grade={generalInfo.grade}
-                hideImportTools
-                onMaterialStateChange={handleImportedTextbookMaterialStateChange}
-                subject={generalInfo.subject}
-                onGeneratedStateChange={setTextbookGeneratedState}
-                queuedImport={queuedImportedTextbook}
-                onQueuedImportConsumed={(importId) => {
-                  setQueuedImportedTextbookId((current) =>
-                    current === importId ? null : current,
-                  );
-                }}
-              />
-            ) : null}
+        {isEditingExistingExam && pageHeading ? (
+          <div className="px-1 pb-6 pt-4">
+            <h1 className="text-[32px] font-bold tracking-[-0.02em] text-slate-900">
+              {pageHeading}
+            </h1>
           </div>
         ) : null}
-        {source === "textbook" ? (
-          <div className="space-y-5">
-            <TextbookLibrarySection
-              activeId={selectedTextbookLibraryId}
-              isLoading={isLoadingTextbookLibrary}
-              items={textbookLibraryItems}
-              onSelect={handleTextbookLibrarySelect}
-            />
-            {selectedTextbookLibrary ? (
-              <TextbookSection
-                activeImportId={selectedTextbookLibraryId}
-                grade={generalInfo.grade}
-                hideImportTools
-                onMaterialStateChange={handleImportedTextbookMaterialStateChange}
-                subject={generalInfo.subject}
-                onGeneratedStateChange={setTextbookGeneratedState}
-                queuedImport={queuedImportedTextbook}
-                onQueuedImportConsumed={(importId) => {
-                  setQueuedImportedTextbookId((current) =>
-                    current === importId ? null : current,
-                  );
-                }}
-              />
-            ) : null}
+        {isEditingExistingExam && isHydratingExistingExam ? (
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <div className="flex min-h-[32vh] w-full items-center justify-center rounded-[22px] border border-dashed border-slate-300 bg-white px-6 text-sm text-slate-500">
+              Сонгосон шалгалтын мэдээллийг ачаалж байна...
+            </div>
           </div>
-        ) : null}
-        {source === "shared-library" ? (
-          <SharedLibrarySection
-            selectedMaterialId={selectedSharedMaterialId}
-            onSelectMaterialId={setSelectedSharedMaterialId}
-          />
-        ) : null}
+        ) : (
+          <>
+            <GeneralInfoSection
+              values={generalInfo}
+              onChange={setGeneralInfo}
+              onApplyDemo={handleGeneralInfoDemo}
+              onReset={handleGeneralInfoReset}
+              showUtilityActions={!isEditingExistingExam}
+            />
+            <MaterialBuilderWorkspaceSection
+              generalInfo={generalInfo}
+              source={source}
+              onSourceChange={setSource}
+              selectedSharedMaterialId={selectedSharedMaterialId}
+              onSelectMaterialId={setSelectedSharedMaterialId}
+              previewQuestions={previewQuestions}
+              onPreviewQuestionsChange={setPreviewQuestions}
+              appendedContent={
+                confirmedVariants.length > 0 ? (
+                  <section>
+                    <div className="mb-4 flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+                      <Check className="h-4 w-4 text-[#167e61]" />
+                      Баталсан AI хувилбарууд
+                    </div>
+                    <div className="space-y-3">
+                      {confirmedVariants.map((variant) => (
+                        <div key={variant.id} className="space-y-3">
+                          <div className="rounded-[14px] border border-[#e6edf7] bg-[#f8fbff] px-4 py-3">
+                            <div>
+                              <p className="text-[15px] font-semibold text-slate-900">
+                                {getDisplayVariantTitle(variant)}
+                              </p>
+                              <p className="mt-1 text-[12px] text-slate-500">
+                                {variant.questions.length} асуулт
+                              </p>
+                            </div>
+                          </div>
+                          {variant.questions.map((question) => (
+                            <div
+                              key={question.id}
+                              className={`group rounded-[20px] border bg-white p-5 transition-all duration-200 ${
+                                draggedConfirmedQuestion?.questionId ===
+                                question.id
+                                  ? "scale-[1.015] -rotate-1 border-sky-300 bg-sky-50/60 shadow-[0_24px_50px_-20px_rgba(14,116,144,0.35)] opacity-70"
+                                  : dragTargetConfirmedQuestion?.questionId ===
+                                        question.id &&
+                                      dragTargetConfirmedQuestion.variantId ===
+                                        variant.id
+                                    ? "border-[#0f74e7] ring-2 ring-[#0f74e7]/20 shadow-[0_0_0_1px_rgba(15,116,231,0.08)]"
+                                    : "border-[#e3e9f4] shadow-[0_8px_20px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:border-[#b8ccef] hover:bg-[#fbfdff] hover:shadow-[0_10px_22px_rgba(148,163,184,0.14)]"
+                              }`}
+                              onDragEnter={() => {
+                                if (!draggedConfirmedQuestion) return;
+                                if (
+                                  draggedConfirmedQuestion.variantId !==
+                                  variant.id
+                                )
+                                  return;
+                                setDragTargetConfirmedQuestion({
+                                  variantId: variant.id,
+                                  questionId: question.id,
+                                });
+                              }}
+                              onDragOver={(event) => {
+                                event.preventDefault();
+                                if (!draggedConfirmedQuestion) return;
+                                if (
+                                  draggedConfirmedQuestion.variantId !==
+                                  variant.id
+                                )
+                                  return;
+                                event.dataTransfer.dropEffect = "move";
+                                setDragTargetConfirmedQuestion({
+                                  variantId: variant.id,
+                                  questionId: question.id,
+                                });
+                              }}
+                              onDrop={() =>
+                                dropConfirmedVariantQuestion(
+                                  variant.id,
+                                  question.id,
+                                )
+                              }
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className="flex w-8 shrink-0 flex-col items-center gap-2">
+                                  <button
+                                    type="button"
+                                    draggable
+                                    onDragStart={(event) => {
+                                      event.dataTransfer.effectAllowed = "move";
+                                      setDraggedConfirmedQuestion({
+                                        variantId: variant.id,
+                                        questionId: question.id,
+                                      });
+                                      setDragTargetConfirmedQuestion({
+                                        variantId: variant.id,
+                                        questionId: question.id,
+                                      });
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggedConfirmedQuestion(null);
+                                      setDragTargetConfirmedQuestion(null);
+                                    }}
+                                    className="cursor-grab rounded-md p-1 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing"
+                                    aria-label="Асуултын байрлал өөрчлөх"
+                                  >
+                                    <GripVertical className="h-4 w-4" />
+                                  </button>
+                                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#0f74e7] text-[12px] font-semibold text-white">
+                                    {question.position}
+                                  </span>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1 text-[14px] font-semibold text-slate-900">
+                                      <MathPreviewText
+                                        content={question.prompt}
+                                        contentSource="backend"
+                                        className="text-[14px] leading-relaxed text-slate-900"
+                                      />
+                                    </div>
+                                    <div className="flex items-start gap-1 transition-opacity group-hover:opacity-100 md:opacity-0">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          moveConfirmedVariantQuestion(
+                                            variant.id,
+                                            question.id,
+                                            "up",
+                                          )
+                                        }
+                                        disabled={question.position === 1}
+                                        className="cursor-pointer rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-35"
+                                        aria-label="Дээш зөөх"
+                                      >
+                                        <ChevronUp className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          moveConfirmedVariantQuestion(
+                                            variant.id,
+                                            question.id,
+                                            "down",
+                                          )
+                                        }
+                                        disabled={
+                                          question.position ===
+                                          variant.questions.length
+                                        }
+                                        className="cursor-pointer rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-35"
+                                        aria-label="Доош зөөх"
+                                      >
+                                        <ChevronDown className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          deleteConfirmedVariantQuestion(
+                                            variant.id,
+                                            question.id,
+                                          )
+                                        }
+                                        className="cursor-pointer rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                                        aria-label="Устгах"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {(question.options ?? []).length > 0 ? (
+                                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                      {(question.options ?? []).map(
+                                        (option, index) => {
+                                          const isCorrect =
+                                            option.trim() ===
+                                            (
+                                              question.correctAnswer ?? ""
+                                            ).trim();
 
-        <div className="flex items-center justify-end pt-10">
-          <Button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={
-              isSaving ||
-              ((source === "textbook" || source === "import") &&
-                !textbookGeneratedState)
-            }
-            className="h-[42px] min-w-[128px] rounded-[10px] bg-[#0b5cab] px-7 text-[15px] font-semibold shadow-[0_8px_18px_rgba(11,92,171,0.25)] hover:bg-[#0a4f96]"
-          >
-            {source === "shared-library"
-              ? "Сонгосон материалыг ашиглах"
-              : isSaving
-                ? "Хадгалж байна..."
-                : "Хадгалах"}
-          </Button>
-        </div>
+                                          return (
+                                            <div
+                                              key={`${question.id}-${index}`}
+                                              className={`rounded-[14px] px-4 py-3 text-[14px] ${
+                                                isCorrect
+                                                  ? "border border-[#a8ddd0] bg-[#d8f2ea] text-[#167e61]"
+                                                  : "bg-[#eef2f6] text-slate-700"
+                                              }`}
+                                            >
+                                              <div className="flex items-start gap-1.5">
+                                                <span className="shrink-0">
+                                                  {String.fromCharCode(
+                                                    65 + index,
+                                                  )}
+                                                  .
+                                                </span>
+                                                <MathPreviewText
+                                                  content={option}
+                                                  contentSource="backend"
+                                                  className="min-w-0 flex-1 text-[14px] leading-relaxed"
+                                                />
+                                              </div>
+                                            </div>
+                                          );
+                                        },
+                                      )}
+                                    </div>
+                                  ) : null}
+                                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <Badge className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-100">
+                                      AI
+                                    </Badge>
+                                    <Badge className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                                      1 оноо
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ) : null
+              }
+            />
+
+            <div className="flex items-center justify-end gap-3 pt-10">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  shouldShowVariantViewerButton
+                    ? setVariantViewerOpen(true)
+                    : setVariantDialogOpen(true)
+                }
+                disabled={previewQuestions.length === 0 || isGeneratingVariants}
+                className="h-[42px] min-w-[148px] cursor-pointer rounded-[10px] border-[#cfe0fb] bg-white px-6 text-[15px] font-semibold text-[#0b5cab] shadow-[0_6px_14px_rgba(148,163,184,0.12)] hover:border-[#b7cff8] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[#cfe0fb] disabled:hover:bg-white"
+              >
+                {isGeneratingVariants ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Хувилбар боловсруулж байна...
+                  </>
+                ) : shouldShowVariantViewerButton ? (
+                  <>
+                    <Eye className="h-4 w-4" />
+                    AI хувилбар харах
+                  </>
+                ) : (
+                  "Хувилбар үүсгэх"
+                )}
+              </Button>
+              <Button
+                onClick={() => void handleSaveExam()}
+                disabled={savingExam}
+                className="h-[42px] min-w-[128px] cursor-pointer rounded-[10px] bg-[#0b5cab] px-7 text-[15px] font-semibold shadow-[0_8px_18px_rgba(11,92,171,0.25)] hover:bg-[#0a4f96] disabled:cursor-not-allowed"
+              >
+                {savingExam ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Хадгалж байна...
+                  </>
+                ) : source === "shared-library" ? (
+                  "Сонгосон материалыг ашиглах"
+                ) : (
+                  "Хадгалах"
+                )}
+              </Button>
+            </div>
+
+            <Dialog
+              open={variantDialogOpen}
+              onOpenChange={setVariantDialogOpen}
+            >
+              <DialogContent className="max-w-[min(100vw-2rem,28rem)] gap-0 overflow-hidden rounded-[24px] border border-[#dfe7f3] bg-white p-0 shadow-[0_30px_80px_-28px_rgba(15,23,42,0.28)]">
+                <DialogHeader className="px-5 py-4">
+                  <DialogTitle className="text-[18px] font-semibold text-slate-900">
+                    Хувилбарын тоо оруулах
+                  </DialogTitle>
+                </DialogHeader>
+
+                <div className="px-5 py-6">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={variantCount}
+                    onChange={(event) => setVariantCount(event.target.value)}
+                    placeholder="Жишээ нь: 2"
+                    className="h-[48px] w-full rounded-[14px] border border-[#d7e3f5] bg-white px-4 text-[15px] shadow-none outline-none"
+                  />
+                </div>
+
+                <DialogFooter className="mx-0 mb-0 rounded-b-[24px] border-t-0 bg-white px-5 py-4 sm:flex-row sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setVariantDialogOpen(false)}
+                    className="cursor-pointer rounded-[12px] border-[#d7e3f5] bg-white px-5 hover:bg-slate-50"
+                  >
+                    Хаах
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => void handleRequestVariants()}
+                    disabled={
+                      !canGenerateVariants ||
+                      requestingVariants ||
+                      Boolean(variantJobId)
+                    }
+                    className="cursor-pointer rounded-[12px] bg-[#0b5cab] px-5 hover:bg-[#0a4f96] disabled:cursor-not-allowed"
+                  >
+                    {requestingVariants || variantJobId ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        AI ажиллаж байна...
+                      </>
+                    ) : (
+                      "AI хувилбар үүсгэх"
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
+        )}
+
+        <Dialog open={variantViewerOpen} onOpenChange={setVariantViewerOpen}>
+          <DialogContent className="flex h-[min(92vh,52rem)] w-[min(100vw-1.5rem,56rem)]! max-w-none! flex-col gap-0 overflow-hidden rounded-[24px] border border-[#dfe7f3] bg-white p-0 shadow-[0_30px_80px_-28px_rgba(15,23,42,0.28)]">
+            <DialogHeader className="border-b border-[#e9eef6] px-5 py-4">
+              <DialogTitle className="text-[18px] font-semibold text-slate-900">
+                AI үүсгэсэн хувилбарууд
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden lg:grid-cols-[230px_minmax(0,1fr)] lg:grid-rows-1 xl:grid-cols-[250px_minmax(0,1fr)]">
+              <div className="max-h-56 overflow-y-auto border-b border-[#e9eef6] bg-[#f8fbff] p-4 lg:max-h-none lg:border-b-0 lg:border-r">
+                <div className="space-y-3">
+                  {generatedVariants.map((variant) => {
+                    const isActive = variant.id === selectedVariantId;
+                    const isChecked = checkedVariantIds.includes(variant.id);
+                    const isConfirmed =
+                      variant.status === "confirmed" ||
+                      confirmedVariantIds.includes(variant.id);
+
+                    return (
+                      <div key={variant.id} className="flex items-center gap-3">
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(checked) =>
+                            toggleCheckedVariant(variant.id, checked === true)
+                          }
+                          className="h-5 w-5 cursor-pointer rounded-[6px] border-[#b9cbe4] data-[state=checked]:border-[#0b5cab] data-[state=checked]:bg-[#0b5cab]"
+                          aria-label={`${getDisplayVariantTitle(variant)}-ийг action-д сонгох`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedVariantId(variant.id);
+                            setEditingQuestionId(null);
+                          }}
+                          className={`w-full cursor-pointer rounded-[16px] border px-4 py-3 text-left transition-all duration-200 ${
+                            isActive
+                              ? "border-[#0b5cab] bg-white shadow-[0_10px_20px_rgba(11,92,171,0.12)]"
+                              : "border-[#dbe4f3] bg-white hover:-translate-y-0.5 hover:border-[#a9c8f3] hover:bg-[#f8fbff] hover:shadow-[0_10px_22px_rgba(148,163,184,0.16)]"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-[16px] font-semibold text-slate-900">
+                                {getDisplayVariantTitle(variant)}
+                              </p>
+                              <p className="mt-1 text-[12px] text-slate-500">
+                                {variant.questions.length} асуулт
+                              </p>
+                            </div>
+                            {isConfirmed ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#e4f7ee] px-2.5 py-1 text-[11px] font-semibold text-[#167e61]">
+                                <Check className="h-3.5 w-3.5" />
+                                Баталсан
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="min-w-0 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
+                {selectedVariant ? (
+                  <div className="space-y-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-[16px] font-semibold text-slate-900">
+                          {getDisplayVariantTitle(selectedVariant)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleDeleteVariant(selectedVariant.id)}
+                        className="cursor-pointer rounded-[12px] border-rose-200 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        aria-label="Хувилбар устгах"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {selectedVariant.questions.map((question) => {
+                      const correctOptionIndex =
+                        getCorrectOptionIndex(question);
+                      const isEditingQuestion =
+                        editingQuestionId === question.id;
+
+                      return (
+                        <div
+                          key={question.id}
+                          className="rounded-[16px] border border-[#dbe4f3] bg-[#fcfdff] p-4"
+                        >
+                          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-[14px] font-semibold text-slate-900">
+                              Асуулт {question.position}
+                            </p>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  setEditingQuestionId((current) =>
+                                    current === question.id
+                                      ? null
+                                      : question.id,
+                                  )
+                                }
+                                className="cursor-pointer px-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                                aria-label={
+                                  isEditingQuestion
+                                    ? "Засварлах горимоос гарах"
+                                    : "Засварлах"
+                                }
+                              >
+                                {isEditingQuestion ? (
+                                  <Check className="h-4 w-4" />
+                                ) : (
+                                  <Pencil className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  deleteVariantQuestion(
+                                    selectedVariant.id,
+                                    question.id,
+                                  )
+                                }
+                                className="cursor-pointer px-2 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                aria-label="Асуулт устгах"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {isEditingQuestion ? (
+                            <div className="space-y-3">
+                              <MathAssistField
+                                multiline
+                                value={question.prompt}
+                                onChange={(nextValue) =>
+                                  updateVariantQuestion(
+                                    selectedVariant.id,
+                                    question.id,
+                                    (current) => ({
+                                      ...current,
+                                      prompt: nextValue,
+                                    }),
+                                  )
+                                }
+                                className="min-h-[120px]! rounded-[14px]! border-[#d7e3f5]! bg-white!"
+                                contentClassName="text-[14px] leading-6 text-slate-900 [&_.katex]:text-inherit"
+                              />
+
+                              {(question.options ?? []).length > 0 ? (
+                                <div className="grid gap-3">
+                                  {(question.options ?? []).map(
+                                    (option, index) => (
+                                      <div
+                                        key={`${question.id}-${index}`}
+                                        className="grid grid-cols-[24px_minmax(0,1fr)] items-center gap-3"
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateVariantQuestion(
+                                              selectedVariant.id,
+                                              question.id,
+                                              (current) => ({
+                                                ...current,
+                                                correctAnswer:
+                                                  current.options?.[index] ??
+                                                  "",
+                                              }),
+                                            )
+                                          }
+                                          className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border transition ${
+                                            index === correctOptionIndex
+                                              ? "border-[#0b5cab] bg-[#e8f1ff] shadow-[0_0_0_3px_rgba(11,92,171,0.08)]"
+                                              : "border-[#cbd9ee] bg-white hover:border-[#9fbae3]"
+                                          }`}
+                                          aria-label={`Сонголт ${index + 1}-ийг зөв хариу болгох`}
+                                        >
+                                          <span
+                                            className={`h-2.5 w-2.5 rounded-full transition ${
+                                              index === correctOptionIndex
+                                                ? "bg-[#0b5cab]"
+                                                : "bg-transparent"
+                                            }`}
+                                          />
+                                        </button>
+                                        <MathAssistField
+                                          value={option}
+                                          onChange={(nextValue) =>
+                                            updateVariantQuestion(
+                                              selectedVariant.id,
+                                              question.id,
+                                              (current) => {
+                                                const nextOptions = [
+                                                  ...(current.options ?? []),
+                                                ];
+                                                const previousOption =
+                                                  nextOptions[index] ?? "";
+                                                nextOptions[index] = nextValue;
+                                                const nextCorrectAnswer =
+                                                  (
+                                                    current.correctAnswer ?? ""
+                                                  ).trim() ===
+                                                  previousOption.trim()
+                                                    ? nextValue
+                                                    : current.correctAnswer;
+
+                                                return {
+                                                  ...current,
+                                                  options: nextOptions,
+                                                  correctAnswer:
+                                                    nextCorrectAnswer,
+                                                };
+                                              },
+                                            )
+                                          }
+                                          className={`rounded-[12px]! bg-white! ${
+                                            index === correctOptionIndex
+                                              ? "border-[#9cd9c0]! bg-[#eefaf4]!"
+                                              : "border-[#d7e3f5]!"
+                                          }`}
+                                          contentClassName="text-[14px] leading-6 text-slate-900 [&_.katex]:text-inherit"
+                                        />
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div className="rounded-[14px] bg-[#f5f8fc] p-3">
+                                <MathPreviewText
+                                  content={question.prompt}
+                                  contentSource="backend"
+                                  className="text-[14px] leading-relaxed text-slate-700"
+                                />
+                              </div>
+
+                              {(question.options ?? []).length > 0 ? (
+                                <div className="grid gap-3">
+                                  {(question.options ?? []).map(
+                                    (option, index) => (
+                                      <div
+                                        key={`${question.id}-${index}`}
+                                        className={`grid grid-cols-[24px_minmax(0,1fr)] items-center gap-3 rounded-[12px] border px-3 py-2 ${
+                                          index === correctOptionIndex
+                                            ? "border-[#9cd9c0] bg-[#eefaf4]"
+                                            : "border-[#d7e3f5] bg-white"
+                                        }`}
+                                      >
+                                        <div
+                                          className={`flex h-6 w-6 items-center justify-center rounded-full border ${
+                                            index === correctOptionIndex
+                                              ? "border-[#0b5cab] bg-[#e8f1ff] shadow-[0_0_0_3px_rgba(11,92,171,0.08)]"
+                                              : "border-[#cbd9ee] bg-white"
+                                          }`}
+                                        >
+                                          <span
+                                            className={`h-2.5 w-2.5 rounded-full ${
+                                              index === correctOptionIndex
+                                                ? "bg-[#0b5cab]"
+                                                : "bg-transparent"
+                                            }`}
+                                          />
+                                        </div>
+                                        <MathPreviewText
+                                          content={option}
+                                          contentSource="backend"
+                                          className="text-[14px] leading-relaxed text-slate-700"
+                                        />
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              ) : question.type === "written" ? (
+                                <Textarea
+                                  value=""
+                                  readOnly
+                                  placeholder="Хариултаа энд бичнэ үү..."
+                                  className="min-h-[120px] resize-none rounded-[14px] border-[#d7e3f5] bg-white text-[14px] leading-6 text-slate-700 placeholder:text-slate-400"
+                                />
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex h-full min-h-80 items-center justify-center rounded-[18px] border border-dashed border-[#d7e3f5] bg-[#fbfdff] text-center text-[14px] text-slate-500">
+                    Харах AI хувилбар үлдсэнгүй.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter className="mx-0 mb-0 rounded-b-[24px] border-t border-[#e9eef6] bg-white px-5 py-4 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setVariantViewerOpen(false)}
+                disabled={isPersistingVariant}
+                className="cursor-pointer rounded-[12px] border-[#d7e3f5] bg-white px-5 hover:bg-slate-50"
+              >
+                Хаах
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSaveVariantsAsNewExams}
+                disabled={checkedVariants.length === 0 || isPersistingVariant}
+                className="cursor-pointer rounded-[12px] border-sky-200 bg-sky-50 px-5 text-sky-700 hover:bg-sky-100 hover:text-sky-800"
+              >
+                {savingVariantAsExam ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Шинэ шалгалт болгож хадгалж байна...
+                  </>
+                ) : (
+                  "Шинэ шалгалт болгож хадгалах"
+                )}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmVariant}
+                disabled={checkedVariants.length === 0 || isPersistingVariant}
+                className="cursor-pointer rounded-[12px] bg-[#0b5cab] px-5 hover:bg-[#0a4f96]"
+              >
+                {confirmingVariants ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Баталж байна...
+                  </>
+                ) : (
+                  "Хувилбар батлах"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </TestShell>
   );

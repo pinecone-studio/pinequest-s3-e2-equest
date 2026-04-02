@@ -64,6 +64,10 @@ function getPercentColor(errorRate: number): string {
   return mixColor(light, strong, intensity);
 }
 
+function isMathQuestionType(value?: string | null): boolean {
+  return value?.trim().toLowerCase() === "math";
+}
+
 export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
   const [isAllOpen, setIsAllOpen] = useState(false);
   const visibleQuestions = questions.slice(0, 5);
@@ -139,6 +143,8 @@ export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
                     >
                       <MathPreviewText
                         content={prompt}
+                        contentSource="backend"
+                        displayMode={isMathQuestionType(question.questionType)}
                         className="text-[12px] leading-5 text-white [&_.katex-display]:overflow-x-auto [&_.katex]:text-white"
                       />
                     </TooltipContent>
@@ -183,6 +189,10 @@ export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
                         <div className="mt-2 text-sm font-medium text-[#1f2937]">
                           <MathPreviewText
                             content={prompt}
+                            contentSource="backend"
+                            displayMode={isMathQuestionType(
+                              question.questionType,
+                            )}
                             className="text-[13px] leading-5 text-[#1f2937] [&_.katex-display]:overflow-x-auto"
                           />
                         </div>
