@@ -5,6 +5,12 @@ import {
   type AttemptActivityInput,
   logAttemptActivityRequest,
 } from "./student-page-api";
+import {
+  appendEvidenceUrlToDetail,
+  captureAndUploadProctoringEvidence,
+  getEvidenceCaptureCooldownMs,
+  shouldCaptureProctoringEvidence,
+} from "./proctoring-screenshot";
 import type {
   MonitoringMode,
   StartExamResponse,
@@ -62,6 +68,7 @@ export function useExamMonitoring(
   const activityCooldownRef = useRef<Record<string, number>>({});
   const activeAttemptRef = useRef<StartExamResponse | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const evidenceCooldownRef = useRef<Record<string, number>>({});
   const focusLossStartedAtRef = useRef<number | null>(null);
   const lastInteractionAtRef = useRef(Date.now());
   const loggedAttemptSessionRef = useRef<string | null>(null);
@@ -111,6 +118,7 @@ export function useExamMonitoring(
 
       activityCooldownRef.current[code] = nowTs;
       const resolvedOccurredAt = occurredAt ?? new Date(nowTs).toISOString();
+      let resolvedDetail = detail;
       const nextSuspiciousScore =
         suspiciousScoreRef.current +
         (severity === "danger" ? 2 : severity === "warning" ? 1 : 0);
@@ -120,18 +128,54 @@ export function useExamMonitoring(
         (severity !== "info" ||
           CAPTURE_TRIGGER_CODES.has(code) ||
           nextSuspiciousScore >= suspiciousScoreThreshold);
-      const evidence = shouldCaptureEvidence
-        ? await captureEvidence?.({
-            attemptId: attempt.attemptId,
-            eventCode: code,
-            occurredAt: resolvedOccurredAt,
-          })
-        : undefined;
+      const shouldAttachProctoringEvidence =
+        shouldCaptureProctoringEvidence(code, severity) &&
+        Boolean(attempt.studentId);
+      let proctoringEvidenceAttached = false;
+
+      if (shouldAttachProctoringEvidence) {
+        const lastCapturedAt = evidenceCooldownRef.current[code] ?? 0;
+        const evidenceCooldownMs = getEvidenceCaptureCooldownMs(code);
+
+        if (nowTs - lastCapturedAt >= evidenceCooldownMs) {
+          evidenceCooldownRef.current[code] = nowTs;
+
+          try {
+            const uploadedEvidence = await captureAndUploadProctoringEvidence({
+              attemptId: attempt.attemptId,
+              capturedAt: resolvedOccurredAt,
+              detail,
+              eventCode: code,
+              title,
+              userId: attempt.studentId ?? "",
+            });
+
+            if (uploadedEvidence?.publicUrl) {
+              resolvedDetail = appendEvidenceUrlToDetail(
+                resolvedDetail,
+                uploadedEvidence.publicUrl,
+              );
+              proctoringEvidenceAttached = true;
+            }
+          } catch {
+            // Evidence upload is best-effort and must never block the exam.
+          }
+        }
+      }
+
+      const evidence =
+        shouldCaptureEvidence && !proctoringEvidenceAttached
+          ? await captureEvidence?.({
+              attemptId: attempt.attemptId,
+              eventCode: code,
+              occurredAt: resolvedOccurredAt,
+            })
+          : undefined;
 
       try {
         await logAttemptActivityRequest(attempt.attemptId, {
           code,
-          detail,
+          detail: resolvedDetail,
           mode: evidence?.mode ?? mode ?? monitoringModeRef.current,
           severity,
           screenshotCapturedAt:
@@ -231,12 +275,14 @@ export function useExamMonitoring(
       lastInteractionAtRef.current = Date.now();
       questionViewCountsRef.current = {};
       loggedAttemptSessionRef.current = null;
+      evidenceCooldownRef.current = {};
       suspiciousScoreRef.current = 0;
       return;
     }
 
     lastInteractionAtRef.current = Date.now();
     questionViewCountsRef.current = {};
+    evidenceCooldownRef.current = {};
     suspiciousScoreRef.current = 0;
 
     if (loggedAttemptSessionRef.current === activeAttempt.attemptId) {
@@ -619,6 +665,7 @@ export function useExamMonitoring(
 
   const resetActivityTracking = () => {
     activityCooldownRef.current = {};
+    evidenceCooldownRef.current = {};
   };
 
   const timeLeftMs = activeAttempt

@@ -22,3 +22,7 @@ export * from "./tables/students";
 export * from "./tables/periods";
 export * from "./tables/subjects";
 export * from "./tables/curriculum";
+export * from "./tables/textbookMaterials";
+export * from "./tables/textbookPages";
+export * from "./tables/textbookSections";
+export * from "./tables/textbookChunks";

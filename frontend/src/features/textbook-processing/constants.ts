@@ -1,0 +1,8 @@
+export const MAX_TEXTBOOK_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+export const MAX_TEXTBOOK_PAGE_COUNT = 500;
+export const PAGE_BATCH_SIZE = 16;
+export const MIN_PAGE_TEXT_CHAR_COUNT = 24;
+export const OCR_UNSUPPORTED_PAGE_RATIO = 0.35;
+export const MIN_READY_TEXT_PAGE_COUNT = 3;
+export const MAX_CHUNK_CHAR_COUNT = 1800;
+export const MAX_EXERCISE_LINES_PER_CHUNK = 10;

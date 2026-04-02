@@ -57,29 +57,47 @@ export function TextbookBadgeField({
 }
 
 export function TextbookQuestionCard({
+  answerMode = "single-choice",
+  answerText,
   answers,
   content,
+  countValue = "1",
+  difficultyValue = "easy",
   explanation,
+  focusValue = "recall",
+  formatValue = "single-choice",
+  onRegenerate,
 }: {
+  answerMode?: "single-choice" | "written";
+  answerText?: string;
   answers: string[];
   content: ReactNode;
+  countValue?: string;
+  difficultyValue?: "easy" | "medium" | "hard";
   explanation?: string;
+  focusValue?: "recall" | "concept" | "practice" | "proof";
+  formatValue?: "single-choice" | "multiple-choice" | "written";
+  onRegenerate?: () => void;
 }) {
+  const selectedAnswer = answerText || answers[0] || "";
+
   return (
     <section className="rounded-[18px] border border-[#e3e9f4] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)] sm:p-5">
       <div className="grid gap-3 xl:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
-        <Select defaultValue="2">
+        <Select value={countValue} onValueChange={() => undefined}>
           <SelectTrigger className={optionFieldClassName}>
             <SelectValue placeholder="Тоо" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="1">1</SelectItem>
-            <SelectItem value="2">2</SelectItem>
-            <SelectItem value="3">3</SelectItem>
+            {Array.from({ length: 10 }, (_, index) => String(index + 1)).map((value) => (
+              <SelectItem key={value} value={value}>
+                {value}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
-        <Select defaultValue="single-choice">
+        <Select value={formatValue} onValueChange={() => undefined}>
           <SelectTrigger className={optionFieldClassName}>
             <span className="flex min-w-0 items-center gap-2">
               <CircleDot className="h-4 w-4 text-slate-700" />
@@ -89,10 +107,11 @@ export function TextbookQuestionCard({
           <SelectContent>
             <SelectItem value="single-choice">Нэг сонголттой</SelectItem>
             <SelectItem value="multiple-choice">Олон сонголттой</SelectItem>
+            <SelectItem value="written">Задгай</SelectItem>
           </SelectContent>
         </Select>
 
-        <Select defaultValue="easy">
+        <Select value={difficultyValue} onValueChange={() => undefined}>
           <SelectTrigger className={optionFieldClassName}>
             <SelectValue placeholder="Түвшин" />
           </SelectTrigger>
@@ -103,7 +122,7 @@ export function TextbookQuestionCard({
           </SelectContent>
         </Select>
 
-        <Select defaultValue="shuffle">
+        <Select value={focusValue} onValueChange={() => undefined}>
           <SelectTrigger className={optionFieldClassName}>
             <span className="flex min-w-0 items-center gap-2">
               <Repeat2 className="h-4 w-4 text-slate-700" />
@@ -111,8 +130,10 @@ export function TextbookQuestionCard({
             </span>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="shuffle">Сэргээн санах</SelectItem>
+            <SelectItem value="recall">Сэргээн санах</SelectItem>
             <SelectItem value="concept">Ойлголтын</SelectItem>
+            <SelectItem value="practice">Дасгалын</SelectItem>
+            <SelectItem value="proof">Баталгаа</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -123,20 +144,26 @@ export function TextbookQuestionCard({
 
       <div>
         <p className="mb-3 text-[14px] font-medium text-slate-800">Хариулт</p>
-        <RadioGroup defaultValue={answers[0]} className="gap-3">
-          {answers.map((answer, index) => (
-            <label
-              key={`${answer}-${index}`}
-              className="flex min-h-[56px] items-center gap-4 rounded-[10px] border border-[#e2e8f0] bg-[#eef3ff] px-4 text-[14px] text-slate-800"
-            >
-              <RadioGroupItem
-                value={answer}
-                className="border-[#cdd8ea] text-[#0b5cab] data-checked:border-[#0b5cab] data-checked:bg-[#0b5cab]"
-              />
-              <span>{answer}</span>
-            </label>
-          ))}
-        </RadioGroup>
+        {answerMode === "written" ? (
+          <div className="min-h-[56px] rounded-[10px] border border-[#e2e8f0] bg-[#eef3ff] px-4 py-4 text-[14px] text-slate-800">
+            {selectedAnswer}
+          </div>
+        ) : (
+          <RadioGroup value={selectedAnswer} className="gap-3">
+            {answers.map((answer, index) => (
+              <label
+                key={`${answer}-${index}`}
+                className="flex min-h-[56px] items-center gap-4 rounded-[10px] border border-[#e2e8f0] bg-[#eef3ff] px-4 text-[14px] text-slate-800"
+              >
+                <RadioGroupItem
+                  value={answer}
+                  className="border-[#cdd8ea] text-[#0b5cab] data-checked:border-[#0b5cab] data-checked:bg-[#0b5cab]"
+                />
+                <span>{answer}</span>
+              </label>
+            ))}
+          </RadioGroup>
+        )}
       </div>
 
       {explanation ? (
@@ -144,19 +171,22 @@ export function TextbookQuestionCard({
           <p className="mb-3 text-[14px] font-medium text-slate-800">
             Зөв хариултын тайлбар
           </p>
-          <Textarea defaultValue={explanation} className={explanationClassName} />
+          <Textarea value={explanation} readOnly className={explanationClassName} />
         </div>
       ) : null}
 
-      <div className="mt-4">
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 text-[14px] font-medium text-slate-700 transition hover:text-slate-900"
-        >
-          <RefreshCcw className="h-4 w-4" />
-          Дахин үүсгүүлэх
-        </button>
-      </div>
+      {onRegenerate ? (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={onRegenerate}
+            className="inline-flex items-center gap-2 text-[14px] font-medium text-slate-700 transition hover:text-slate-900"
+          >
+            <RefreshCcw className="h-4 w-4" />
+            Дахин үүсгүүлэх
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

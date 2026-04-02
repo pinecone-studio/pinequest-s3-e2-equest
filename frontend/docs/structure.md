@@ -12,7 +12,7 @@
 | `src/app/generate/page.tsx` | `useMutation(GenerateExamQuestionsDocument)`, `useMutation(SaveExamDocument)` |
 | `src/components/providers/apollo-provider.tsx` | `ApolloProvider` + `createApolloClient()` |
 | `src/lib/apollo-client.ts` | `HttpLink` → `getCreateExamGraphqlUrl()` |
-| `src/lib/create-exam-graphql.ts` | Зөвхөн **`NEXT_PUBLIC_CREATE_EXAM_GRAPHQL_URL`** (fallback: `http://localhost:3001/api/graphql`) |
+| `src/lib/create-exam-graphql.ts` | Зөвхөн **`NEXT_PUBLIC_CREATE_EXAM_GRAPHQL_URL`** (fallback: deployed `create-exam-service` GraphQL URL) |
 | `src/lib/utils.ts` | shadcn / ерөнхий utility |
 | `src/gql/graphql.ts` | **Codegen**-оор: schema-тай тааруулсан TS төрлүүд (`ExamType`, `SaveExamInput`, …) |
 | `src/gql/create-exam-documents.ts` | **Apollo `gql`** — `GenerateExamQuestionsDocument`, `SaveExamDocument` (баримтын эх үүсвэр) |
