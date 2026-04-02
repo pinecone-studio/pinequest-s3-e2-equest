@@ -129,7 +129,7 @@ export function TestSidebar({
               type="button"
               onClick={onToggleCompact}
               className={cn(
-                "flex items-center rounded-2xl   bg-white py-3 text-left text-[15px] font-semibold text-slate-500 transition-[background-color,color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[#f5f7fb] hover:text-[#0b5cab]",
+                "flex cursor-pointer items-center rounded-2xl bg-white py-3 text-left text-[15px] font-semibold text-slate-500 transition-[background-color,color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[#f5f7fb] hover:text-[#0b5cab]",
                 compact ? "h-14 w-14 justify-center px-0" : "w-full gap-3 px-4",
               )}
               aria-label={compact ? " Дэлгэх" : "Хураах"}
@@ -160,7 +160,7 @@ export function TestSidebar({
               }
             }}
             className={cn(
-              "flex items-center rounded-2xl px-4 py-3 text-left text-[15px] font-semibold transition-[background-color,color,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "flex cursor-pointer items-center rounded-2xl px-4 py-3 text-left text-[15px] font-semibold transition-[background-color,color,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
               compact
                 ? "h-14 w-14 justify-center px-0"
                 : "w-full justify-between",
@@ -201,7 +201,7 @@ export function TestSidebar({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[15px] font-semibold transition-[background-color,color,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    className={`flex w-full cursor-pointer items-center gap-3 rounded-xl px-4 py-3 text-left text-[15px] font-semibold transition-[background-color,color,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                       isSubItemActive
                         ? "bg-[#e8f0ff] text-[#0b5cab] shadow-[inset_0_0_0_1px_rgba(11,92,171,0.08)]"
                         : "text-slate-400 hover:bg-[#f5f7fb] hover:text-[#0b5cab]"

@@ -12,6 +12,7 @@ import {
 import { GetTeachersListDocument } from "@/gql/create-exam-documents";
 import type { Teacher } from "@/gql/graphql";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const TEACHER_SELECTION_STORAGE_KEY = "ai-scheduler-teacher:selectedTeacherId";
 
@@ -43,8 +44,10 @@ export function AiSchedulerTeacherPicker({
     return window.localStorage.getItem(TEACHER_SELECTION_STORAGE_KEY) ?? "";
   });
 
-  const { data, loading } = useQuery(GetTeachersListDocument, {
-    variables: { grades: grades?.length ? grades : null },
+  const { data, loading, error } = useQuery(GetTeachersListDocument, {
+    // GraphQL vars-д `null` өгөх нь schema/config-оос хамаараад алдаа үүсгэж болдог.
+    // Хоосон үед нь field-ийг бүрэн omit хийнэ.
+    variables: { grades: grades?.length ? grades : undefined },
   });
 
   const teacherOptions = useMemo(
@@ -75,6 +78,11 @@ export function AiSchedulerTeacherPicker({
     }
     setSelectedTeacherId(teacherOptions[0]!.id);
   }, [loading, selectedTeacherId, teacherOptions]);
+
+  useEffect(() => {
+    if (!error) return;
+    toast.error(error.message || "Багшийн жагсаалт ачааллахад алдаа гарлаа.");
+  }, [error]);
 
   const selectedTeacher =
     teacherOptions.find((t) => t.id === selectedTeacherId) ?? teacherOptions[0];
@@ -110,7 +118,7 @@ export function AiSchedulerTeacherPicker({
           {loading
             ? "Ачааллаж байна…"
             : teacherOptions.length
-              ? `Нийт ${teacherOptions.length} багш`
+              ? ""
               : "Багш олдсонгүй."}
         </p>
         <ul className="max-h-[min(60vh,16rem)] space-y-0.5 overflow-y-auto">

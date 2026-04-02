@@ -167,6 +167,8 @@ export const ListNewMathExamsDocument = gql(`
 			variantCount
 			questionCount
 			durationMinutes
+			firstQuestionPreview
+			secondQuestionPreview
 			updatedAt
 		}
 	}
@@ -401,6 +403,20 @@ export const GetTeacherMainLessonsListDocument = gql(`
 			periodId
 			periodShift
 			periodNumber
+			startTime
+			endTime
+		}
+	}
+`);
+
+export const GetTeacherAvailabilityDocument = gql(`
+	query GetTeacherAvailability($teacherId: ID!) {
+		getTeacherAvailability(teacherId: $teacherId) {
+			id
+			dayOfWeek
+			periodId
+			status
+			reason
 			startTime
 			endTime
 		}

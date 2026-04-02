@@ -5,6 +5,7 @@ import { getStudentsListQuery } from "./getStudentsList";
 import { getTeachersListQuery } from "./getTeachersList";
 import { listTeacherConfirmedExamSchedulesQuery } from "./listTeacherConfirmedExamSchedules";
 import { getTeacherMainLessonsListQuery } from "./getTeacherMainLessonsList";
+import { getTeacherAvailabilityQuery } from "./getTeacherAvailability";
 
 /** AI хуваарь унших query-ууд */
 export const aiSchedulerQueryResolvers = {
@@ -15,4 +16,5 @@ export const aiSchedulerQueryResolvers = {
   ...getStudentsListQuery,
   ...getTeachersListQuery,
   ...getTeacherMainLessonsListQuery,
+  ...getTeacherAvailabilityQuery,
 };

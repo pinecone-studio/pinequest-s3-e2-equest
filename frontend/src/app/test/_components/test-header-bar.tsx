@@ -158,7 +158,7 @@ function TestBreadcrumb({ items }: { items: BreadcrumbItem[] }) {
               item.href ? (
                 <Link
                   href={item.href}
-                  className="inline-flex items-center gap-2 rounded-[18px] px-3 py-2 text-[15px] font-semibold text-slate-900 transition hover:bg-[#f4f7fb]"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-[18px] px-3 py-2 text-[15px] font-semibold text-slate-900 transition hover:bg-[#f4f7fb]"
                 >
                   <House className="h-4 w-4 text-slate-700" />
                   {item.label}
@@ -176,7 +176,7 @@ function TestBreadcrumb({ items }: { items: BreadcrumbItem[] }) {
             ) : item.href ? (
               <Link
                 href={item.href}
-                className="inline-flex items-center whitespace-nowrap rounded-[18px] px-3 py-2 text-[15px] font-semibold text-slate-900 transition hover:bg-[#f4f7fb]"
+                className="inline-flex cursor-pointer items-center whitespace-nowrap rounded-[18px] px-3 py-2 text-[15px] font-semibold text-slate-900 transition hover:bg-[#f4f7fb]"
               >
                 {item.label}
               </Link>

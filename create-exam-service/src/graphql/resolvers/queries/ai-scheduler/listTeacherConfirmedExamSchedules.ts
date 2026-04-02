@@ -1,8 +1,8 @@
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, eq, exists, gte, lte, or } from "drizzle-orm";
 import { GraphQLError } from "graphql";
 
 import type { GraphQLContext } from "../../../context";
-import { examSchedules, newExams } from "../../../../db/schema";
+import { curriculum, examSchedules, newExams } from "../../../../db/schema";
 import { examScheduleRowToGql } from "../../../../lib/exam-schedule-variants";
 
 type Args = {
@@ -35,6 +35,28 @@ export const listTeacherConfirmedExamSchedulesQuery = {
       throw new GraphQLError("startDate, endDate нь ISO 8601 форматтай байна.");
     }
 
+    /**
+     * `new_exams.teacher_id` ихэнх тохиолдолд хоосон байж болно (math-exam save flow).
+     * Тэгэхэд ч баталгаажсан хуваарь харагдах ёстой тул `exam_schedules.class_id` =
+     * `curriculum.group_id` болон `curriculum.teacher_id`-аар нэмэлтээр тааруулна.
+     */
+    const teacherMatch = or(
+      // new_exams олдвол шууд teacherId-гаар тааруулна
+      eq(newExams.teacherId, teacherId),
+      // new_exams олдохгүй/teacher_id хоосон үед classId → curriculum.teacherId-аар тааруулна
+      exists(
+        ctx.db
+          .select({ id: curriculum.id })
+          .from(curriculum)
+          .where(
+            and(
+              eq(curriculum.groupId, examSchedules.classId),
+              eq(curriculum.teacherId, teacherId),
+            ),
+          ),
+      ),
+    );
+
     const rows = await ctx.db
       .select({
         id: examSchedules.id,
@@ -50,10 +72,12 @@ export const listTeacherConfirmedExamSchedulesQuery = {
         updatedAt: examSchedules.updatedAt,
       })
       .from(examSchedules)
-      .innerJoin(newExams, eq(examSchedules.testId, newExams.id))
+      // exam_schedules.test_id нь үргэлж new_exams.id байх албагүй (upstream эх сурвалж).
+      // innerJoin хийвэл new_exams олдохгүй мөрүүд бүрэн унах тул leftJoin болгоно.
+      .leftJoin(newExams, eq(examSchedules.testId, newExams.id))
       .where(
         and(
-          eq(newExams.teacherId, teacherId),
+          teacherMatch,
           eq(examSchedules.status, "confirmed"),
           gte(examSchedules.startTime, start),
           lte(examSchedules.startTime, end),

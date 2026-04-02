@@ -271,6 +271,17 @@ export type GeneratedQuestion = {
   text: Scalars['String']['output'];
 };
 
+export type ListNewMathExamsFilterInput = {
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
+  examType?: InputMaybe<Scalars['String']['input']>;
+  grade?: InputMaybe<Scalars['Int']['input']>;
+  questionCount?: InputMaybe<Scalars['Int']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  subject?: InputMaybe<Scalars['String']['input']>;
+  teacherId?: InputMaybe<Scalars['String']['input']>;
+  withVariants?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
 export enum MathExamQuestionType {
   Math = 'MATH',
   Mcq = 'MCQ'
@@ -475,8 +486,19 @@ export type NewMathExamSummary = {
   __typename?: 'NewMathExamSummary';
   durationMinutes?: Maybe<Scalars['Int']['output']>;
   examId: Scalars['ID']['output'];
+  examType?: Maybe<Scalars['String']['output']>;
+  /** Жагсаалтын карт дээр: эхний асуултын prompt (байхгүй бол null). */
+  firstQuestionPreview?: Maybe<Scalars['String']['output']>;
+  grade?: Maybe<Scalars['Int']['output']>;
+  questionCount: Scalars['Int']['output'];
+  /** Хоёр дахь асуултын preview (байхгүй бол null). */
+  secondQuestionPreview?: Maybe<Scalars['String']['output']>;
+  subject?: Maybe<Scalars['String']['output']>;
+  teacherId?: Maybe<Scalars['String']['output']>;
   title: Scalars['String']['output'];
   updatedAt: Scalars['String']['output'];
+  variantCount?: Maybe<Scalars['Int']['output']>;
+  withVariants?: Maybe<Scalars['Boolean']['output']>;
 };
 
 export type Query = {
@@ -491,6 +513,8 @@ export type Query = {
   getStudentMainLessonsList: Array<StudentMainLesson>;
   /** ai-scheduler-student: 10A гэх мэт ангид харьяалагдах сурагчдын жагсаалт */
   getStudentsList: Array<Student>;
+  /** Багшийн teacher_availability мөрүүд (цагийн тороор) — хуанли дээр завгүй/дуртай цаг */
+  getTeacherAvailability: Array<TeacherAvailabilitySlot>;
   /** ai-scheduler-teacher: тухайн багшийн үндсэн хичээлийн (primary) хуваарь */
   getTeacherMainLessonsList: Array<TeacherMainLesson>;
   /** ai-scheduler-teacher: 9–12-р ангийн Math (MATH_HS) ордог багш нар */
@@ -534,6 +558,11 @@ export type QueryGetStudentsListArgs = {
 };
 
 
+export type QueryGetTeacherAvailabilityArgs = {
+  teacherId: Scalars['ID']['input'];
+};
+
+
 export type QueryGetTeacherMainLessonsListArgs = {
   includeDraft?: InputMaybe<Scalars['Boolean']['input']>;
   semesterId?: InputMaybe<Scalars['String']['input']>;
@@ -547,7 +576,9 @@ export type QueryGetTeachersListArgs = {
 
 
 export type QueryListNewMathExamsArgs = {
+  filters?: InputMaybe<ListNewMathExamsFilterInput>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -741,6 +772,18 @@ export type Teacher = {
   shortName?: Maybe<Scalars['String']['output']>;
   teachingLevel: Scalars['String']['output'];
   workLoadLimit: Scalars['Int']['output'];
+};
+
+/** Багшийн боломжит цаг (teacher_availability × periods) — AI / хуанли. */
+export type TeacherAvailabilitySlot = {
+  __typename?: 'TeacherAvailabilitySlot';
+  dayOfWeek: Scalars['Int']['output'];
+  endTime: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  periodId: Scalars['Int']['output'];
+  reason?: Maybe<Scalars['String']['output']>;
+  startTime: Scalars['String']['output'];
+  status: Scalars['String']['output'];
 };
 
 export type TeacherMainLesson = {

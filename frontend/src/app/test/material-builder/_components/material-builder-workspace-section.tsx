@@ -293,10 +293,7 @@ const QuestionBankPanel = forwardRef<
     onAppendQuestion: (question: Omit<PreviewQuestion, "id" | "index">) => void;
     onQuestionAdded?: () => void;
   }
->(function QuestionBankPanel(
-  { onAppendQuestion, onQuestionAdded },
-  ref,
-) {
+>(function QuestionBankPanel({ onAppendQuestion, onQuestionAdded }, ref) {
   const lastDemoIndexRef = useRef<number | null>(null);
   const [generateAnswer, { loading: generating }] = useMutation(
     GenerateQuestionAnswerDocument,
@@ -1331,28 +1328,28 @@ function SharedLibraryPanel({
   return (
     <div className="space-y-4">
       {hideLauncher ? null : (
-      <div className="rounded-[18px] border border-[#dbe4f3] bg-transparent p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[15px] font-semibold text-slate-900">
-              Сангаас шалгалт сонгох
-            </p>
+        <div className="rounded-[18px] border border-[#dbe4f3] bg-transparent p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[15px] font-semibold text-slate-900">
+                Сангаас шалгалт сонгох
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => onDialogOpenChange(true)}
+              className="cursor-pointer rounded-[12px] bg-[#0b5cab] px-4 text-white hover:bg-[#0a4f96]"
+            >
+              <Database className="h-4 w-4" />
+              Сан нээх
+            </Button>
           </div>
-          <Button
-            type="button"
-            onClick={() => onDialogOpenChange(true)}
-            className="cursor-pointer rounded-[12px] bg-[#0b5cab] px-4 text-white hover:bg-[#0a4f96]"
-          >
-            <Database className="h-4 w-4" />
-            Сан нээх
-          </Button>
+          <div className="mt-3 rounded-[14px] border border-dashed border-[#dbe4f3] bg-[#f8fbff] px-4 py-3 text-[13px] text-slate-500">
+            {selectedSharedMaterialId
+              ? "Сонгосон шалгалтын дэлгэрэнгүйг дахин харах эсвэл өөр шалгалт сонгож болно."
+              : "Сонгосон анги, хичээл, шалгалтын төрөлд таарах сангийн материалууд dialog дотор харагдана."}
+          </div>
         </div>
-        <div className="mt-3 rounded-[14px] border border-dashed border-[#dbe4f3] bg-[#f8fbff] px-4 py-3 text-[13px] text-slate-500">
-          {selectedSharedMaterialId
-            ? "Сонгосон шалгалтын дэлгэрэнгүйг дахин харах эсвэл өөр шалгалт сонгож болно."
-            : "Сонгосон анги, хичээл, шалгалтын төрөлд таарах сангийн материалууд dialog дотор харагдана."}
-        </div>
-      </div>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
@@ -1399,12 +1396,12 @@ function SharedLibraryPanel({
                   </PopoverTrigger>
                   <PopoverContent
                     align="end"
-                    className="w-[min(92vw,24rem)] rounded-[18px] border border-[#dbe4f3] p-4 shadow-[0_18px_45px_rgba(15,23,42,0.12)]"
+                    className="w-[min(92vw,28rem)] rounded-[18px] border border-[#dbe4f3] p-4 shadow-[0_18px_45px_rgba(15,23,42,0.12)]"
                   >
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
                         <p className="text-[14px] font-semibold text-slate-900">
-                          Нэмэлт filter
+                          Нэмэлт шүүлт
                         </p>
                         <p className="text-[12px] text-slate-500">
                           Жагсаалтыг нарийвчлан шүүнэ
@@ -1420,77 +1417,100 @@ function SharedLibraryPanel({
                       </Button>
                     </div>
 
-                    <div className="flex flex-wrap items-start gap-3">
-                      <Select
-                        value={durationFilter}
-                        onValueChange={setDurationFilter}
-                      >
-                        <SelectTrigger className="w-[180px] cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
-                          <SelectValue placeholder="Хугацаа" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Бүх хугацаа</SelectItem>
-                          {durationOptions.map((value) => (
-                            <SelectItem
-                              key={`duration-${value}`}
-                              value={String(value)}
-                            >
-                              {value} мин
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-3">
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="text-[11px] font-medium text-slate-500">
+                          Хугацаа
+                        </p>
+                        <Select
+                          value={durationFilter}
+                          onValueChange={setDurationFilter}
+                        >
+                          <SelectTrigger className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                            <SelectValue placeholder="Хугацаа" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Бүх хугацаа</SelectItem>
+                            {durationOptions.map((value) => (
+                              <SelectItem
+                                key={`duration-${value}`}
+                                value={String(value)}
+                              >
+                                {value} мин
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                      <Select
-                        value={teacherFilter}
-                        onValueChange={setTeacherFilter}
-                      >
-                        <SelectTrigger className="w-[180px] cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
-                          <SelectValue placeholder="Багш" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Бүх багш</SelectItem>
-                          {teacherOptions.map((value) => (
-                            <SelectItem key={`teacher-${value}`} value={value}>
-                              {value === "unknown" ? "Тодорхойгүй" : value}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="text-[11px] font-medium text-slate-500">
+                          Хувилбар
+                        </p>
+                        <Select
+                          value={variantFilter}
+                          onValueChange={setVariantFilter}
+                        >
+                          <SelectTrigger className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                            <SelectValue placeholder="Хувилбар" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Бүгд</SelectItem>
+                            <SelectItem value="with">Хувилбартай</SelectItem>
+                            <SelectItem value="without">Хувилбаргүй</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                      <Select
-                        value={variantFilter}
-                        onValueChange={setVariantFilter}
-                      >
-                        <SelectTrigger className="w-[180px] cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
-                          <SelectValue placeholder="Хувилбар" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Бүгд</SelectItem>
-                          <SelectItem value="with">Хувилбартай</SelectItem>
-                          <SelectItem value="without">Хувилбаргүй</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="text-[11px] font-medium text-slate-500">
+                          Багш
+                        </p>
+                        <Select
+                          value={teacherFilter}
+                          onValueChange={setTeacherFilter}
+                        >
+                          <SelectTrigger className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                            <SelectValue placeholder="Багш" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Бүх багш</SelectItem>
+                            {teacherOptions.map((value) => (
+                              <SelectItem
+                                key={`teacher-${value}`}
+                                value={value}
+                              >
+                                {value === "unknown" ? "Тодорхойгүй" : value}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                      <Select
-                        value={questionCountFilter}
-                        onValueChange={setQuestionCountFilter}
-                      >
-                        <SelectTrigger className="w-[180px] cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
-                          <SelectValue placeholder="Асуултын тоо" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Бүгд</SelectItem>
-                          {questionCountOptions.map((value) => (
-                            <SelectItem
-                              key={`count-${value}`}
-                              value={String(value)}
-                            >
-                              {value} асуулт
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="text-[11px] font-medium text-slate-500">
+                          Асуулт
+                        </p>
+                        <Select
+                          value={questionCountFilter}
+                          onValueChange={setQuestionCountFilter}
+                        >
+                          <SelectTrigger className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                            <SelectValue placeholder="Асуултын тоо" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Бүгд</SelectItem>
+                            {questionCountOptions.map((value) => (
+                              <SelectItem
+                                key={`count-${value}`}
+                                value={String(value)}
+                              >
+                                {value} асуулт
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </PopoverContent>
                 </Popover>

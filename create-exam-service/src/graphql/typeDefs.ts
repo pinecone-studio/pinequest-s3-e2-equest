@@ -453,6 +453,16 @@ export const typeDefs = /* GraphQL */ `
     endTime: String!
   }
 
+  type TeacherAvailabilitySlot {
+    id: ID!
+    dayOfWeek: Int!
+    periodId: Int!
+    status: String!
+    reason: String
+    startTime: String!
+    endTime: String!
+  }
+
   type SchoolEvent {
     id: ID!
     title: String!
@@ -499,20 +509,33 @@ export const typeDefs = /* GraphQL */ `
       semesterId: String = "2026-SPRING"
       includeDraft: Boolean = false
     ): [TeacherMainLesson!]!
+    getTeacherAvailability(teacherId: ID!): [TeacherAvailabilitySlot!]!
     getSchoolEvents(startDate: String!, endDate: String!): [SchoolEvent!]!
   }
 
   type Mutation {
-    generateQuestionAnswer(input: GenerateQuestionAnswerInput!): GenerateQuestionAnswerResult!
-    regenerateQuestionAnswer(input: RegenerateQuestionAnswerInput!): GenerateQuestionAnswerResult!
+    generateQuestionAnswer(
+      input: GenerateQuestionAnswerInput!
+    ): GenerateQuestionAnswerResult!
+    regenerateQuestionAnswer(
+      input: RegenerateQuestionAnswerInput!
+    ): GenerateQuestionAnswerResult!
     generateExamQuestions(input: ExamGenerationInput!): ExamGenerationResult!
     saveExam(input: SaveExamInput!): SaveExamPayload!
     saveNewMathExam(input: SaveNewMathExamInput!): SaveNewMathExamPayload!
-    requestExamVariants(input: RequestExamVariantsInput!): RequestExamVariantsPayload!
-    confirmExamVariant(input: ConfirmExamVariantInput!): ConfirmExamVariantPayload!
-    confirmExamVariants(inputs: [ConfirmExamVariantInput!]!): BatchConfirmExamVariantPayload!
+    requestExamVariants(
+      input: RequestExamVariantsInput!
+    ): RequestExamVariantsPayload!
+    confirmExamVariant(
+      input: ConfirmExamVariantInput!
+    ): ConfirmExamVariantPayload!
+    confirmExamVariants(
+      inputs: [ConfirmExamVariantInput!]!
+    ): BatchConfirmExamVariantPayload!
     saveExamVariant(input: SaveExamVariantInput!): SaveExamVariantPayload!
-    saveExamVariants(inputs: [SaveExamVariantInput!]!): BatchSaveExamVariantPayload!
+    saveExamVariants(
+      inputs: [SaveExamVariantInput!]!
+    ): BatchSaveExamVariantPayload!
     # AI-аар шинжлүүлэх
     analyzeQuestion(prompt: String!): QuestionAnalysisResult!
     # AI-аар үүсгэсэн загварыг хадгалах
@@ -544,6 +567,8 @@ export const typeDefs = /* GraphQL */ `
     variantCount: Int
     questionCount: Int!
     durationMinutes: Int
+    firstQuestionPreview: String
+    secondQuestionPreview: String
     updatedAt: String!
   }
 

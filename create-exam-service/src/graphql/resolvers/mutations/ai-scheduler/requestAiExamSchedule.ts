@@ -34,6 +34,7 @@ export const requestAiExamScheduleMutation = {
 			throw new GraphQLError("testId, classId, preferredDate заавал бөглөнө.");
 		}
 
+		// ISO string → шууд >/< харьцуулахгүй; зөвхөн Date.getTime() / DB instant.
 		const start = new Date(preferredDate);
 		if (Number.isNaN(start.getTime())) {
 			throw new GraphQLError(

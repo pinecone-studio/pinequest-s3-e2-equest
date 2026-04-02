@@ -36,6 +36,7 @@ import {
 } from "@/gql/create-exam-documents";
 import type { Student, StudentMainLesson } from "@/gql/graphql";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   CALENDAR_BUFFER_BANDS,
   CALENDAR_OVERLAY_LAYOUTS,
@@ -108,6 +109,34 @@ type StudentBlock = {
   endM: number;
   /** Баталгаажсан эсэх (секц/давтлага дээр badge) */
   confirmed?: boolean;
+};
+
+/** Mock: долоо хоногийн 5-р өдөр (Баасан), 14:00–16:00 — сурагчдын зөвлөлийн хурал */
+const MOCK_STUDENT_COUNCIL_BLOCK: StudentBlock = {
+  id: "mock-student-council",
+  layer: "section",
+  title: "Сурагчдын зөвлөлийн хурал",
+  subtitle: "Mock · Баасан гараг 14:00–16:00",
+  colIdx: 4,
+  startH: 14,
+  startM: 0,
+  endH: 16,
+  endM: 0,
+  confirmed: true,
+};
+
+/** Mock: 4-р өдөр (Пүрэв), өглөө 08:30–10:10 — математикийн сонгох (нэмэлт үйл ажиллагаа) */
+const MOCK_STUDENT_MATH_ELECTIVE_BLOCK: StudentBlock = {
+  id: "mock-math-elective",
+  layer: "section",
+  title: "Математик (сонгох)",
+  subtitle: "Нэмэлт үйл ажиллагаа · Mock · Пүрэв 08:30–10:10",
+  colIdx: 3,
+  startH: 8,
+  startM: 30,
+  endH: 10,
+  endM: 10,
+  confirmed: true,
 };
 
 function formatBlockDuration(
@@ -228,6 +257,8 @@ function defaultLayerVisibility(): Record<StudentLayerId, boolean> {
 
 function mockStudentBlocks(): StudentBlock[] {
   return [
+    MOCK_STUDENT_COUNCIL_BLOCK,
+    MOCK_STUDENT_MATH_ELECTIVE_BLOCK,
     {
       id: "rep-math",
       layer: "repetition_confirmed",
@@ -435,20 +466,30 @@ export function AiStudentPersonalScheduler({
     includeDraft?: boolean;
   };
 
-  const { data: studentScheduleData, loading: studentScheduleLoading } =
-    useQuery<GetStudentMainLessonsListData, GetStudentMainLessonsListVars>(
-      GetStudentMainLessonsListDocument,
-      {
-        variables: {
-          studentId: selectedStudentId,
-          semesterId: "2026-SPRING",
-          includeDraft: false,
-        },
-        skip: !selectedStudentId,
-        fetchPolicy: "cache-first",
-        notifyOnNetworkStatusChange: true,
+  const {
+    data: studentScheduleData,
+    loading: studentScheduleLoading,
+    error: studentScheduleError,
+  } = useQuery<GetStudentMainLessonsListData, GetStudentMainLessonsListVars>(
+    GetStudentMainLessonsListDocument,
+    {
+      variables: {
+        studentId: selectedStudentId,
+        semesterId: "2026-SPRING",
+        includeDraft: false,
       },
+      skip: !selectedStudentId,
+      fetchPolicy: "cache-first",
+      notifyOnNetworkStatusChange: true,
+    },
+  );
+
+  useEffect(() => {
+    if (!studentScheduleError) return;
+    toast.error(
+      studentScheduleError.message || "Сурагчийн хуваарь ачааллахад алдаа.",
     );
+  }, [studentScheduleError]);
 
   function parseHHMM(t: string): { h: number; m: number } {
     const [hh, mm] = String(t ?? "").split(":");
@@ -468,13 +509,13 @@ export function AiStudentPersonalScheduler({
     const rows: StudentMainLesson[] =
       studentScheduleData?.getStudentMainLessonsList ?? [];
 
-    return rows.map((r) => {
+    const fromApi = rows.map((r) => {
       const s = parseHHMM(r.startTime);
       const e = parseHHMM(r.endTime);
       const teacher = r.teacherShortName ? String(r.teacherShortName) : "";
       return {
         id: r.id,
-        layer: "class_schedule",
+        layer: "class_schedule" as const,
         title: r.subjectName,
         subtitle: teacher || undefined,
         roomLabel: r.classroomRoomNumber,
@@ -486,6 +527,7 @@ export function AiStudentPersonalScheduler({
         confirmed: r.isDraft === false,
       };
     });
+    return [...fromApi, MOCK_STUDENT_COUNCIL_BLOCK, MOCK_STUDENT_MATH_ELECTIVE_BLOCK];
   }, [selectedStudentId, studentScheduleData?.getStudentMainLessonsList]);
 
   const visibleBlocks = useMemo(
@@ -968,14 +1010,14 @@ export function AiStudentPersonalScheduler({
                       >
                         <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit]">
                           <div
-                            className="absolute inset-x-0 bg-zinc-200/55 dark:bg-zinc-800/25"
+                            className="absolute inset-x-0 bg-zinc-200/90 dark:bg-zinc-800/25"
                             style={{
                               top: `${CALENDAR_BUFFER_BANDS.beforeTopPct}%`,
                               height: `${CALENDAR_BUFFER_BANDS.beforeHeightPct}%`,
                             }}
                           />
                           <div
-                            className="absolute inset-x-0 bg-zinc-200/55 dark:bg-zinc-800/25"
+                            className="absolute inset-x-0 bg-zinc-100/25 dark:bg-zinc-950/12"
                             style={{
                               top: `${CALENDAR_BUFFER_BANDS.afterTopPct}%`,
                               height: `${CALENDAR_BUFFER_BANDS.afterHeightPct}%`,

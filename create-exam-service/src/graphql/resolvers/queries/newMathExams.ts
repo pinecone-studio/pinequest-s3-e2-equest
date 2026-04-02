@@ -1,4 +1,4 @@
-import { and, desc, eq, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { GraphQLError } from "graphql";
 
 import type { GraphQLContext } from "../../context";
@@ -23,6 +23,15 @@ type GetArgs = { examId: string };
 
 function gqlQuestionType(t: string): MathExamQuestionType {
   return t === "math" ? MathExamQuestionType.Math : MathExamQuestionType.Mcq;
+}
+
+const PREVIEW_PROMPT_MAX = 220;
+
+function truncatePreviewPrompt(raw: string | null | undefined): string | null {
+  const s = (raw ?? "").trim().replace(/\s+/g, " ");
+  if (!s) return null;
+  if (s.length <= PREVIEW_PROMPT_MAX) return s;
+  return `${s.slice(0, PREVIEW_PROMPT_MAX - 1)}…`;
 }
 
 function sessionMetaFromRow(row: {
@@ -182,16 +191,51 @@ export const newMathExamQueries = {
 
     const rows = await query.orderBy(desc(newExams.updatedAt)).limit(limit).offset(offset);
 
-    return rows.map((row) => ({
-      ...row,
-      questionCount: (row.mcqCount ?? 0) + (row.mathCount ?? 0),
-      withVariants:
-        row.withVariants === 1
-          ? true
-          : row.withVariants === 0
-            ? false
-            : null,
-    }));
+    const examIds = rows.map((r) => r.examId);
+    const previewByExam = new Map<string, { first: string | null; second: string | null }>();
+
+    if (examIds.length > 0) {
+      const qRows = await ctx.db
+        .select({
+          examId: newExamQuestions.examId,
+          position: newExamQuestions.position,
+          prompt: newExamQuestions.prompt,
+        })
+        .from(newExamQuestions)
+        .where(inArray(newExamQuestions.examId, examIds))
+        .orderBy(asc(newExamQuestions.examId), asc(newExamQuestions.position));
+
+      const promptsByExam = new Map<string, string[]>();
+      for (const r of qRows) {
+        const list = promptsByExam.get(r.examId) ?? [];
+        if (list.length < 2) {
+          list.push(r.prompt);
+          promptsByExam.set(r.examId, list);
+        }
+      }
+      for (const [eid, prompts] of promptsByExam) {
+        previewByExam.set(eid, {
+          first: truncatePreviewPrompt(prompts[0] ?? null),
+          second: truncatePreviewPrompt(prompts[1] ?? null),
+        });
+      }
+    }
+
+    return rows.map((row) => {
+      const prev = previewByExam.get(row.examId);
+      return {
+        ...row,
+        questionCount: (row.mcqCount ?? 0) + (row.mathCount ?? 0),
+        withVariants:
+          row.withVariants === 1
+            ? true
+            : row.withVariants === 0
+              ? false
+              : null,
+        firstQuestionPreview: prev?.first ?? null,
+        secondQuestionPreview: prev?.second ?? null,
+      };
+    });
   },
 
   getNewMathExam: async (_: unknown, args: GetArgs, ctx: GraphQLContext) => {

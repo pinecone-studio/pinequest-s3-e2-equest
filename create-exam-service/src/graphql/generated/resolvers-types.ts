@@ -273,6 +273,17 @@ export type GeneratedQuestion = {
   text: Scalars['String']['output'];
 };
 
+export type ListNewMathExamsFilterInput = {
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
+  examType?: InputMaybe<Scalars['String']['input']>;
+  grade?: InputMaybe<Scalars['Int']['input']>;
+  questionCount?: InputMaybe<Scalars['Int']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  subject?: InputMaybe<Scalars['String']['input']>;
+  teacherId?: InputMaybe<Scalars['String']['input']>;
+  withVariants?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
 export enum MathExamQuestionType {
   Math = 'MATH',
   Mcq = 'MCQ'
@@ -478,25 +489,18 @@ export type NewMathExamSummary = {
   durationMinutes?: Maybe<Scalars['Int']['output']>;
   examId: Scalars['ID']['output'];
   examType?: Maybe<Scalars['String']['output']>;
+  /** Жагсаалтын карт дээр: эхний асуултын prompt (байхгүй бол null). */
+  firstQuestionPreview?: Maybe<Scalars['String']['output']>;
   grade?: Maybe<Scalars['Int']['output']>;
   questionCount: Scalars['Int']['output'];
+  /** Хоёр дахь асуултын preview (байхгүй бол null). */
+  secondQuestionPreview?: Maybe<Scalars['String']['output']>;
   subject?: Maybe<Scalars['String']['output']>;
   teacherId?: Maybe<Scalars['String']['output']>;
   title: Scalars['String']['output'];
   updatedAt: Scalars['String']['output'];
   variantCount?: Maybe<Scalars['Int']['output']>;
   withVariants?: Maybe<Scalars['Boolean']['output']>;
-};
-
-export type ListNewMathExamsFilterInput = {
-  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
-  examType?: InputMaybe<Scalars['String']['input']>;
-  grade?: InputMaybe<Scalars['Int']['input']>;
-  questionCount?: InputMaybe<Scalars['Int']['input']>;
-  search?: InputMaybe<Scalars['String']['input']>;
-  subject?: InputMaybe<Scalars['String']['input']>;
-  teacherId?: InputMaybe<Scalars['String']['input']>;
-  withVariants?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type Query = {
@@ -511,6 +515,8 @@ export type Query = {
   getStudentMainLessonsList: Array<StudentMainLesson>;
   /** ai-scheduler-student: 10A гэх мэт ангид харьяалагдах сурагчдын жагсаалт */
   getStudentsList: Array<Student>;
+  /** Багшийн teacher_availability мөрүүд (цагийн тороор) — хуанли дээр завгүй/дуртай цаг */
+  getTeacherAvailability: Array<TeacherAvailabilitySlot>;
   /** ai-scheduler-teacher: тухайн багшийн үндсэн хичээлийн (primary) хуваарь */
   getTeacherMainLessonsList: Array<TeacherMainLesson>;
   /** ai-scheduler-teacher: 9–12-р ангийн Math (MATH_HS) ордог багш нар */
@@ -551,6 +557,11 @@ export type QueryGetStudentMainLessonsListArgs = {
 export type QueryGetStudentsListArgs = {
   grade: Scalars['Int']['input'];
   group: Scalars['String']['input'];
+};
+
+
+export type QueryGetTeacherAvailabilityArgs = {
+  teacherId: Scalars['ID']['input'];
 };
 
 
@@ -765,6 +776,18 @@ export type Teacher = {
   workLoadLimit: Scalars['Int']['output'];
 };
 
+/** Багшийн боломжит цаг (teacher_availability × periods) — AI / хуанли. */
+export type TeacherAvailabilitySlot = {
+  __typename?: 'TeacherAvailabilitySlot';
+  dayOfWeek: Scalars['Int']['output'];
+  endTime: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  periodId: Scalars['Int']['output'];
+  reason?: Maybe<Scalars['String']['output']>;
+  startTime: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+};
+
 export type TeacherMainLesson = {
   __typename?: 'TeacherMainLesson';
   classroomId: Scalars['String']['output'];
@@ -888,6 +911,7 @@ export type ResolversTypes = ResolversObject<{
   GeneratedQuestion: ResolverTypeWrapper<GeneratedQuestion>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
+  ListNewMathExamsFilterInput: ListNewMathExamsFilterInput;
   MathExamQuestionType: MathExamQuestionType;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
   NewMathExam: ResolverTypeWrapper<NewMathExam>;
@@ -917,6 +941,7 @@ export type ResolversTypes = ResolversObject<{
   Student: ResolverTypeWrapper<Student>;
   StudentMainLesson: ResolverTypeWrapper<StudentMainLesson>;
   Teacher: ResolverTypeWrapper<Teacher>;
+  TeacherAvailabilitySlot: ResolverTypeWrapper<TeacherAvailabilitySlot>;
   TeacherMainLesson: ResolverTypeWrapper<TeacherMainLesson>;
 }>;
 
@@ -947,6 +972,7 @@ export type ResolversParentTypes = ResolversObject<{
   GeneratedQuestion: GeneratedQuestion;
   ID: Scalars['ID']['output'];
   Int: Scalars['Int']['output'];
+  ListNewMathExamsFilterInput: ListNewMathExamsFilterInput;
   Mutation: Record<PropertyKey, never>;
   NewMathExam: NewMathExam;
   NewMathExamGeneratorMeta: NewMathExamGeneratorMeta;
@@ -973,6 +999,7 @@ export type ResolversParentTypes = ResolversObject<{
   Student: Student;
   StudentMainLesson: StudentMainLesson;
   Teacher: Teacher;
+  TeacherAvailabilitySlot: TeacherAvailabilitySlot;
   TeacherMainLesson: TeacherMainLesson;
 }>;
 
@@ -1166,8 +1193,17 @@ export type NewMathExamSessionMetaResolvers<ContextType = GraphQLContext, Parent
 export type NewMathExamSummaryResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['NewMathExamSummary'] = ResolversParentTypes['NewMathExamSummary']> = ResolversObject<{
   durationMinutes?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   examId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  examType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  firstQuestionPreview?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  grade?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  questionCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  secondQuestionPreview?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  subject?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  teacherId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  variantCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  withVariants?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
 }>;
 
 export type QueryResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = ResolversObject<{
@@ -1177,9 +1213,10 @@ export type QueryResolvers<ContextType = GraphQLContext, ParentType extends Reso
   getSchoolEvents?: Resolver<Array<ResolversTypes['SchoolEvent']>, ParentType, ContextType, RequireFields<QueryGetSchoolEventsArgs, 'endDate' | 'startDate'>>;
   getStudentMainLessonsList?: Resolver<Array<ResolversTypes['StudentMainLesson']>, ParentType, ContextType, RequireFields<QueryGetStudentMainLessonsListArgs, 'includeDraft' | 'semesterId' | 'studentId'>>;
   getStudentsList?: Resolver<Array<ResolversTypes['Student']>, ParentType, ContextType, RequireFields<QueryGetStudentsListArgs, 'grade' | 'group'>>;
+  getTeacherAvailability?: Resolver<Array<ResolversTypes['TeacherAvailabilitySlot']>, ParentType, ContextType, RequireFields<QueryGetTeacherAvailabilityArgs, 'teacherId'>>;
   getTeacherMainLessonsList?: Resolver<Array<ResolversTypes['TeacherMainLesson']>, ParentType, ContextType, RequireFields<QueryGetTeacherMainLessonsListArgs, 'includeDraft' | 'semesterId' | 'teacherId'>>;
   getTeachersList?: Resolver<Array<ResolversTypes['Teacher']>, ParentType, ContextType, RequireFields<QueryGetTeachersListArgs, 'grades'>>;
-  listNewMathExams?: Resolver<Array<ResolversTypes['NewMathExamSummary']>, ParentType, ContextType, RequireFields<QueryListNewMathExamsArgs, 'limit'>>;
+  listNewMathExams?: Resolver<Array<ResolversTypes['NewMathExamSummary']>, ParentType, ContextType, RequireFields<QueryListNewMathExamsArgs, 'limit' | 'offset'>>;
   listTeacherConfirmedExamSchedules?: Resolver<Array<ResolversTypes['ExamSchedule']>, ParentType, ContextType, RequireFields<QueryListTeacherConfirmedExamSchedulesArgs, 'endDate' | 'startDate' | 'teacherId'>>;
 }>;
 
@@ -1292,6 +1329,16 @@ export type TeacherResolvers<ContextType = GraphQLContext, ParentType extends Re
   workLoadLimit?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
 }>;
 
+export type TeacherAvailabilitySlotResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['TeacherAvailabilitySlot'] = ResolversParentTypes['TeacherAvailabilitySlot']> = ResolversObject<{
+  dayOfWeek?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  endTime?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  periodId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  reason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  startTime?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+}>;
+
 export type TeacherMainLessonResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['TeacherMainLesson'] = ResolversParentTypes['TeacherMainLesson']> = ResolversObject<{
   classroomId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   classroomRoomNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -1340,6 +1387,7 @@ export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   Student?: StudentResolvers<ContextType>;
   StudentMainLesson?: StudentMainLessonResolvers<ContextType>;
   Teacher?: TeacherResolvers<ContextType>;
+  TeacherAvailabilitySlot?: TeacherAvailabilitySlotResolvers<ContextType>;
   TeacherMainLesson?: TeacherMainLessonResolvers<ContextType>;
 }>;
 

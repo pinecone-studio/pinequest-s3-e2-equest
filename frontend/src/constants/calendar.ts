@@ -153,6 +153,53 @@ export function slotTopPercent(hour: number, minute = 0): number {
   return minutesToTopPercent(hour * 60 + minute);
 }
 
+/** Торын баганын дээрхи Y хувь → өдрийн минут (даралт/чирэх). */
+export function topPercentToMinuteOfDay(
+  topPct: number,
+  snapMinutes: number = 15,
+): number {
+  const p = Math.min(Math.max(topPct, 0), 100);
+  const raw = DAY_VISIBLE_START_MIN + (p / 100) * DAY_VISIBLE_SPAN_MIN;
+  const snapped = Math.round(raw / snapMinutes) * snapMinutes;
+  const maxStart = Math.max(
+    DAY_VISIBLE_END_MIN - snapMinutes,
+    DAY_VISIBLE_START_MIN,
+  );
+  return Math.min(Math.max(snapped, DAY_VISIBLE_START_MIN), maxStart);
+}
+
+export function minuteOfDayToHourMinute(totalMin: number): {
+  h: number;
+  m: number;
+} {
+  const t = Math.max(0, Math.min(totalMin, 24 * 60 - 1));
+  return { h: Math.floor(t / 60), m: t % 60 };
+}
+
+export function blockHeightPercentFromMinuteRange(
+  startMin: number,
+  endMin: number,
+): number {
+  const start = Math.max(
+    DAY_VISIBLE_START_MIN,
+    Math.min(startMin, DAY_VISIBLE_END_MIN),
+  );
+  const end = Math.max(
+    start,
+    Math.min(endMin, DAY_VISIBLE_END_MIN),
+  );
+  const sh = Math.floor(start / 60);
+  const sm = start % 60;
+  const eh = Math.floor(end / 60);
+  const em = end % 60;
+  return blockHeightPercent(sh, sm, eh, em);
+}
+
+export function slotTopPercentFromMinute(startMin: number): number {
+  const { h, m } = minuteOfDayToHourMinute(startMin);
+  return slotTopPercent(h, m);
+}
+
 export function blockHeightPercent(
   startHour: number,
   startMinute: number,

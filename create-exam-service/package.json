@@ -34,6 +34,8 @@
 		"db:seed:subjects:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/subjects_seed.sql",
 		"db:seed:users:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/users_seed.sql",
 		"db:seed:users:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/users_seed.sql",
+		"db:seed:teacher-availability-math09:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/teacher_availability_math09_batbayar_seed.sql",
+		"db:seed:teacher-availability-math09:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/teacher_availability_math09_batbayar_seed.sql",
 		"db:seed:teacher-subjects:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/teacher_subjects_seed.sql",
 		"db:seed:teacher-subjects:remote": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --remote --file=./drizzle/seed/teacher_subjects_seed.sql",
 		"db:seed:groups:local": "WRANGLER_HOME=./.wrangler wrangler d1 execute create-exams --local --file=./drizzle/seed/groups_seed.sql",

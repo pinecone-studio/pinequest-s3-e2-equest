@@ -464,6 +464,19 @@ type TeacherMainLesson {
 }
 
 """
+Багшийн боломжит цаг (teacher_availability × periods) — AI / хуанли.
+"""
+type TeacherAvailabilitySlot {
+  id: ID!
+  dayOfWeek: Int!
+  periodId: Int!
+  status: String!
+  reason: String
+  startTime: String!
+  endTime: String!
+}
+
+"""
 ai-scheduler-school-event: сургуулийн эвент (D1 school_events)
 """
 type SchoolEvent {
@@ -526,8 +539,14 @@ type Query {
     semesterId: String = "2026-SPRING"
     includeDraft: Boolean = false
   ): [TeacherMainLesson!]!
+  """
+  Багшийн teacher_availability мөрүүд (цагийн тороор) — хуанли дээр завгүй/дуртай цаг
+  """
+  getTeacherAvailability(teacherId: ID!): [TeacherAvailabilitySlot!]!
 
-  """ai-scheduler-school-event: өгөгдсөн хугацааны мужид давхцах эвентүүд"""
+  """
+  ai-scheduler-school-event: өгөгдсөн хугацааны мужид давхцах эвентүүд
+  """
   getSchoolEvents(startDate: String!, endDate: String!): [SchoolEvent!]!
   getExamVariantJob(jobId: ID!): ExamVariantJob
 }
@@ -539,16 +558,28 @@ type RequestExamSchedulePayload {
 }
 
 type Mutation {
-  generateQuestionAnswer(input: GenerateQuestionAnswerInput!): GenerateQuestionAnswerResult!
-  regenerateQuestionAnswer(input: RegenerateQuestionAnswerInput!): GenerateQuestionAnswerResult!
+  generateQuestionAnswer(
+    input: GenerateQuestionAnswerInput!
+  ): GenerateQuestionAnswerResult!
+  regenerateQuestionAnswer(
+    input: RegenerateQuestionAnswerInput!
+  ): GenerateQuestionAnswerResult!
   generateExamQuestions(input: ExamGenerationInput!): ExamGenerationResult!
   saveExam(input: SaveExamInput!): SaveExamPayload!
   saveNewMathExam(input: SaveNewMathExamInput!): SaveNewMathExamPayload!
-  requestExamVariants(input: RequestExamVariantsInput!): RequestExamVariantsPayload!
-  confirmExamVariant(input: ConfirmExamVariantInput!): ConfirmExamVariantPayload!
-  confirmExamVariants(inputs: [ConfirmExamVariantInput!]!): BatchConfirmExamVariantPayload!
+  requestExamVariants(
+    input: RequestExamVariantsInput!
+  ): RequestExamVariantsPayload!
+  confirmExamVariant(
+    input: ConfirmExamVariantInput!
+  ): ConfirmExamVariantPayload!
+  confirmExamVariants(
+    inputs: [ConfirmExamVariantInput!]!
+  ): BatchConfirmExamVariantPayload!
   saveExamVariant(input: SaveExamVariantInput!): SaveExamVariantPayload!
-  saveExamVariants(inputs: [SaveExamVariantInput!]!): BatchSaveExamVariantPayload!
+  saveExamVariants(
+    inputs: [SaveExamVariantInput!]!
+  ): BatchSaveExamVariantPayload!
   # AI-аар шинжлүүлэх
   analyzeQuestion(prompt: String!): QuestionAnalysisResult!
   # AI-аар үүсгэсэн загварыг хадгалах
@@ -588,6 +619,14 @@ type NewMathExamSummary {
   variantCount: Int
   questionCount: Int!
   durationMinutes: Int
+  """
+  Жагсаалтын карт дээр: эхний асуултын prompt (байхгүй бол null).
+  """
+  firstQuestionPreview: String
+  """
+  Хоёр дахь асуултын preview (байхгүй бол null).
+  """
+  secondQuestionPreview: String
   updatedAt: String!
 }
 

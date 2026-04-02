@@ -145,9 +145,9 @@ const SCHOOL_EVENT_TYPE_META: Record<
     labelMn: "Засвар/Ариутгал",
     examplesMn: "Ариутгал, засвар, цэвэрлэгээ",
     impactMn: "Нөөцийн түгжээ",
-    swatch: "bg-zinc-600",
+    swatch: "bg-violet-600",
     cardClass:
-      "border-zinc-300 bg-zinc-100 text-zinc-950 dark:border-zinc-600 dark:bg-zinc-900/70 dark:text-zinc-50",
+      "border-violet-300 bg-violet-100 text-violet-950 dark:border-violet-700 dark:bg-violet-950/70 dark:text-violet-50",
   },
   TRIP: {
     labelMn: "Аялал",
@@ -516,31 +516,43 @@ export function SchoolEventScheduler({
       <div className="relative z-10 flex min-h-screen flex-col">
         {hideHeader ? null : (
           <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5">
-          <div className="flex min-w-0 items-center gap-3">
-            {shellMode ? (
-              <>
-                <button
-                  type="button"
-                  className="hidden size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:flex"
-                  aria-expanded={calendarSidebarOpen}
-                  aria-controls="school-scheduler-sidebar"
-                  onClick={() => setCalendarSidebarOpen((o) => !o)}
-                >
-                  <span className="sr-only">Хуанлын панел нээх, хаах</span>
-                  {calendarSidebarOpen ? (
-                    <ChevronLeft
-                      className="size-5"
-                      strokeWidth={1.5}
-                      aria-hidden
-                    />
-                  ) : (
-                    <ChevronRight
-                      className="size-5"
-                      strokeWidth={1.5}
-                      aria-hidden
-                    />
-                  )}
-                </button>
+            <div className="flex min-w-0 items-center gap-3">
+              {shellMode ? (
+                <>
+                  <button
+                    type="button"
+                    className="hidden size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:flex"
+                    aria-expanded={calendarSidebarOpen}
+                    aria-controls="school-scheduler-sidebar"
+                    onClick={() => setCalendarSidebarOpen((o) => !o)}
+                  >
+                    <span className="sr-only">Хуанлын панел нээх, хаах</span>
+                    {calendarSidebarOpen ? (
+                      <ChevronLeft
+                        className="size-5"
+                        strokeWidth={1.5}
+                        aria-hidden
+                      />
+                    ) : (
+                      <ChevronRight
+                        className="size-5"
+                        strokeWidth={1.5}
+                        aria-hidden
+                      />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:hidden"
+                    aria-expanded={calendarSidebarOpen}
+                    aria-controls="school-scheduler-sidebar"
+                    onClick={() => setCalendarSidebarOpen((o) => !o)}
+                  >
+                    <span className="sr-only">Хуанлын панел нээх, хаах</span>
+                    <Menu className="size-5" strokeWidth={1.5} aria-hidden />
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
                   className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:hidden"
@@ -551,45 +563,33 @@ export function SchoolEventScheduler({
                   <span className="sr-only">Хуанлын панел нээх, хаах</span>
                   <Menu className="size-5" strokeWidth={1.5} aria-hidden />
                 </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:hidden"
-                aria-expanded={calendarSidebarOpen}
-                aria-controls="school-scheduler-sidebar"
-                onClick={() => setCalendarSidebarOpen((o) => !o)}
-              >
-                <span className="sr-only">Хуанлын панел нээх, хаах</span>
-                <Menu className="size-5" strokeWidth={1.5} aria-hidden />
-              </button>
-            )}
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">
-                  <CalendarClock
-                    className="size-4"
-                    strokeWidth={2}
-                    aria-hidden
-                  />
-                </span>
-                <div>
-                  <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
-                    Сургуулийн хуанли
-                  </h1>
+              )}
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300">
+                    <CalendarClock
+                      className="size-4"
+                      strokeWidth={2}
+                      aria-hidden
+                    />
+                  </span>
+                  <div>
+                    <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
+                      Сургуулийн хуанли
+                    </h1>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <SchedulerAppearanceMenu />
-            <Link
-              href="/ai-scheduler"
-              className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-            >
-              Багшийн хуваарь
-            </Link>
-          </div>
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              <SchedulerAppearanceMenu />
+              <Link
+                href="/ai-scheduler"
+                className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                Багшийн хуваарь
+              </Link>
+            </div>
           </header>
         )}
 
@@ -882,14 +882,14 @@ export function SchoolEventScheduler({
                       >
                         <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit]">
                           <div
-                            className="absolute inset-x-0 bg-zinc-200/55 dark:bg-zinc-800/25"
+                            className="absolute inset-x-0 bg-zinc-200/90 dark:bg-zinc-800/25"
                             style={{
                               top: `${CALENDAR_BUFFER_BANDS.beforeTopPct}%`,
                               height: `${CALENDAR_BUFFER_BANDS.beforeHeightPct}%`,
                             }}
                           />
                           <div
-                            className="absolute inset-x-0 bg-zinc-200/55 dark:bg-zinc-800/25"
+                            className="absolute inset-x-0 bg-zinc-100/25 dark:bg-zinc-950/12"
                             style={{
                               top: `${CALENDAR_BUFFER_BANDS.afterTopPct}%`,
                               height: `${CALENDAR_BUFFER_BANDS.afterHeightPct}%`,
@@ -925,7 +925,7 @@ export function SchoolEventScheduler({
                                 key={`${seg.eventId}-${colIdx}-${seg.topPct}`}
                                 data-school-skip-drag
                                 className={cn(
-                                  "pointer-events-none absolute left-1 right-1 z-5 overflow-hidden rounded-xl border px-2 py-1.5 text-[10px] font-semibold leading-tight shadow-sm",
+                                  "pointer-events-none absolute left-1 right-1 z-5 overflow-hidden rounded-xl border px-2 py-1.5 text-[10px] font-normal leading-tight shadow-sm",
                                   meta.cardClass,
                                 )}
                                 style={{
@@ -944,7 +944,7 @@ export function SchoolEventScheduler({
                                     {meta.labelMn}
                                   </span>
                                 </div>
-                                <span className="line-clamp-3 font-semibold">
+                                <span className="line-clamp-3 font-normal">
                                   {seg.title}
                                 </span>
                                 {seg.subcategory ? (
