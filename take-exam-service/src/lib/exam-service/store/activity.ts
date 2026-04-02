@@ -10,7 +10,8 @@ import { DbClient } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import { createId } from "./common";
 
-const MAX_RECENT_EVENTS = 8;
+const MAX_RECENT_EVENTS = 24;
+const MAX_SCREENSHOT_EVIDENCE_EVENTS = 12;
 
 type LogAttemptActivityInput = {
 	code: string;
@@ -113,7 +114,18 @@ export const getAttemptMonitoringSummaries = async (
 			summary.lastEventAt = row.occurredAt;
 		}
 
-		if (summary.recentEvents.length < MAX_RECENT_EVENTS) {
+		const hasScreenshotEvidence = Boolean(
+			row.screenshotStorageKey || row.screenshotUrl,
+		);
+		const screenshotEvidenceCount = summary.recentEvents.filter(
+			(event) => event.screenshotStorageKey || event.screenshotUrl,
+		).length;
+
+		if (
+			summary.recentEvents.length < MAX_RECENT_EVENTS ||
+			(hasScreenshotEvidence &&
+				screenshotEvidenceCount < MAX_SCREENSHOT_EVIDENCE_EVENTS)
+		) {
 			summary.recentEvents.push(toMonitoringEvent(row));
 		}
 

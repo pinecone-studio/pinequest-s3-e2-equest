@@ -7,6 +7,8 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   CalendarClock,
+  ChevronDown,
+  ChevronUp,
   ChevronRight,
   Clock3,
   Download,
@@ -31,6 +33,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
   Table,
@@ -41,6 +44,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { formatClassLabel } from "../lib/report-format";
 import type {
   ReportScoreTrendData,
   ReportScoreTrendStudent,
@@ -51,6 +55,7 @@ type KnowledgeLevelKey =
   | "excellent"
   | "good"
   | "fair"
+  | "insufficient"
   | "needs-improvement"
   | "ungraded";
 
@@ -89,6 +94,7 @@ const KNOWLEDGE_LEVEL_OPTIONS: Array<{
   { key: "good", label: "Сайн" },
   { key: "fair", label: "Хангалттай" },
   { key: "needs-improvement", label: "Сайжруулах шаардлагатай" },
+  { key: "insufficient", label: "Хангалтгүй" },
 ];
 
 export function ReportResultsTable({
@@ -99,9 +105,13 @@ export function ReportResultsTable({
 }: ReportResultsTableProps) {
   const [search, setSearch] = useState("");
   const [knowledgeFilter, setKnowledgeFilter] = useState<string>("all");
+  const [progressSort, setProgressSort] = useState<"asc" | "desc" | "none">(
+    "none",
+  );
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     null,
   );
+  const [isAllStudentsOpen, setIsAllStudentsOpen] = useState(false);
 
   const tableRows = useMemo(() => {
     const trendStudentsById = new Map(
@@ -139,6 +149,45 @@ export function ReportResultsTable({
     });
   }, [knowledgeFilter, search, tableRows]);
 
+  const displayRows = useMemo(() => {
+    const rows = [...filteredRows];
+    if (progressSort !== "none") {
+      rows.sort((left, right) => {
+        const leftDelta =
+          typeof left.progressComparison?.delta === "number"
+            ? left.progressComparison.delta
+            : null;
+        const rightDelta =
+          typeof right.progressComparison?.delta === "number"
+            ? right.progressComparison.delta
+            : null;
+
+        if (leftDelta === null && rightDelta === null) {
+          return left.name.localeCompare(right.name, "mn");
+        }
+        if (leftDelta === null) {
+          return 1;
+        }
+        if (rightDelta === null) {
+          return -1;
+        }
+
+        if (leftDelta !== rightDelta) {
+          return progressSort === "desc"
+            ? rightDelta - leftDelta
+            : leftDelta - rightDelta;
+        }
+
+        return left.name.localeCompare(right.name, "mn");
+      });
+    }
+
+    return rows.map((row, index) => ({
+      ...row,
+      position: index + 1,
+    }));
+  }, [filteredRows, progressSort]);
+
   const selectedStudent = useMemo(() => {
     if (!selectedStudentId) {
       return null;
@@ -159,7 +208,7 @@ export function ReportResultsTable({
         "Байр",
         "Ахиц",
       ].join(","),
-      ...filteredRows.map((row) =>
+      ...displayRows.map((row) =>
         [
           row.position,
           escapeCsv(row.name),
@@ -188,11 +237,11 @@ export function ReportResultsTable({
     <>
       <Card className="overflow-hidden rounded-[24px] border border-[#e6edf7] bg-white py-0 shadow-[0_20px_48px_-40px_rgba(15,23,42,0.24)]">
         <CardHeader className="border-b border-[#e9eef6] px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-            <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-              <div className="relative min-w-[240px] flex-1 sm:flex-none">
-                <Search className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8a94a6]" />
-                <Input
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div className="flex flex-1 flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="relative min-w-[240px] flex-1 sm:flex-none">
+                  <Search className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8a94a6]" />
+                  <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Сурагчийн нэрээр хайх..."
@@ -201,13 +250,7 @@ export function ReportResultsTable({
               </div>
               <Select value={knowledgeFilter} onValueChange={setKnowledgeFilter}>
                 <SelectTrigger className="h-11 min-w-[210px] rounded-xl border-0 bg-[#f5f7fb] px-4 text-sm font-medium text-[#1f2937] shadow-none focus-visible:ring-2 focus-visible:ring-[#bfdbfe]">
-                  <span className="truncate">
-                    {knowledgeFilter === "all"
-                      ? "Мэдлэгийн түвшин"
-                      : KNOWLEDGE_LEVEL_OPTIONS.find(
-                          (option) => option.key === knowledgeFilter,
-                        )?.label}
-                  </span>
+                  <SelectValue placeholder="Мэдлэгийн түвшин" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Бүх түвшин</SelectItem>
@@ -218,19 +261,29 @@ export function ReportResultsTable({
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                type="button"
-                onClick={handleExport}
-                className="h-11 rounded-xl bg-[#0b5cad] px-4 text-sm font-semibold text-white shadow-[0_16px_24px_-20px_rgba(11,92,173,0.9)] hover:bg-[#0a4d92]"
-              >
-                <Download className="mr-1.5 h-3.5 w-3.5" />
-                Татах
-              </Button>
+              <div className="flex flex-col gap-2.5 sm:ml-auto sm:flex-row sm:flex-wrap sm:items-center">
+                <Button
+                  type="button"
+                  onClick={handleExport}
+                  className="h-11 rounded-xl bg-[#0b5cad] px-4 text-sm font-semibold text-white shadow-[0_16px_24px_-20px_rgba(11,92,173,0.9)] hover:bg-[#0a4d92]"
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  Татах
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsAllStudentsOpen(true)}
+                  className="h-11 rounded-xl border-[#dbe4f0] bg-white px-4 text-sm font-semibold text-[#0b5cad] shadow-none hover:bg-[#eff6ff] hover:text-[#0b5cad]"
+                >
+                  Дэлгэрэнгүй
+                </Button>
+              </div>
             </div>
           </div>
         </CardHeader>
         <CardContent className="px-0 py-0">
-          <ScrollArea className="max-h-[500px]">
+          <ScrollArea className="h-[520px]">
             <Table className="min-w-[1160px]">
               <TableHeader className="sticky top-0 z-10 bg-[#f5f7fb]">
                 <TableRow className="border-[#e9eef6] hover:bg-[#f5f7fb]">
@@ -243,27 +296,45 @@ export function ReportResultsTable({
                   <TableHead className="py-4 text-[13px] font-semibold text-[#4b5563]">
                     Анги
                   </TableHead>
-                  <TableHead className="py-4 text-[13px] font-semibold text-[#4b5563]">
+                  <TableHead className="py-4 text-center text-[13px] font-semibold text-[#4b5563]">
                     Мэдлэгийн түвшин
                   </TableHead>
-                  <TableHead className="py-4 text-[13px] font-semibold text-[#4b5563]">
+                  <TableHead className="py-4 text-center text-[13px] font-semibold text-[#4b5563]">
                     Дундаж оноо
                   </TableHead>
-                  <TableHead className="py-4 text-[13px] font-semibold text-[#4b5563]">
+                  <TableHead className="py-4 text-center text-[13px] font-semibold text-[#4b5563]">
                     Байр
                   </TableHead>
-                  <TableHead className="py-4 text-[13px] font-semibold text-[#4b5563]">
-                    Ахиц
+                  <TableHead className="py-4 text-center text-[13px] font-semibold text-[#4b5563]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setProgressSort((prev) => (prev === "desc" ? "asc" : "desc"))
+                      }
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-[#eff6ff] hover:text-[#0b5cad]",
+                        progressSort !== "none"
+                          ? "text-[#0b5cad]"
+                          : "text-[#4b5563]",
+                      )}
+                    >
+                      Ахиц
+                      {progressSort === "desc" ? (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      ) : progressSort === "asc" ? (
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      ) : null}
+                    </button>
                   </TableHead>
-                  <TableHead className="pr-6 py-4 text-right text-[13px] font-semibold text-[#4b5563]">
+                  <TableHead className="pr-6 py-4 text-center text-[13px] font-semibold text-[#4b5563]">
                     Үйлдэл
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRows.map((row) => (
+                {displayRows.map((row, index) => (
                   <TableRow
-                    key={row.id}
+                    key={`${row.id}-${index}`}
                     className="border-[#e9eef6] bg-white hover:bg-[#fbfcfe]"
                   >
                     <TableCell className="px-6 py-4 text-center">
@@ -289,38 +360,44 @@ export function ReportResultsTable({
                       </div>
                     </TableCell>
                     <TableCell className="py-4 text-[15px] font-semibold text-[#1f2937]">
-                      {row.className}
+                  {formatClassLabel(row.className)}
                     </TableCell>
-                    <TableCell className="py-4">
-                      <KnowledgeLevelBadge level={row.knowledgeLevel} />
+                    <TableCell className="py-4 text-center">
+                      <div className="flex justify-center">
+                        <KnowledgeLevelBadge level={row.knowledgeLevel} />
+                      </div>
                     </TableCell>
-                    <TableCell className="py-4">
-                      <span className="text-[15px] font-semibold text-[#1f2937]">
+                    <TableCell className="py-4 text-center">
+                      <span className="inline-block text-[15px] font-semibold text-[#1f2937]">
                         {row.score !== null ? `${row.score.toFixed(1)}%` : "--"}
                       </span>
                     </TableCell>
-                    <TableCell className="py-4">
-                      <span className="text-[15px] font-semibold text-[#1f2937]">
+                    <TableCell className="py-4 text-center">
+                      <span className="inline-block text-[15px] font-semibold text-[#1f2937]">
                         {formatPosition(row.position)}
                       </span>
                     </TableCell>
-                    <TableCell className="py-4">
-                      <ProgressSummary comparison={row.progressComparison} />
+                    <TableCell className="py-4 text-center">
+                      <div className="flex justify-center">
+                        <ProgressSummary comparison={row.progressComparison} />
+                      </div>
                     </TableCell>
-                    <TableCell className="pr-6 py-4 text-right">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9 rounded-lg border-[#dbe4f0] bg-white px-3 text-[13px] font-semibold text-[#0b5cad] shadow-none hover:bg-[#eff6ff] hover:text-[#0b5cad]"
-                        onClick={() => setSelectedStudentId(row.id)}
-                      >
-                        Дэлгэрэнгүй
-                        <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
-                      </Button>
+                    <TableCell className="pr-6 py-4 text-center">
+                      <div className="flex justify-center">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 rounded-lg border-[#dbe4f0] bg-white px-3 text-[13px] font-semibold text-[#0b5cad] shadow-none hover:bg-[#eff6ff] hover:text-[#0b5cad]"
+                          onClick={() => setSelectedStudentId(row.id)}
+                        >
+                          Дэлгэрэнгүй
+                          <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
-                {filteredRows.length === 0 ? (
+                {displayRows.length === 0 ? (
                   <TableRow>
                     <TableCell
                       colSpan={8}
@@ -362,7 +439,8 @@ export function ReportResultsTable({
                       {selectedStudent.name}
                     </DialogTitle>
                     <DialogDescription className="mt-1 text-sm text-[#6b7280]">
-                      {selectedStudent.studentCode} • {selectedStudent.className}{" "}
+                      {selectedStudent.studentCode} •{" "}
+                      {formatClassLabel(selectedStudent.className)}{" "}
                       анги
                     </DialogDescription>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -491,6 +569,101 @@ export function ReportResultsTable({
           </DialogContent>
         ) : null}
       </Dialog>
+      <Dialog open={isAllStudentsOpen} onOpenChange={setIsAllStudentsOpen}>
+        <DialogContent className="h-[92vh] w-[96vw] max-w-none sm:max-w-none overflow-hidden rounded-[28px] border border-[#e6edf7] bg-white p-0">
+          <DialogHeader className="border-b border-[#e9eef6] px-5 py-5 sm:px-6">
+            <DialogTitle className="text-xl font-semibold text-[#111827]">
+              Сурагчдын жагсаалт
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-sm text-[#6b7280]">
+              Одоогийн шүүлтүүрийн үр дүнгээр {displayRows.length} сурагч байна.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="h-[calc(92vh-120px)]">
+            <Table className="min-w-[980px]">
+              <TableHeader className="sticky top-0 z-10 bg-[#f5f7fb]">
+                <TableRow className="border-[#e9eef6]">
+                  <TableHead className="w-[64px] px-6 py-4 text-center text-[13px] font-semibold text-[#4b5563]">
+                    №
+                  </TableHead>
+                  <TableHead className="py-4 text-[13px] font-semibold text-[#4b5563]">
+                    Сурагчийн нэр
+                  </TableHead>
+                  <TableHead className="py-4 text-[13px] font-semibold text-[#4b5563]">
+                    Анги
+                  </TableHead>
+                  <TableHead className="py-4 text-center text-[13px] font-semibold text-[#4b5563]">
+                    Мэдлэгийн түвшин
+                  </TableHead>
+                  <TableHead className="py-4 text-center text-[13px] font-semibold text-[#4b5563]">
+                    Дундаж оноо
+                  </TableHead>
+                  <TableHead className="py-4 text-center text-[13px] font-semibold text-[#4b5563]">
+                    Байр
+                  </TableHead>
+                  <TableHead className="py-4 text-center text-[13px] font-semibold text-[#4b5563]">
+                    Ахиц
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displayRows.map((row, index) => (
+                  <TableRow
+                    key={`dialog-${row.id}-${index}`}
+                    className="border-[#e9eef6] bg-white"
+                  >
+                    <TableCell className="px-6 py-4 text-center">
+                      <span className="text-[15px] font-semibold text-[#1f2937]">
+                        {row.position}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          size="default"
+                          className="h-8 w-8 border border-[#e5e7eb] bg-[#d7d9dd] shadow-none after:border-white/50"
+                        >
+                          <AvatarFallback className="bg-[#d7d9dd] text-xs font-semibold text-[#4b5563]">
+                            {getInitials(row.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="truncate text-[15px] font-semibold text-[#111827]">
+                            {row.name}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-4 text-[15px] font-semibold text-[#1f2937]">
+                      {formatClassLabel(row.className)}
+                    </TableCell>
+                    <TableCell className="py-4 text-center">
+                      <div className="flex justify-center">
+                        <KnowledgeLevelBadge level={row.knowledgeLevel} />
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-4 text-center">
+                      <span className="inline-block text-[15px] font-semibold text-[#1f2937]">
+                        {row.score !== null ? `${row.score.toFixed(1)}%` : "--"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-4 text-center">
+                      <span className="inline-block text-[15px] font-semibold text-[#1f2937]">
+                        {formatPosition(row.position)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-4 text-center">
+                      <div className="flex justify-center">
+                        <ProgressSummary comparison={row.progressComparison} />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -509,6 +682,8 @@ function KnowledgeLevelBadge({ level }: { level: KnowledgeLevel }) {
       "border-transparent bg-[#d8ead9] text-[#14711d] shadow-[0_10px_22px_-18px_rgba(20,113,29,0.75)]",
     fair: "border-transparent bg-[#e5e7eb] text-[#4b5563]",
     good: "border-transparent bg-[#d7e7f8] text-[#0b5cad]",
+    insufficient:
+      "border-transparent bg-[#f1f5f9] text-[#475569] shadow-[0_10px_22px_-18px_rgba(71,85,105,0.45)]",
     "needs-improvement":
       "border-transparent bg-[#fde2d4] text-[#ef6b20] shadow-[0_10px_22px_-18px_rgba(239,107,32,0.65)]",
     ungraded: "border-transparent bg-[#eef2f7] text-[#64748b]",
@@ -800,15 +975,19 @@ function getKnowledgeLevel(score: number | null): KnowledgeLevel {
     return { key: "excellent", label: "Маш сайн" };
   }
 
-  if (score >= 75) {
+  if (score >= 80) {
     return { key: "good", label: "Сайн" };
   }
 
-  if (score >= 60) {
+  if (score >= 70) {
     return { key: "fair", label: "Хангалттай" };
   }
 
-  return { key: "needs-improvement", label: "Сайжруулах шаардлагатай" };
+  if (score >= 60) {
+    return { key: "needs-improvement", label: "Сайжруулах шаардлагатай" };
+  }
+
+  return { key: "insufficient", label: "Хангалтгүй" };
 }
 
 function getSelectedExamProgress(
@@ -877,8 +1056,7 @@ function formatProgressForExport(comparison: ProgressComparison | null) {
   }
 
   const sign = comparison.delta > 0 ? "+" : "";
-
-  return `${comparison.previousLabel} ${comparison.previousScore.toFixed(1)}% -> ${comparison.currentLabel} ${comparison.currentScore.toFixed(1)}% (${sign}${comparison.delta.toFixed(1)}%)`;
+  return `${sign}${comparison.delta.toFixed(1)}%`;
 }
 
 function formatProgressDescription(comparison: ProgressComparison | null) {

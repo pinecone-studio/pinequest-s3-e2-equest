@@ -1,15 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useApolloClient, useQuery } from "@apollo/client/react";
-import {
-  GetStudentDashboardDocument,
-  SyncExternalNewMathExamsDocument,
-} from "@/gql/generated";
 import {
   loadDashboardPayload,
   loadStudentsData,
-  mapDashboardPayload,
 } from "./student-page-api";
 import {
   formatDate,
@@ -33,25 +27,14 @@ export function useStudentDashboardData({
   enabled = true,
   setError,
 }: UseStudentDashboardDataArgs) {
-  const apolloClient = useApolloClient();
   const [availableStudents, setAvailableStudents] = useState<StudentInfo[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [tests, setTests] = useState<TeacherTestSummary[]>([]);
   const [allAttempts, setAllAttempts] = useState<AttemptSummary[]>([]);
+  const [isDashboardLoading, setIsDashboardLoading] = useState(
+    enabled && !USE_MOCK_DATA,
+  );
   const [isStudentsLoading, setIsStudentsLoading] = useState(true);
-  const [hasTriggeredExternalSync, setHasTriggeredExternalSync] =
-    useState(false);
-  const {
-    data: dashboardData,
-    error: dashboardError,
-    loading: isDashboardLoading,
-    refetch: refetchDashboard,
-  } = useQuery(GetStudentDashboardDocument, {
-    fetchPolicy: "cache-first",
-    nextFetchPolicy: "cache-first",
-    notifyOnNetworkStatusChange: true,
-    skip: !enabled || USE_MOCK_DATA,
-  });
 
   const selectedStudent = useMemo(
     () =>
@@ -77,6 +60,15 @@ export function useStudentDashboardData({
       studentAttempts.filter(
         (attempt) =>
           attempt.status === "approved" || attempt.status === "submitted",
+      ),
+    [studentAttempts],
+  );
+
+  const hasPendingApprovalAttempts = useMemo(
+    () =>
+      studentAttempts.some(
+        (attempt) =>
+          attempt.status === "submitted" || attempt.status === "processing",
       ),
     [studentAttempts],
   );
@@ -235,85 +227,74 @@ export function useStudentDashboardData({
     [completedAttempts, selectedStudent, testsById],
   );
 
-  const loadDashboardData = useCallback(async (options?: { force?: boolean }) => {
-    if (!enabled) return;
-
-    if (USE_MOCK_DATA) {
-      const data = await loadDashboardPayload(options);
-      setTests(data.availableTests ?? []);
-      setAllAttempts(data.attempts ?? []);
-      return;
-    }
-
-    const result = await refetchDashboard();
-    if (!result.data) {
-      return;
-    }
-
-    const mappedPayload = mapDashboardPayload(result.data);
-    setTests(mappedPayload.availableTests);
-    setAllAttempts(mappedPayload.attempts);
-  }, [enabled, refetchDashboard]);
+  const applyDashboardPayload = useCallback((payload: {
+    availableTests: TeacherTestSummary[];
+    attempts: AttemptSummary[];
+  }) => {
+    setTests(payload.availableTests ?? []);
+    setAllAttempts(payload.attempts ?? []);
+  }, []);
 
   useEffect(() => {
-    if (USE_MOCK_DATA || !enabled || !dashboardData) {
+    if (!enabled) {
       return;
     }
 
-    const mappedPayload = mapDashboardPayload(dashboardData);
-    setTests(mappedPayload.availableTests);
-    setAllAttempts(mappedPayload.attempts);
-  }, [dashboardData, enabled]);
+    let isCancelled = false;
 
-  useEffect(() => {
-    if (!dashboardError) {
-      return;
-    }
+    const initializeDashboard = async () => {
+      setError(null);
+      setIsDashboardLoading(true);
 
-    setError(dashboardError.message || "Өгөгдөл ачаалж чадсангүй.");
-  }, [dashboardError, setError]);
+      try {
+        const payload = await loadDashboardPayload();
 
-  useEffect(() => {
-    if (
-      USE_MOCK_DATA ||
-      !enabled ||
-      !dashboardData ||
-      hasTriggeredExternalSync ||
-      dashboardData.availableTests.length > 0
-    ) {
-      return;
-    }
-
-    setHasTriggeredExternalSync(true);
-
-    void apolloClient
-      .mutate({
-        mutation: SyncExternalNewMathExamsDocument,
-        variables: { limit: 1 },
-      })
-      .then(async () => {
-        const result = await refetchDashboard();
-        if (!result.data) {
+        if (isCancelled) {
           return;
         }
 
-        const mappedPayload = mapDashboardPayload(result.data);
-        setTests(mappedPayload.availableTests);
-        setAllAttempts(mappedPayload.attempts);
-      })
-      .catch((error) => {
-        console.error(
-          "Failed to sync external exams before loading dashboard:",
-          error,
+        applyDashboardPayload(payload);
+      } catch (err) {
+        if (isCancelled) {
+          return;
+        }
+
+        setError(
+          err instanceof Error ? err.message : "Өгөгдөл ачаалж чадсангүй.",
         );
-      });
-  }, [
-    apolloClient,
-    dashboardData,
-    enabled,
-    hasTriggeredExternalSync,
-    refetchDashboard,
-  ]);
+      } finally {
+        if (!isCancelled) {
+          setIsDashboardLoading(false);
+        }
+      }
+    };
+
+    void initializeDashboard();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [applyDashboardPayload, enabled, setError]);
+
+  const loadDashboardData = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!enabled) {
+        return undefined;
+      }
+
+      try {
+        const payload = await loadDashboardPayload(options);
+        applyDashboardPayload(payload);
+        return payload;
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Өгөгдөл ачаалж чадсангүй.",
+        );
+        return undefined;
+      }
+    },
+    [applyDashboardPayload, enabled, setError],
+  );
 
   useEffect(() => {
     if (!enabled) {
@@ -348,8 +329,7 @@ export function useStudentDashboardData({
     void initialize();
   }, [enabled, setError]);
 
-  const isInitialLoading =
-    isStudentsLoading || (enabled && !USE_MOCK_DATA && isDashboardLoading && !dashboardData);
+  const isInitialLoading = isStudentsLoading || isDashboardLoading;
 
   return {
     activeTestsCount,
@@ -361,6 +341,7 @@ export function useStudentDashboardData({
     completedByTestId,
     completionRate,
     filteredTests,
+    hasPendingApprovalAttempts,
     inProgressByTestId,
     isInitialLoading,
     loadDashboardData,

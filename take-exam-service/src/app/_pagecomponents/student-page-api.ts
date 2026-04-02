@@ -162,6 +162,23 @@ const uploadProctoringImageDirectly = async ({
   }
 };
 
+const blobToDataUrl = async (blob: Blob) => {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+
+  const base64 =
+    typeof window !== "undefined" && typeof window.btoa === "function"
+      ? window.btoa(binary)
+      : btoa(binary);
+
+  return `data:${blob.type || "image/jpeg"};base64,${base64}`;
+};
+
 const gqlRequest = async <TData, TVariables>(
   document: TypedDocumentNode<TData, TVariables>,
   variables?: TVariables,
@@ -685,83 +702,96 @@ export const uploadProctoringScreenshotRequest = async ({
     };
   }
 
-  const presignUrl = resolveProctoringPresignUrl();
-  const presignResponse = await fetch(presignUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      attemptId,
-      capturedAt,
-      contentType: blob.type || "image/jpeg",
-      eventCode,
-      mode,
-      studentName,
-      userId,
-    }),
-  });
-
-  const presignPayload = (await presignResponse.json()) as
-    | ProctoringScreenshotPresignResponse
-    | { error?: string; message?: string };
-
-  if (!presignResponse.ok) {
-    throw new Error(
-      "message" in presignPayload && presignPayload.message
-        ? presignPayload.message
-        : "Screenshot upload URL үүсгэж чадсангүй.",
-    );
-  }
-
-  const { key, publicUrl, uploadUrl } =
-    presignPayload as ProctoringScreenshotPresignResponse;
-  let resolvedKey = key;
-  let resolvedPublicUrl = publicUrl;
-
   try {
-    await uploadProctoringImageDirectly({
-      blob,
-      uploadUrl,
-    });
-  } catch (error) {
-    console.warn("Direct R2 upload failed, falling back to app upload route.", error);
-
-    const formData = new FormData();
-    formData.append("key", key);
-    formData.append("file", blob, `${eventCode || "capture"}.jpg`);
-
-    const fallbackResponse = await fetch(resolveProctoringFallbackUploadUrl(), {
+    const presignUrl = resolveProctoringPresignUrl();
+    const presignResponse = await fetch(presignUrl, {
       method: "POST",
-      body: formData,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        attemptId,
+        capturedAt,
+        contentType: blob.type || "image/jpeg",
+        eventCode,
+        mode,
+        studentName,
+        userId,
+      }),
     });
-    const fallbackPayload = (await fallbackResponse.json()) as
-      | { key: string; publicUrl: string }
-      | { message?: string };
 
-    if (!fallbackResponse.ok) {
+    const presignPayload = (await presignResponse.json()) as
+      | ProctoringScreenshotPresignResponse
+      | { error?: string; message?: string };
+
+    if (!presignResponse.ok) {
       throw new Error(
-        "message" in fallbackPayload && fallbackPayload.message
-          ? fallbackPayload.message
-          : "Screenshot fallback upload амжилтгүй боллоо.",
+        "message" in presignPayload && presignPayload.message
+          ? presignPayload.message
+          : "Screenshot upload URL үүсгэж чадсангүй.",
       );
     }
 
-    if (
-      !("key" in fallbackPayload) ||
-      !("publicUrl" in fallbackPayload)
-    ) {
-      throw new Error("Screenshot fallback upload хариу дутуу байна.");
+    const { key, publicUrl, uploadUrl } =
+      presignPayload as ProctoringScreenshotPresignResponse;
+    let resolvedKey = key;
+    let resolvedPublicUrl = publicUrl;
+
+    try {
+      await uploadProctoringImageDirectly({
+        blob,
+        uploadUrl,
+      });
+    } catch (error) {
+      console.warn("Direct R2 upload failed, falling back to app upload route.", error);
+
+      const formData = new FormData();
+      formData.append("key", key);
+      formData.append("file", blob, `${eventCode || "capture"}.jpg`);
+
+      const fallbackResponse = await fetch(resolveProctoringFallbackUploadUrl(), {
+        method: "POST",
+        body: formData,
+      });
+      const fallbackPayload = (await fallbackResponse.json()) as
+        | { key: string; publicUrl: string }
+        | { message?: string };
+
+      if (!fallbackResponse.ok) {
+        throw new Error(
+          "message" in fallbackPayload && fallbackPayload.message
+            ? fallbackPayload.message
+            : "Screenshot fallback upload амжилтгүй боллоо.",
+        );
+      }
+
+      if (
+        !("key" in fallbackPayload) ||
+        !("publicUrl" in fallbackPayload)
+      ) {
+        throw new Error("Screenshot fallback upload хариу дутуу байна.");
+      }
+
+      resolvedKey = fallbackPayload.key;
+      resolvedPublicUrl = fallbackPayload.publicUrl;
     }
 
-    resolvedKey = fallbackPayload.key;
-    resolvedPublicUrl = fallbackPayload.publicUrl;
-  }
+    return {
+      key: resolvedKey,
+      publicUrl: resolvedPublicUrl,
+    };
+  } catch (error) {
+    console.warn(
+      "Screenshot upload failed, falling back to inline data URL evidence.",
+      error,
+    );
+    const inlineUrl = await blobToDataUrl(blob);
 
-  return {
-    key: resolvedKey,
-    publicUrl: resolvedPublicUrl,
-  };
+    return {
+      key: `inline/${attemptId}/${eventCode}/${Date.now()}.jpg`,
+      publicUrl: inlineUrl,
+    };
+  }
 };
 
 export const logQuestionMetricsRequest = async (

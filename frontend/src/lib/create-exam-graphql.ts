@@ -2,6 +2,6 @@
 export function getCreateExamGraphqlUrl(): string {
 	return (
 		process.env.NEXT_PUBLIC_CREATE_EXAM_GRAPHQL_URL ??
-		"http://localhost:3001/api/graphql"
+		"https://create-exam-service.tsetsegulziiocherdene.workers.dev/api/graphql"
 	);
 }

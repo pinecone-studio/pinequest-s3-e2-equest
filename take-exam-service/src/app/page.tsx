@@ -101,6 +101,7 @@ export default function StudentAppPage() {
     completedByTestId,
     completionRate,
     filteredTests,
+    hasPendingApprovalAttempts,
     inProgressByTestId,
     isInitialLoading,
     loadDashboardData,
@@ -467,10 +468,17 @@ export default function StudentAppPage() {
         }
 
         screenCapture.resetMonitoringCapture();
+        const permissionRequest = screenCapture
+          .requestScreenCaptureAccess()
+          .catch((error) => {
+            console.error("Failed to request screen capture access:", error);
+            return "fallback-dom-capture" as const;
+          });
         const nextAttempt = await resumeExamRequest(attemptId);
         setPendingResumeAttempt(null);
         setPendingMonitoringAction(null);
         openAttempt(nextAttempt);
+        void permissionRequest;
       } catch (err) {
         sessionStorage.removeItem(ACTIVE_ATTEMPT_STORAGE_KEY);
         setPendingResumeAttempt(null);
@@ -800,10 +808,76 @@ export default function StudentAppPage() {
         : "Шалгалтын дүн";
 
   useEffect(() => {
+    if (
+      !latestProgress ||
+      latestProgress.status === "approved" ||
+      approvedAttempts.length === 0
+    ) {
+      return;
+    }
+
+    const approvedAttempt = approvedAttempts.find(
+      (attempt) => attempt.attemptId === latestProgress.attemptId,
+    );
+    if (!approvedAttempt?.result) {
+      return;
+    }
+
+    setLatestProgress((current) => {
+      if (
+        !current ||
+        current.attemptId !== approvedAttempt.attemptId ||
+        current.status === "approved"
+      ) {
+        return current;
+      }
+
+      return {
+        attemptId: approvedAttempt.attemptId,
+        status: "approved",
+        progress: current.progress,
+        result: approvedAttempt.result,
+        feedback: approvedAttempt.feedback,
+      };
+    });
+  }, [approvedAttempts, latestProgress]);
+
+  useEffect(() => {
+    const shouldRefreshResults =
+      activeSection === "results" ||
+      latestProgress?.status === "submitted" ||
+      latestProgress?.status === "processing" ||
+      hasPendingApprovalAttempts;
+
+    if (
+      activeAttempt ||
+      isInitialLoading ||
+      isMutating ||
+      !selectedStudent ||
+      !shouldRefreshResults ||
+      document.visibilityState !== "visible"
+    ) {
+      return;
+    }
+
+    void loadDashboardData({ force: true });
+  }, [
+    activeAttempt,
+    activeSection,
+    hasPendingApprovalAttempts,
+    isInitialLoading,
+    isMutating,
+    latestProgress?.status,
+    loadDashboardData,
+    selectedStudent,
+  ]);
+
+  useEffect(() => {
     const shouldPollForDashboard =
       activeSection === "results" ||
       latestProgress?.status === "submitted" ||
-      latestProgress?.status === "processing";
+      latestProgress?.status === "processing" ||
+      hasPendingApprovalAttempts;
 
     if (
       activeAttempt ||
@@ -820,8 +894,8 @@ export default function StudentAppPage() {
         return;
       }
 
-      void loadDashboardData();
-    }, 30_000);
+      void loadDashboardData({ force: true });
+    }, 5_000);
 
     return () => {
       window.clearInterval(intervalId);
@@ -829,6 +903,7 @@ export default function StudentAppPage() {
   }, [
     activeAttempt,
     activeSection,
+    hasPendingApprovalAttempts,
     isInitialLoading,
     isMutating,
     latestProgress?.status,

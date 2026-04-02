@@ -16,7 +16,6 @@ import {
   Clock,
   AlertTriangle,
   AlertOctagon,
-  CheckCircle,
   User,
   Camera,
 } from "lucide-react";

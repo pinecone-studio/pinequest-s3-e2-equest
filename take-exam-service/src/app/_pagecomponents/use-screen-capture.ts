@@ -100,10 +100,31 @@ const getScaledDimensions = (width: number, height: number) => {
   };
 };
 
-const canvasToBlob = (canvas: HTMLCanvasElement) =>
+const canvasToBlobWithType = (
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality?: number,
+) =>
   new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, "image/jpeg", 0.86);
+    canvas.toBlob(resolve, type, quality);
   });
+
+const canvasToBlob = async (canvas: HTMLCanvasElement) => {
+  try {
+    const jpegBlob = await canvasToBlobWithType(canvas, "image/jpeg", 0.86);
+    if (jpegBlob) {
+      return jpegBlob;
+    }
+  } catch {
+    // Fallback to PNG below.
+  }
+
+  try {
+    return await canvasToBlobWithType(canvas, "image/png");
+  } catch {
+    return null;
+  }
+};
 
 const waitForVideoReadiness = async (video: HTMLVideoElement) => {
   if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -314,6 +335,109 @@ const captureDomFrame = async ({
   return canvasToBlob(finalCanvas);
 };
 
+const escapeSvgText = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+
+const buildEventLabel = (eventCode: string) => {
+  switch (eventCode) {
+    case "tab_hidden":
+      return "Tab сольсон";
+    case "tab_visible":
+      return "Tab руу буцаж орсон";
+    case "window_blur":
+      return "Фокус алдагдсан";
+    case "window_focus":
+      return "Фокус сэргэсний дараах төлөв";
+    case "fullscreen-exit":
+    case "fullscreen-not-active":
+      return "Fullscreen төлөв өөрчлөгдсөн";
+    case "split-view-suspected":
+      return "Цонх хуваасан байж болзошгүй";
+    case "devtools-suspected":
+      return "DevTools нээсэн байж болзошгүй";
+    case "viewport-resize-suspicious":
+      return "Цонхны хэмжээ өөрчлөгдсөн";
+    default:
+      return eventCode.replaceAll("-", " ");
+  }
+};
+
+const buildSyntheticEvidenceBlob = async ({
+  capturedAt,
+  eventCode,
+  studentName,
+  userId,
+}: {
+  capturedAt: string;
+  eventCode: string;
+  studentName: string;
+  userId: string;
+}) => {
+  const timestamp = new Date(capturedAt).toLocaleString("en-US", {
+    hour12: false,
+  });
+  const currentLocation =
+    typeof window !== "undefined" ? window.location.href : "about:blank";
+  const title = buildEventLabel(eventCode);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+      <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#eef4ff" />
+          <stop offset="100%" stop-color="#f8fafc" />
+        </linearGradient>
+      </defs>
+      <rect width="1600" height="900" fill="url(#bg)" />
+      <rect x="72" y="72" width="1456" height="756" rx="30" fill="#ffffff" stroke="#dbe4f0" stroke-width="2" />
+      <rect x="72" y="72" width="12" height="756" rx="6" fill="#f97316" />
+      <text x="128" y="170" fill="#0f172a" font-size="56" font-family="Inter, Arial, sans-serif" font-weight="700">
+        ${escapeSvgText(title)}
+      </text>
+      <text x="128" y="232" fill="#475569" font-size="30" font-family="Inter, Arial, sans-serif">
+        Автомат screenshot fallback evidence
+      </text>
+
+      <rect x="128" y="286" width="1344" height="166" rx="20" fill="#f8fafc" stroke="#e2e8f0" />
+      <text x="168" y="350" fill="#0f172a" font-size="26" font-family="Inter, Arial, sans-serif" font-weight="600">
+        Student
+      </text>
+      <text x="168" y="392" fill="#334155" font-size="34" font-family="Inter, Arial, sans-serif">
+        ${escapeSvgText(studentName)}
+      </text>
+      <text x="168" y="430" fill="#64748b" font-size="24" font-family="Inter, Arial, sans-serif">
+        ${escapeSvgText(userId)}
+      </text>
+
+      <text x="960" y="350" fill="#0f172a" font-size="26" font-family="Inter, Arial, sans-serif" font-weight="600">
+        Captured at
+      </text>
+      <text x="960" y="392" fill="#334155" font-size="34" font-family="Inter, Arial, sans-serif">
+        ${escapeSvgText(timestamp)}
+      </text>
+      <text x="960" y="430" fill="#64748b" font-size="24" font-family="Inter, Arial, sans-serif">
+        ${escapeSvgText(eventCode)}
+      </text>
+
+      <rect x="128" y="492" width="1344" height="260" rx="24" fill="#f8fafc" stroke="#e2e8f0" />
+      <text x="168" y="556" fill="#0f172a" font-size="26" font-family="Inter, Arial, sans-serif" font-weight="600">
+        Location
+      </text>
+      <foreignObject x="168" y="586" width="1264" height="126">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Inter, Arial, sans-serif; font-size: 22px; line-height: 1.5; color: #334155; word-break: break-all;">
+          ${escapeSvgText(currentLocation)}
+        </div>
+      </foreignObject>
+    </svg>
+  `.trim();
+
+  return new Blob([svg], { type: "image/svg+xml" });
+};
+
 export function useScreenCapture({
   attemptId,
   examContainerRef,
@@ -427,8 +551,6 @@ export function useScreenCapture({
         };
       }
 
-      lastCaptureAtRef.current = now;
-
       let screenshotBlob: Blob | null = null;
 
       if (
@@ -447,23 +569,53 @@ export function useScreenCapture({
       }
 
       if (!screenshotBlob) {
-        const target = examContainerRef.current;
-        if (target) {
+        const targetCandidates = [
+          examContainerRef.current,
+          document.documentElement,
+          document.body,
+        ].filter(
+          (target): target is HTMLElement =>
+            typeof HTMLElement !== "undefined" &&
+            target instanceof HTMLElement &&
+            target.offsetWidth > 0 &&
+            target.offsetHeight > 0,
+        );
+
+        for (const target of targetCandidates) {
           try {
             screenshotBlob = await captureDomFrame({
               capturedAt,
               target,
               userId: activeUserId,
             });
-            resolvedMode = screenshotBlob
-              ? "fallback-dom-capture"
-              : "limited-monitoring";
+            if (screenshotBlob) {
+              resolvedMode = "fallback-dom-capture";
+              break;
+            }
           } catch (error) {
             console.error("Failed to capture fallback DOM screenshot:", error);
-            resolvedMode = "limited-monitoring";
           }
-        } else {
+        }
+
+        if (!screenshotBlob) {
           resolvedMode = "limited-monitoring";
+        }
+      }
+
+      if (!screenshotBlob) {
+        try {
+          screenshotBlob = await buildSyntheticEvidenceBlob({
+            capturedAt,
+            eventCode,
+            studentName: activeStudentName,
+            userId: activeUserId,
+          });
+          resolvedMode =
+            resolvedMode === "screen-capture-enabled"
+              ? resolvedMode
+              : "fallback-dom-capture";
+        } catch (error) {
+          console.error("Failed to build synthetic evidence screenshot:", error);
         }
       }
 
@@ -476,6 +628,8 @@ export function useScreenCapture({
           mode: resolvedMode,
         };
       }
+
+      lastCaptureAtRef.current = now;
 
       if (resolvedMode !== currentModeRef.current) {
         setMode(resolvedMode);

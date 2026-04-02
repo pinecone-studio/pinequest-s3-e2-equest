@@ -863,7 +863,8 @@ export default function MaterialBuilderPageContent() {
     <TestShell
       title="Шалгалтын материал үүсгэх"
       description="Шалгалтын ерөнхий мэдээлэл, материалын эх сурвалж, хугацааг эндээс тохируулна."
-      contentClassName="bg-[#F4F7FA] px-6 py-0 sm:px-8 lg:px-10"
+      contentClassName="bg-[#eef3ff] px-6 py-0 sm:px-8 lg:px-10"
+      sidebarCollapsible
     >
       <div className="min-h-[calc(100vh-3rem)] w-full pb-10 pt-1">
         <GeneralInfoSection

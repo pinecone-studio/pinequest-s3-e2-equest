@@ -11,6 +11,10 @@ import type {
   StudentStatus,
   SubmittedAttempt,
 } from "./types";
+import {
+  getTakeExamScreenshotObjectUrl,
+  resolveTakeExamScreenshotUrl,
+} from "@/lib/take-exam-graphql";
 
 export type DashboardApiPayload = {
   availableTests: Array<{
@@ -164,6 +168,17 @@ type MaterialQuestion = NonNullable<
 >["questions"][number];
 type DashboardAttempt = DashboardApiPayload["attempts"][number];
 
+const isAttemptActivelyRunning = ({
+  status,
+  submittedAt,
+}: {
+  status: "in_progress" | "processing" | "submitted" | "approved";
+  submittedAt?: string | null;
+}) =>
+  status === "in_progress" ||
+  status === "processing" ||
+  (status === "submitted" && !submittedAt);
+
 const toMonitoringMode = (value?: string | null): MonitoringMode | undefined => {
   switch (value) {
     case "screen-capture-enabled":
@@ -256,9 +271,151 @@ const EXCLUDED_LIVE_EVENT_CODE_PREFIXES = [
 ];
 const LIVE_EVENT_STACK_WINDOW_MS = 60_000;
 
-const shouldExcludeLiveEvent = (code: string) =>
+const shouldExcludeLiveEventCode = (code: string) =>
   EXCLUDED_LIVE_EVENT_CODES.has(code) ||
   EXCLUDED_LIVE_EVENT_CODE_PREFIXES.some((prefix) => code.startsWith(prefix));
+
+const sanitizeScreenshotKeySegment = (value?: string | null, fallback = "user") => {
+  const sanitized = (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return sanitized || fallback;
+};
+
+const buildFallbackScreenshotStorageKey = ({
+  attemptId,
+  eventCode,
+  mode,
+  occurredAt,
+  studentName,
+}: {
+  attemptId?: string | null;
+  eventCode?: string | null;
+  mode?: string | null;
+  occurredAt?: string | null;
+  studentName?: string | null;
+}) => {
+  const resolvedAttemptId = attemptId?.trim();
+  const resolvedEventCode = eventCode?.trim();
+  const resolvedOccurredAt = occurredAt?.trim();
+
+  if (!resolvedAttemptId || !resolvedEventCode || !resolvedOccurredAt) {
+    return undefined;
+  }
+
+  const parsedTimestamp = new Date(resolvedOccurredAt);
+  if (Number.isNaN(parsedTimestamp.getTime())) {
+    return undefined;
+  }
+
+  const safeDate = parsedTimestamp.toISOString().replace(/[:.]/g, "-");
+  const safeAttemptId = sanitizeScreenshotKeySegment(
+    resolvedAttemptId,
+    "attempt",
+  );
+  const safeStudentSegment = sanitizeScreenshotKeySegment(studentName, "user");
+  const safeEventCode = sanitizeScreenshotKeySegment(
+    resolvedEventCode,
+    "event",
+  );
+  const safeMode = sanitizeScreenshotKeySegment(mode ?? "limited-monitoring", "mode");
+
+  return [
+    "proctoring",
+    safeAttemptId,
+    safeStudentSegment,
+    `${safeDate}-${safeEventCode}-${safeMode}.jpg`,
+  ].join("/");
+};
+
+const resolveMonitoringScreenshotUrl = ({
+  attemptId,
+  eventCode,
+  mode,
+  occurredAt,
+  screenshotStorageKey,
+  screenshotUrl,
+  studentName,
+}: {
+  attemptId?: string | null;
+  eventCode?: string | null;
+  mode?: string | null;
+  occurredAt?: string | null;
+  screenshotStorageKey?: string | null;
+  screenshotUrl?: string | null;
+  studentName?: string | null;
+}) =>
+  resolveTakeExamScreenshotUrl(screenshotUrl, screenshotStorageKey) ??
+  getTakeExamScreenshotObjectUrl(
+    buildFallbackScreenshotStorageKey({
+      attemptId,
+      eventCode,
+      mode,
+      occurredAt,
+      studentName,
+    }),
+  );
+
+const hasScreenshotEvidence = ({
+  attemptId,
+  code,
+  mode,
+  occurredAt,
+  screenshotStorageKey,
+  screenshotUrl,
+  studentName,
+}: {
+  attemptId?: string | null;
+  code?: string | null;
+  mode?: string | null;
+  occurredAt?: string | null;
+  screenshotStorageKey?: string | null;
+  screenshotUrl?: string | null;
+  studentName?: string | null;
+}) =>
+  Boolean(
+    resolveMonitoringScreenshotUrl({
+      attemptId,
+      eventCode: code,
+      mode,
+      occurredAt,
+      screenshotStorageKey,
+      screenshotUrl,
+      studentName,
+    }),
+  );
+
+const shouldExcludeLiveEvent = ({
+  attemptId,
+  code,
+  mode,
+  occurredAt,
+  screenshotStorageKey,
+  screenshotUrl,
+  studentName,
+}: {
+  attemptId?: string | null;
+  code: string;
+  mode?: string | null;
+  occurredAt?: string | null;
+  screenshotStorageKey?: string | null;
+  screenshotUrl?: string | null;
+  studentName?: string | null;
+}) =>
+  !hasScreenshotEvidence({
+    attemptId,
+    code,
+    mode,
+    occurredAt,
+    screenshotStorageKey,
+    screenshotUrl,
+    studentName,
+  }) &&
+  shouldExcludeLiveEventCode(code);
 
 const isFocusEventCode = (code?: string | null) =>
   code === "tab_hidden" || code === "window_blur";
@@ -354,12 +511,10 @@ const getCorrectAnswerLabel = ({
   correctAnswerText,
   correctOptionId,
   materialQuestion,
-  responseGuide,
 }: {
   correctAnswerText?: string | null;
   correctOptionId?: string | null;
   materialQuestion?: MaterialQuestion;
-  responseGuide?: string | null;
 }) => {
   const directAnswer = getTextAnswer(correctAnswerText);
   if (isLikelyDirectAnswer(directAnswer)) {
@@ -425,7 +580,6 @@ const buildQuestionReviews = (
               correctAnswerText: answerReview?.correctAnswerText ?? null,
               materialQuestion,
               correctOptionId: questionResult.correctOptionId ?? null,
-              responseGuide,
             }),
         aiAnalysis: requiresManualReview
           ? responseGuide ?? "AI дүгнэлт хараахан ирээгүй байна."
@@ -473,7 +627,6 @@ const buildQuestionReviews = (
         correctAnswerText: answerReview.correctAnswerText ?? null,
         materialQuestion,
         correctOptionId: null,
-        responseGuide,
       }),
       aiAnalysis: requiresManualReview
         ? responseGuide ?? "AI дүгнэлт хараахан ирээгүй байна."
@@ -534,7 +687,15 @@ const buildSubmittedAttempt = (
           screenshotCapturedAt: event.screenshotCapturedAt
             ? getEventTimestamp(event.screenshotCapturedAt)
             : undefined,
-          screenshotUrl: event.screenshotUrl ?? undefined,
+          screenshotUrl: resolveMonitoringScreenshotUrl({
+            attemptId: attempt.attemptId,
+            eventCode: event.code,
+            mode: event.mode,
+            occurredAt: event.screenshotCapturedAt ?? event.occurredAt,
+            screenshotStorageKey: event.screenshotStorageKey,
+            screenshotUrl: event.screenshotUrl,
+            studentName: attempt.studentName,
+          }),
           title: event.title,
           type:
             event.code === "tab_hidden" || event.code === "window_blur"
@@ -547,7 +708,8 @@ const buildSubmittedAttempt = (
           (event) =>
             event.type === "focus" ||
             event.severity === "warning" ||
-            event.severity === "danger",
+            event.severity === "danger" ||
+            Boolean(event.screenshotUrl),
         ),
     },
   };
@@ -782,9 +944,14 @@ const buildExamAnalytics = ({
 export const buildExamList = (payload: DashboardApiPayload): Exam[] =>
   payload.availableTests.map((test) => {
     const attempts = payload.attempts.filter((attempt) => attempt.testId === test.id);
-    const activeAttempts = attempts.filter(
-      (attempt) =>
-        attempt.status === "in_progress" || attempt.status === "processing",
+    const liveFeedItems = payload.liveMonitoringFeed.filter(
+      (feedItem) => feedItem.testId === test.id,
+    );
+    const activeAttempts = attempts.filter((attempt) =>
+      isAttemptActivelyRunning(attempt),
+    );
+    const activeFeedItems = liveFeedItems.filter((feedItem) =>
+      isAttemptActivelyRunning(feedItem),
     );
     const approvedAttempts = attempts.filter(
       (attempt) => attempt.status === "approved",
@@ -800,14 +967,24 @@ export const buildExamList = (payload: DashboardApiPayload): Exam[] =>
         : undefined;
     const sortedAttemptTimes = [...attempts]
       .map((attempt) => new Date(attempt.startedAt).getTime())
+      .concat(liveFeedItems.map((feedItem) => new Date(feedItem.startedAt).getTime()))
       .filter((value) => Number.isFinite(value))
       .sort((left, right) => right - left);
     const latestSubmittedAt = [...attempts]
       .map((attempt) => attempt.submittedAt)
+      .concat(liveFeedItems.map((feedItem) => feedItem.submittedAt))
       .filter((value): value is string => Boolean(value))
       .map((value) => new Date(value).getTime())
       .filter((value) => Number.isFinite(value))
       .sort((left, right) => right - left)[0];
+    const activeStudentIds = new Set([
+      ...activeAttempts.map((attempt) => attempt.studentId),
+      ...activeFeedItems.map((feedItem) => feedItem.studentId),
+    ]);
+    const totalStudentIds = new Set([
+      ...attempts.map((attempt) => attempt.studentId),
+      ...liveFeedItems.map((feedItem) => feedItem.studentId),
+    ]);
 
     return {
       id: test.id,
@@ -815,12 +992,12 @@ export const buildExamList = (payload: DashboardApiPayload): Exam[] =>
       subject: test.criteria.subject,
       topic: test.criteria.topic,
       questionCount: test.criteria.questionCount,
-      liveStudentCount: activeAttempts.length,
-      totalStudentCount: attempts.length,
+      liveStudentCount: activeStudentIds.size,
+      totalStudentCount: totalStudentIds.size,
       averageScore,
       startTime: new Date(sortedAttemptTimes[0] ?? test.updatedAt),
       endTime:
-        activeAttempts.length === 0 && latestSubmittedAt
+        activeStudentIds.size === 0 && latestSubmittedAt
           ? new Date(latestSubmittedAt)
           : undefined,
       class: test.criteria.className,
@@ -834,6 +1011,9 @@ export const buildExamDashboardData = (
   const exams = buildExamList(payload);
   const exam = exams.find((item) => item.id === examId) ?? null;
   const examAttempts = payload.attempts.filter((attempt) => attempt.testId === examId);
+  const examLiveFeed = payload.liveMonitoringFeed.filter(
+    (feedItem) => feedItem.testId === examId,
+  );
   const materialQuestionsById = new Map(
     (payload.testMaterial?.testId === examId
       ? payload.testMaterial.questions
@@ -846,19 +1026,28 @@ export const buildExamDashboardData = (
       : []
     ).map((question, index) => [question.questionId, index + 1] as const),
   );
-  const activeAttemptIds = new Set(
-    examAttempts
-      .filter(
-        (attempt) =>
-          attempt.status === "in_progress" || attempt.status === "processing",
-      )
+  const activeAttemptIds = new Set([
+    ...examAttempts
+      .filter((attempt) => isAttemptActivelyRunning(attempt))
       .map((attempt) => attempt.attemptId),
-  );
+    ...examLiveFeed
+      .filter((feedItem) => isAttemptActivelyRunning(feedItem))
+      .map((feedItem) => feedItem.attemptId),
+  ]);
 
-  const students: Student[] = examAttempts
+  const students = examAttempts
     .map((attempt) => {
       const visibleRecentEvents = (attempt.monitoring?.recentEvents ?? []).filter(
-        (event) => !shouldExcludeLiveEvent(event.code),
+        (event) =>
+          !shouldExcludeLiveEvent({
+            attemptId: attempt.attemptId,
+            code: event.code,
+            mode: event.mode,
+            occurredAt: event.screenshotCapturedAt ?? event.occurredAt,
+            screenshotStorageKey: event.screenshotStorageKey,
+            screenshotUrl: event.screenshotUrl,
+            studentName: attempt.studentName,
+          }),
       );
       const latestEvent = visibleRecentEvents[0] ?? attempt.monitoring?.recentEvents?.[0];
       const warningCount = visibleRecentEvents.filter(
@@ -882,6 +1071,38 @@ export const buildExamDashboardData = (
         monitoringState: toMonitoringState(latestEvent?.code, attempt.status),
       };
     })
+    .concat(
+      examLiveFeed
+        .filter(
+          (feedItem) =>
+            !examAttempts.some((attempt) => attempt.attemptId === feedItem.attemptId),
+        )
+        .map((feedItem) => {
+          const warningCount = feedItem.monitoring?.warningCount ?? 0;
+          const dangerCount = feedItem.monitoring?.dangerCount ?? 0;
+
+          return {
+            id: feedItem.studentId,
+            name: feedItem.studentName,
+            studentId: feedItem.studentId,
+            status: toStudentStatus(feedItem.status),
+            progress: 0,
+            riskLevel: toRiskLevel(warningCount, dangerCount),
+            warningCount,
+            dangerCount,
+            score: undefined,
+            lastActivity: getEventTimestamp(
+              feedItem.monitoring?.lastEventAt ??
+                feedItem.submittedAt ??
+                feedItem.startedAt,
+            ),
+            monitoringState: toMonitoringState(
+              feedItem.latestEvent?.code,
+              feedItem.status,
+            ),
+          };
+        }),
+    )
     .sort(
       (left, right) =>
         right.lastActivity.getTime() - left.lastActivity.getTime(),
@@ -896,7 +1117,20 @@ export const buildExamDashboardData = (
       activeAttemptIds.has(feedItem.attemptId),
   )) {
     const latestEvent = item.latestEvent;
-    if (!latestEvent || shouldExcludeLiveEvent(latestEvent.code)) continue;
+    if (
+      !latestEvent ||
+      shouldExcludeLiveEvent({
+        attemptId: item.attemptId,
+        code: latestEvent.code,
+        mode: latestEvent.mode,
+        occurredAt: latestEvent.screenshotCapturedAt ?? latestEvent.occurredAt,
+        screenshotStorageKey: latestEvent.screenshotStorageKey,
+        screenshotUrl: latestEvent.screenshotUrl,
+        studentName: item.studentName,
+      })
+    ) {
+      continue;
+    }
 
     eventMap.set(latestEvent.id, {
       code: latestEvent.code,
@@ -906,7 +1140,15 @@ export const buildExamDashboardData = (
       screenshotCapturedAt: latestEvent.screenshotCapturedAt
         ? getEventTimestamp(latestEvent.screenshotCapturedAt)
         : undefined,
-      screenshotUrl: latestEvent.screenshotUrl ?? undefined,
+      screenshotUrl: resolveMonitoringScreenshotUrl({
+        attemptId: item.attemptId,
+        eventCode: latestEvent.code,
+        mode: latestEvent.mode,
+        occurredAt: latestEvent.screenshotCapturedAt ?? latestEvent.occurredAt,
+        screenshotStorageKey: latestEvent.screenshotStorageKey,
+        screenshotUrl: latestEvent.screenshotUrl,
+        studentName: item.studentName,
+      }),
       studentId: item.studentId,
       studentName: item.studentName,
       type: toEventType(latestEvent.code),
@@ -921,7 +1163,17 @@ export const buildExamDashboardData = (
     activeAttemptIds.has(item.attemptId),
   )) {
     for (const event of attempt.monitoring?.recentEvents ?? []) {
-      if (shouldExcludeLiveEvent(event.code)) {
+      if (
+        shouldExcludeLiveEvent({
+          attemptId: attempt.attemptId,
+          code: event.code,
+          mode: event.mode,
+          occurredAt: event.screenshotCapturedAt ?? event.occurredAt,
+          screenshotStorageKey: event.screenshotStorageKey,
+          screenshotUrl: event.screenshotUrl,
+          studentName: attempt.studentName,
+        })
+      ) {
         continue;
       }
       eventMap.set(event.id, {
@@ -932,7 +1184,15 @@ export const buildExamDashboardData = (
         screenshotCapturedAt: event.screenshotCapturedAt
           ? getEventTimestamp(event.screenshotCapturedAt)
           : undefined,
-        screenshotUrl: event.screenshotUrl ?? undefined,
+        screenshotUrl: resolveMonitoringScreenshotUrl({
+          attemptId: attempt.attemptId,
+          eventCode: event.code,
+          mode: event.mode,
+          occurredAt: event.screenshotCapturedAt ?? event.occurredAt,
+          screenshotStorageKey: event.screenshotStorageKey,
+          screenshotUrl: event.screenshotUrl,
+          studentName: attempt.studentName,
+        }),
         studentId: attempt.studentId,
         studentName: attempt.studentName,
         type: toEventType(event.code),

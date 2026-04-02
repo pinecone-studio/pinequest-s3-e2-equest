@@ -1,6 +1,16 @@
+import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import MathPreviewText from "@/components/math-preview-text";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Tooltip,
   TooltipContent,
@@ -14,10 +24,10 @@ interface ReportWeakQuestionsProps {
 
 const MIN_BAR_WIDTH_PERCENT = 12;
 const ACCENT_COLOR = "#EA580C";
-const LIGHT_BAR_START = [255, 237, 213] as const;
-const LIGHT_BAR_END = [254, 215, 170] as const;
-const STRONG_BAR_START = [249, 115, 22] as const;
-const STRONG_BAR_END = [234, 88, 12] as const;
+const LIGHT_BAR_START = [246, 236, 229] as const;
+const LIGHT_BAR_END = [238, 228, 222] as const;
+const STRONG_BAR_START = [249, 102, 18] as const;
+const STRONG_BAR_END = [226, 75, 10] as const;
 
 function clamp(value: number, min = 0, max = 1): number {
   return Math.min(Math.max(value, min), max);
@@ -36,7 +46,7 @@ function mixColor(
 }
 
 function getBarFillStyle(errorRate: number) {
-  const intensity = clamp(errorRate / 100) ** 1.35;
+  const intensity = clamp(errorRate / 100) ** 1.45;
 
   return {
     backgroundImage: `linear-gradient(90deg, ${mixColor(LIGHT_BAR_START, STRONG_BAR_START, intensity)} 0%, ${mixColor(LIGHT_BAR_END, STRONG_BAR_END, intensity)} 100%)`,
@@ -47,78 +57,164 @@ function getBarWidth(errorRate: number): string {
   return `${Math.max(Math.round(errorRate), MIN_BAR_WIDTH_PERCENT)}%`;
 }
 
+function getPercentColor(errorRate: number): string {
+  const intensity = clamp(errorRate / 100) ** 1.25;
+  const light = [240, 198, 162] as const;
+  const strong = [234, 88, 12] as const;
+  return mixColor(light, strong, intensity);
+}
+
 export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
+  const [isAllOpen, setIsAllOpen] = useState(false);
+  const visibleQuestions = questions.slice(0, 5);
+
   return (
-    <Card className="h-[295px] rounded-md border border-[#eef2f8] bg-white shadow-[0_18px_45px_-36px_rgba(15,23,42,0.18)]">
-      <CardHeader className="px-8 pt-2">
-        <div className="flex items-center gap-3 text-[#1f2937]">
-          <AlertTriangle
-            className="h-6 w-6"
-            style={{ color: ACCENT_COLOR }}
-            strokeWidth={2.1}
-          />
-          <CardTitle className="text-lg font-semibold tracking-tight text-[#1f2937]">
-            Хамгийн их алдсан асуултууд
-          </CardTitle>
-        </div>
-      </CardHeader>
-      <CardContent className="flex px-8 pb-6">
-        {questions.length > 0 ? (
-          <div className="flex max-h-[220px] flex-1 flex-col justify-center gap-4 overflow-y-auto pr-1">
-            {questions.map((question) => {
-              const prompt =
-                question.prompt.trim() || "Асуултын текст олдсонгүй.";
+    <>
+      <Card className="h-[295px] rounded-md border border-[#eef2f8] bg-white shadow-[0_18px_45px_-36px_rgba(15,23,42,0.18)]">
+        <CardHeader className="px-8 pt-2">
+          <div className="flex items-center justify-between gap-3 text-[#1f2937]">
+            <div className="flex items-center gap-3">
+              <AlertTriangle
+                className="h-6 w-6"
+                style={{ color: ACCENT_COLOR }}
+                strokeWidth={2.1}
+              />
+              <CardTitle className="text-lg font-semibold tracking-tight text-[#1f2937]">
+                Хамгийн их алдсан асуултууд
+              </CardTitle>
+            </div>
+            {questions.length > 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAllOpen(true)}
+                className="h-9 rounded-lg border-[#f3d2c2] bg-white px-3 text-xs font-semibold text-[#EA580C] shadow-none hover:bg-[#fff4ed]"
+              >
+                Цааш үзэх
+              </Button>
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent className="flex px-8 pb-6">
+          {questions.length > 0 ? (
+            <div className="flex max-h-[220px] flex-1 flex-col justify-center gap-4 overflow-y-auto pr-1">
+              {visibleQuestions.map((question, index) => {
+                const prompt =
+                  question.prompt.trim() || "Асуултын текст олдсонгүй.";
 
-              return (
-                <Tooltip key={question.label}>
-                  <TooltipTrigger asChild>
-                    <div
-                      className="grid cursor-help grid-cols-[48px_minmax(0,1fr)_46px] items-center gap-5 rounded-xl outline-none transition-transform duration-200 hover:translate-x-0.5 focus-visible:ring-2 focus-visible:ring-[#EA580C]/20"
-                      tabIndex={0}
-                      aria-label={`${question.label}: ${prompt}`}
-                    >
-                      <p className="text-[0.95rem] font-semibold tracking-[0.01em] text-[#4b5563]">
-                        {question.label}
-                      </p>
-
-                      <div className="h-4 overflow-hidden rounded-full bg-[#e6ebf3]">
-                        <div
-                          className="h-full rounded-full transition-[width,background-image] duration-300"
-                          style={{
-                            ...getBarFillStyle(question.errorRate),
-                            width: getBarWidth(question.errorRate),
-                          }}
-                        />
-                      </div>
-
-                      <p
-                        className="text-right text-[0.95rem] font-semibold"
-                        style={{ color: ACCENT_COLOR }}
+                return (
+                  <Tooltip key={`${question.label}-${index}`}>
+                    <TooltipTrigger asChild>
+                      <div
+                        className="grid cursor-pointer grid-cols-[48px_minmax(0,1fr)_46px] items-center gap-5 rounded-xl outline-none transition-transform duration-200 hover:translate-x-0.5 focus-visible:ring-2 focus-visible:ring-[#EA580C]/20"
+                        tabIndex={0}
+                        aria-label={`${question.label}: ${prompt}`}
                       >
-                        {question.errorRate}%
-                      </p>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    sideOffset={8}
-                    className="block max-w-md bg-[#1f2937] px-3 py-2 text-white"
+                        <p className="text-[0.9rem] font-semibold tracking-[0.01em] text-[#4b5563]">
+                          {question.label}
+                        </p>
+
+                        <div className="h-4 overflow-hidden rounded-full bg-[#e6ebf3]">
+                          <div
+                            className="h-full rounded-full transition-[width,background-image] duration-300"
+                            style={{
+                              ...getBarFillStyle(question.errorRate),
+                              width: getBarWidth(question.errorRate),
+                            }}
+                          />
+                        </div>
+
+                        <p
+                          className="text-right text-[0.9rem] font-semibold"
+                          style={{ color: getPercentColor(question.errorRate) }}
+                        >
+                          {question.errorRate}%
+                        </p>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      sideOffset={8}
+                      className="block max-w-md bg-[#1f2937] px-3 py-2 text-white"
+                    >
+                      <MathPreviewText
+                        content={prompt}
+                        className="text-[12px] leading-5 text-white [&_.katex-display]:overflow-x-auto [&_.katex]:text-white"
+                      />
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border bg-background/40 text-sm text-muted-foreground">
+              Алдсан асуулт олдсонгүй.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isAllOpen} onOpenChange={setIsAllOpen}>
+        <DialogContent className="h-[85vh] w-[92vw] max-w-[1000px] overflow-hidden rounded-[28px] border border-[#f3e7df] bg-white p-0 sm:max-w-[1000px]">
+          <DialogHeader className="border-b border-[#f5e4d8] px-6 py-5">
+            <DialogTitle className="text-xl font-semibold text-[#1f2937]">
+              Алдсан асуултуудын дэлгэрэнгүй
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-sm text-[#7c5a4b]">
+              Нийт {questions.length} асуултын алдааны мэдээлэл.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="h-[calc(85vh-120px)]">
+            <div className="space-y-4 px-6 py-5">
+              {questions.map((question, index) => {
+                const prompt =
+                  question.prompt.trim() || "Асуултын текст олдсонгүй.";
+
+                return (
+                  <div
+                    key={`detail-${question.label}-${index}`}
+                    className="rounded-2xl border border-[#f3e7df] bg-[#fff8f2] p-4"
                   >
-                    <MathPreviewText
-                      content={prompt}
-                      className="text-[12px] leading-5 text-white [&_.katex-display]:overflow-x-auto [&_.katex]:text-white"
-                    />
-                  </TooltipContent>
-                </Tooltip>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border bg-background/40 text-sm text-muted-foreground">
-            Алдсан асуулт олдсонгүй.
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#a0613a]">
+                          {question.label}
+                        </p>
+                        <div className="mt-2 text-sm font-medium text-[#1f2937]">
+                          <MathPreviewText
+                            content={prompt}
+                            className="text-[13px] leading-5 text-[#1f2937] [&_.katex-display]:overflow-x-auto"
+                          />
+                        </div>
+                      </div>
+                      <div className="min-w-[160px] rounded-xl border border-[#f1d5c3] bg-white px-3 py-2 text-center">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a0613a]">
+                          Алдааны хувь
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-[#EA580C]">
+                          {question.errorRate}%
+                        </p>
+                        <p className="text-xs text-[#7c5a4b]">
+                          {question.missedCount}/{question.totalCount} сурагч
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#f4e6dc]">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          ...getBarFillStyle(question.errorRate),
+                          width: getBarWidth(question.errorRate),
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

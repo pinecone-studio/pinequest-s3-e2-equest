@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { MOCK_SCORE_TREND_DATA } from "../lib/report-mock-data";
+import { formatClassLabel } from "../lib/report-format";
 import type {
   ReportScoreTrendData,
   ReportScoreTrendStudent,
@@ -22,6 +23,8 @@ import type {
 interface ReportScoreChartProps {
   currentClassName: string;
   dataSource: "mock" | "real";
+  aggregateClassLabel?: string | null;
+  selectedClassName?: string | null;
   trend: ReportScoreTrendData;
 }
 
@@ -59,12 +62,26 @@ interface ScoreAxisTickProps {
 export function ReportScoreChart({
   currentClassName,
   dataSource,
+  aggregateClassLabel,
+  selectedClassName: forcedClassName,
   trend,
 }: ReportScoreChartProps) {
   const activeTrend = dataSource === "mock" ? MOCK_SCORE_TREND_DATA : trend;
-  const classTrends = useMemo(() => {
+  const allClassTrends = useMemo(() => {
     return buildClassTrends(activeTrend, dataSource, currentClassName);
   }, [activeTrend, currentClassName, dataSource]);
+  const classTrends = useMemo(() => {
+    if (aggregateClassLabel) {
+      const aggregate = buildAggregateTrend(allClassTrends, aggregateClassLabel);
+      return aggregate ? [aggregate] : [];
+    }
+
+    if (!forcedClassName) {
+      return allClassTrends;
+    }
+
+    return allClassTrends.filter((item) => item.className === forcedClassName);
+  }, [allClassTrends, forcedClassName]);
   const [selectedClassName, setSelectedClassName] = useState<string | null>(
     classTrends[0]?.className ?? currentClassName,
   );
@@ -77,10 +94,17 @@ export function ReportScoreChart({
       return;
     }
 
+    if (forcedClassName) {
+      if (selectedClassName !== forcedClassName) {
+        setSelectedClassName(forcedClassName);
+      }
+      return;
+    }
+
     if (!classTrends.some((item) => item.className === selectedClassName)) {
       setSelectedClassName(classTrends[0].className);
     }
-  }, [classTrends, selectedClassName]);
+  }, [classTrends, forcedClassName, selectedClassName]);
 
   const selectedClass = useMemo(() => {
     return (
@@ -101,6 +125,9 @@ export function ReportScoreChart({
   const hasTrendData = classTrends.some((item) => {
     return item.points.some((point) => typeof point.score === "number");
   });
+  const selectedClassLabel = selectedClass
+    ? formatClassLabel(selectedClass.className)
+    : "Бүгд";
 
   return (
     <Card className="h-[295px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)]">
@@ -119,31 +146,12 @@ export function ReportScoreChart({
                       <CardTitle className="text-lg font-semibold tracking-tight text-[#1f2937]">
                         Ангийн ахиц
                       </CardTitle>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                        {selectedClassLabel}
+                      </span>
                     </div>
 
-                    <div className="mt-0.5 pl-8">
-                      {classTrends.length > 1 ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {classTrends.map((item) => (
-                            <button
-                              key={item.className}
-                              type="button"
-                              onClick={() =>
-                                setSelectedClassName(item.className)
-                              }
-                              className={cn(
-                                "rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-4 transition-colors",
-                                item.className === selectedClass.className
-                                  ? "border-[#0b5cad] bg-[#0b5cad] text-white shadow-[0_12px_22px_-18px_rgba(11,92,173,0.75)]"
-                                  : "border-slate-200 bg-slate-50 text-slate-600 hover:border-[#93c5fd] hover:bg-[#eff6ff] hover:text-[#0b5cad]",
-                              )}
-                            >
-                              {item.className}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
+                    <div className="mt-0.5 pl-8" />
                   </div>
                 </div>
 
@@ -420,7 +428,62 @@ function buildClassTrends(
         studentCount: group.students.length,
       };
     })
-    .sort((left, right) => left.className.localeCompare(right.className, "mn"));
+    .sort((left, right) => {
+      return formatClassLabel(left.className).localeCompare(
+        formatClassLabel(right.className),
+        "mn",
+      );
+    });
+}
+
+function buildAggregateTrend(
+  classTrends: ClassTrend[],
+  label: string,
+): ClassTrend | null {
+  if (classTrends.length === 0) {
+    return null;
+  }
+
+  const points = classTrends[0].points.map((point, index) => {
+    const scores = classTrends
+      .map((trend) => trend.points[index]?.score ?? null)
+      .filter((score): score is number => typeof score === "number");
+
+    return {
+      ...point,
+      score: scores.length > 0 ? roundToOneDecimal(average(scores)) : null,
+    };
+  });
+
+  const availableScores = points
+    .map((point) => point.score)
+    .filter((score): score is number => typeof score === "number");
+  const latestScore =
+    availableScores.length > 0
+      ? availableScores[availableScores.length - 1]
+      : null;
+  const overallDelta =
+    availableScores.length >= 2
+      ? roundToOneDecimal(
+          availableScores[availableScores.length - 1] - availableScores[0],
+        )
+      : null;
+  const recentDelta =
+    availableScores.length >= 2
+      ? roundToOneDecimal(
+          availableScores[availableScores.length - 1] -
+            availableScores[availableScores.length - 2],
+        )
+      : null;
+
+  return {
+    className: label,
+    latestScore,
+    overallDelta,
+    points,
+    recentDelta,
+    studentCount: classTrends.reduce((sum, trend) => sum + trend.studentCount, 0),
+  };
 }
 
 function formatPhaseLabel(label: string): string {

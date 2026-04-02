@@ -42,7 +42,9 @@ type UseExamMonitoringOptions = {
 
 const CAPTURE_TRIGGER_CODES = new Set([
   "tab_hidden",
+  "tab_visible",
   "window_blur",
+  "window_focus",
   "fullscreen-exit",
 ]);
 const FULLSCREEN_REQUEST_DELAY_MS = 5_000;
@@ -115,7 +117,8 @@ export function useExamMonitoring(
       suspiciousScoreRef.current = nextSuspiciousScore;
       const shouldCaptureEvidence =
         Boolean(captureEvidence) &&
-        (CAPTURE_TRIGGER_CODES.has(code) ||
+        (severity !== "info" ||
+          CAPTURE_TRIGGER_CODES.has(code) ||
           nextSuspiciousScore >= suspiciousScoreThreshold);
       const evidence = shouldCaptureEvidence
         ? await captureEvidence?.({
@@ -612,7 +615,7 @@ export function useExamMonitoring(
       broadcastChannelRef.current = null;
       viewportRef.current = null;
     };
-  }, [activeAttempt, enabled, recordAttemptActivity]);
+  }, [activeAttempt, enabled, markInteraction, recordAttemptActivity]);
 
   const resetActivityTracking = () => {
     activityCooldownRef.current = {};

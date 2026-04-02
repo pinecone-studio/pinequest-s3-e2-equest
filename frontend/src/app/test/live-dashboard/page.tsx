@@ -6,26 +6,77 @@ import { Button } from "@/components/ui/button";
 import { fetchRuntimeJson } from "@/lib/runtime-api";
 import { fetchTakeExamDashboard } from "@/lib/take-exam-dashboard-api";
 import { TestShell } from "../_components/test-shell";
-import { ExamSelector } from "./_components/exam-selector";
 import { ExamDashboard } from "./_components/exam-dashboard";
+import { TeacherExamGallery } from "./_components/teacher-exam-gallery";
 import {
   buildExamDashboardData,
-  buildExamList,
   type DashboardApiPayload,
 } from "./lib/dashboard-adapters";
 import type {
   AblyConnectionStatus,
+  Exam,
   ExamFocusAnalysis,
   OllamaConnectionStatus,
 } from "./lib/types";
 
 const POLL_INTERVAL_MS = 15_000;
+const CREATED_EXAMS_CACHE_KEY = "test-live-dashboard-created-exams";
+const CREATED_EXAMS_CACHE_TTL_MS = 2 * 60 * 1000;
+const CREATE_EXAM_LIST_QUERY = `
+  query FrontendListNewMathExams($limit: Int = 40) {
+    listNewMathExams(limit: $limit) {
+      examId
+      title
+      durationMinutes
+      updatedAt
+    }
+  }
+`;
+const CREATE_EXAM_DETAIL_QUERY = `
+  query FrontendGetNewMathExam($examId: ID!) {
+    getNewMathExam(examId: $examId) {
+      examId
+      title
+      createdAt
+      updatedAt
+      mathCount
+      mcqCount
+      sessionMeta {
+        durationMinutes
+        examType
+        grade
+        groupClass
+        subject
+        topics
+      }
+    }
+  }
+`;
+type CreatedExamListApiResponse = {
+  exams: Array<{
+    class: string;
+    durationMinutes?: number | null;
+    endTime?: string | null;
+    examType?: string | null;
+    id: string;
+    questionCount: number;
+    startTime: string;
+    subject: string;
+    title: string;
+    topic: string;
+  }>;
+};
 
 export default function ExamMonitoringApp() {
   const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
+  const [createdExams, setCreatedExams] = useState<Exam[]>([]);
+  const [createdExamsError, setCreatedExamsError] = useState<string | null>(
+    null,
+  );
+  const [isCreatedExamsLoading, setIsCreatedExamsLoading] = useState(true);
   const [payload, setPayload] = useState<DashboardApiPayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [focusAnalysis, setFocusAnalysis] = useState<ExamFocusAnalysis | null>(
@@ -40,7 +91,73 @@ export default function ExamMonitoringApp() {
   const [ablyStatus, setAblyStatus] = useState<AblyConnectionStatus | null>(
     null,
   );
+  const createdExamsRequestIdRef = useRef(0);
   const realtimeRefreshTimeoutRef = useRef<number | null>(null);
+
+  const loadCreatedExams = useCallback(async () => {
+    const requestId = createdExamsRequestIdRef.current + 1;
+    createdExamsRequestIdRef.current = requestId;
+
+    const cachedExams = readCreatedExamsCache();
+    if (cachedExams) {
+      setCreatedExams(cachedExams);
+      setCreatedExamsError(null);
+      setIsCreatedExamsLoading(false);
+      return;
+    }
+
+    setIsCreatedExamsLoading(true);
+
+    try {
+      let listResult: CreatedExamListApiResponse;
+
+      try {
+        listResult = await fetchRuntimeJson<CreatedExamListApiResponse>(
+          "/api/create-exam-list?limit=40",
+          {
+            cache: "no-store",
+          },
+        );
+      } catch {
+        listResult = await fetchCreatedExamsDirect();
+      }
+
+      if (createdExamsRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      const nextCreatedExams = listResult.exams
+        .map((exam) => mapApiCreatedExamToExam(exam))
+        .sort(sortCreatedExamsByStartTime);
+
+      setCreatedExams(nextCreatedExams);
+      setCreatedExamsError(null);
+      setIsCreatedExamsLoading(false);
+    } catch (nextError) {
+      if (createdExamsRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setCreatedExams([]);
+      setCreatedExamsError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Үүсгэсэн шалгалтуудыг ачаалж чадсангүй.",
+      );
+    } finally {
+      if (createdExamsRequestIdRef.current === requestId) {
+        setIsCreatedExamsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (createdExams.length === 0) {
+      return;
+    }
+
+    writeCreatedExamsCache(createdExams);
+  }, [createdExams]);
 
   const loadOllamaStatus = useCallback(async () => {
     try {
@@ -66,28 +183,30 @@ export default function ExamMonitoringApp() {
 
   const loadDashboard = useCallback(
     async (showLoader = false) => {
+      if (!selectedExamId) {
+        return;
+      }
+
       if (showLoader) {
         setIsLoading(true);
+        setPayload(null);
+        setDashboardError(null);
+        setLastUpdated(null);
       } else {
         setIsRefreshing(true);
       }
 
       try {
-        const params = new URLSearchParams({ limit: "40" });
-        if (selectedExamId) {
-          params.set("testId", selectedExamId);
-        }
-
         const nextPayload = await fetchTakeExamDashboard(
           40,
-          selectedExamId ?? null,
+          selectedExamId,
         );
 
         setPayload(nextPayload);
-        setError(null);
+        setDashboardError(null);
         setLastUpdated(new Date());
       } catch (nextError) {
-        setError(
+        setDashboardError(
           nextError instanceof Error
             ? nextError.message
             : "Dashboard ачаалах үед алдаа гарлаа.",
@@ -101,6 +220,20 @@ export default function ExamMonitoringApp() {
   );
 
   useEffect(() => {
+    void loadCreatedExams();
+  }, [loadCreatedExams]);
+
+  useEffect(() => {
+    if (!selectedExamId) {
+      setPayload(null);
+      setDashboardError(null);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      setLastUpdated(null);
+      setOllamaStatus(null);
+      return;
+    }
+
     void loadDashboard(true);
     void loadOllamaStatus();
 
@@ -112,14 +245,7 @@ export default function ExamMonitoringApp() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [loadDashboard, loadOllamaStatus]);
-
-  const exams = useMemo(() => buildExamList(payload ?? {
-    availableTests: [],
-    attempts: [],
-    liveMonitoringFeed: [],
-    testMaterial: null,
-  }), [payload]);
+  }, [loadDashboard, loadOllamaStatus, selectedExamId]);
 
   const selectedExamData = useMemo(
     () =>
@@ -142,6 +268,11 @@ export default function ExamMonitoringApp() {
         payload.testMaterial?.testId === selectedExamId ? payload.testMaterial : null,
     };
   }, [payload, selectedExamId]);
+
+  const selectedCreatedExam = useMemo(
+    () => createdExams.find((exam) => exam.id === selectedExamId) ?? null,
+    [createdExams, selectedExamId],
+  );
 
   const focusAnalysisKey = useMemo(() => {
     if (!selectedExamPayload?.exam) {
@@ -195,16 +326,6 @@ export default function ExamMonitoringApp() {
 
   useEffect(() => {
     if (!selectedExamId) {
-      return;
-    }
-
-    if (!selectedExamData?.exam) {
-      setSelectedExamId(null);
-    }
-  }, [selectedExamData?.exam, selectedExamId]);
-
-  useEffect(() => {
-    if (!selectedExamId) {
       setAblyStatus(null);
       return;
     }
@@ -234,8 +355,9 @@ export default function ExamMonitoringApp() {
           return;
         }
 
-        const Ably = (mod.default ?? mod) as any;
-        const realtime = new Ably.Realtime({
+        const AblyModule: typeof import("ably") =
+          "default" in mod ? mod.default : mod;
+        const realtime = new AblyModule.Realtime({
           authUrl,
           authMethod: "POST",
         });
@@ -400,14 +522,23 @@ export default function ExamMonitoringApp() {
   }, [focusAnalysisKey, focusAnalysisRequestBody]);
 
   const handleRefresh = useCallback(() => {
+    if (!selectedExamId) {
+      return;
+    }
+
     void loadDashboard(false);
     void loadOllamaStatus();
-  }, [loadDashboard, loadOllamaStatus]);
+  }, [loadDashboard, loadOllamaStatus, selectedExamId]);
 
-  const headerTitle = selectedExamData?.exam?.title ?? "Шууд хяналтын самбар";
+  const headerTitle =
+    selectedExamData?.exam?.title ??
+    selectedCreatedExam?.title ??
+    "Шууд хяналтын самбар";
   const headerDescription = selectedExamData?.exam
     ? `${selectedExamData.exam.subject} • ${selectedExamData.exam.topic} • ${selectedExamData.exam.class}`
-    : "Шалгалтуудаа нэг дороос сонгож, идэвхтэй явц ба үнэлгээний хяналтыг удирдана.";
+    : selectedCreatedExam
+      ? `${selectedCreatedExam.subject} • ${selectedCreatedExam.topic} • ${selectedCreatedExam.class}`
+      : "Шалгалтуудаа нэг дороос сонгож, идэвхтэй явц ба үнэлгээний хяналтыг удирдана.";
 
   const headerMeta = (
     <>
@@ -462,16 +593,68 @@ export default function ExamMonitoringApp() {
     </>
   );
 
+  if (isCreatedExamsLoading) {
+    return (
+      <TestShell
+        title="Миний шалгалтууд"
+        sidebarCollapsible
+        teacherVariant="switcher"
+      >
+        <div className="flex min-h-full items-center justify-center px-8 py-10">
+          <div className="flex min-h-[60vh] w-full items-center justify-center rounded-[22px] border border-dashed border-slate-300 bg-white px-6 text-sm text-slate-500">
+            Үүсгэсэн шалгалтуудыг ачаалж байна...
+          </div>
+        </div>
+      </TestShell>
+    );
+  }
+
+  if (!selectedExamId) {
+    return (
+      <TestShell
+        title="Миний шалгалтууд"
+        sidebarCollapsible
+        teacherVariant="switcher"
+      >
+        <TeacherExamGallery
+          exams={createdExams}
+          error={createdExamsError}
+          onSelectExam={(exam) => setSelectedExamId(exam.id)}
+        />
+      </TestShell>
+    );
+  }
+
   if (isLoading && !payload) {
     return (
       <TestShell
         title={headerTitle}
         description={headerDescription}
-        meta={headerMeta}
         actions={headerActions}
+        teacherVariant="live"
       >
-        <div className="flex min-h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border bg-card/70 px-6 text-sm text-muted-foreground">
-          Live monitoring өгөгдөл ачаалж байна...
+        <div className="flex min-h-full items-center justify-center px-8 py-10">
+          <div className="flex min-h-[60vh] w-full items-center justify-center rounded-[22px] border border-dashed border-slate-300 bg-white px-6 text-sm text-slate-500">
+            Live monitoring өгөгдөл ачаалж байна...
+          </div>
+        </div>
+      </TestShell>
+    );
+  }
+
+  if (!selectedExamData?.exam) {
+    return (
+      <TestShell
+        title={headerTitle}
+        description={headerDescription}
+        actions={headerActions}
+        teacherVariant="live"
+      >
+        <div className="px-8 py-10">
+          <div className="rounded-[22px] border border-dashed border-slate-300 bg-white px-6 py-16 text-center text-slate-500">
+            Энэ шалгалтын live monitoring өгөгдөл одоогоор take-exam-service дээр
+            олдсонгүй.
+          </div>
         </div>
       </TestShell>
     );
@@ -484,34 +667,21 @@ export default function ExamMonitoringApp() {
       meta={headerMeta}
       actions={headerActions}
       contentClassName="pb-10"
+      teacherVariant="live"
     >
-      {!selectedExamId || !selectedExamData?.exam ? (
-        <div className="mx-auto w-full max-w-[1440px]">
-          {error && (
-            <div className="mb-6 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-              {error}
-            </div>
-          )}
-          <ExamSelector
-            exams={exams}
-            onSelectExam={(exam) => setSelectedExamId(exam.id)}
-          />
-        </div>
-      ) : (
-        <div className="mx-auto w-full max-w-[1440px]">
-          <ExamDashboard
-            analytics={selectedExamData.analytics}
-            students={selectedExamData.students}
-            events={selectedExamData.events}
-            attempts={selectedExamData.attempts}
-            focusAnalysis={focusAnalysis}
-            focusAnalysisError={focusAnalysisError}
-            isFocusAnalysisLoading={isFocusAnalysisLoading}
-            onApproveAttempt={handleRefresh}
-            error={error}
-          />
-        </div>
-      )}
+      <div className="w-full">
+        <ExamDashboard
+          analytics={selectedExamData.analytics}
+          students={selectedExamData.students}
+          events={selectedExamData.events}
+          attempts={selectedExamData.attempts}
+          focusAnalysis={focusAnalysis}
+          focusAnalysisError={focusAnalysisError}
+          isFocusAnalysisLoading={isFocusAnalysisLoading}
+          onApproveAttempt={handleRefresh}
+          error={dashboardError}
+        />
+      </div>
     </TestShell>
   );
 }
@@ -576,4 +746,201 @@ function formatOllamaStatusLabel(status: OllamaConnectionStatus | null): string 
   }
 
   return "Ollama AI холбогдоогүй";
+}
+
+function mapApiCreatedExamToExam(exam: CreatedExamListApiResponse["exams"][number]): Exam {
+  return {
+    averageScore: undefined,
+    class: exam.class,
+    endTime: exam.endTime ? parseExamDate(exam.endTime) : undefined,
+    id: exam.id,
+    liveStudentCount: 0,
+    questionCount: exam.questionCount,
+    startTime: parseExamDate(exam.startTime),
+    subject: exam.subject,
+    title: exam.title,
+    topic: exam.topic,
+    totalStudentCount: 0,
+  };
+}
+
+async function fetchCreatedExamsDirect(): Promise<CreatedExamListApiResponse> {
+  const targetUrl =
+    process.env.NEXT_PUBLIC_CREATE_EXAM_GRAPHQL_URL?.trim() ||
+    "https://create-exam-service.tsetsegulziiocherdene.workers.dev/api/graphql";
+
+  const listResponse = await fetch(targetUrl, {
+    body: JSON.stringify({
+      query: CREATE_EXAM_LIST_QUERY,
+      variables: { limit: 40 },
+    }),
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  const listPayload = (await listResponse.json()) as {
+    data?: {
+      listNewMathExams?: Array<{
+        durationMinutes?: number | null;
+        examId: string;
+        title: string;
+        updatedAt: string;
+      }>;
+    };
+    errors?: Array<{ message?: string }>;
+  };
+
+  if (!listResponse.ok || listPayload.errors?.length || !listPayload.data) {
+    throw new Error(
+      listPayload.errors?.[0]?.message ??
+        "Create exam service-ээс шалгалтын жагсаалт авч чадсангүй.",
+    );
+  }
+
+  const summaries = listPayload.data.listNewMathExams ?? [];
+  const details = await Promise.allSettled(
+    summaries.map((summary) =>
+      fetch(targetUrl, {
+        body: JSON.stringify({
+          query: CREATE_EXAM_DETAIL_QUERY,
+          variables: { examId: summary.examId },
+        }),
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }).then(async (response) => {
+        const payload = (await response.json()) as {
+          data?: {
+            getNewMathExam?: {
+              createdAt?: string | null;
+              examId: string;
+              mathCount?: number | null;
+              mcqCount?: number | null;
+              sessionMeta?: {
+                durationMinutes?: number | null;
+                examType?: string | null;
+                grade?: number | null;
+                groupClass?: string | null;
+                subject?: string | null;
+                topics?: string[] | null;
+              } | null;
+              title: string;
+              updatedAt?: string | null;
+            } | null;
+          };
+        };
+
+        return payload.data?.getNewMathExam ?? null;
+      }),
+    ),
+  );
+
+  return {
+    exams: summaries.map((summary, index) => {
+      const detail = details[index];
+      const exam = detail.status === "fulfilled" ? detail.value : null;
+      const sessionMeta = exam?.sessionMeta;
+      const gradeLabel =
+        typeof sessionMeta?.grade === "number" ? `${sessionMeta.grade}-р анги` : "";
+      const groupLabel = sessionMeta?.groupClass?.trim() ?? "";
+      const startTime = exam?.createdAt ?? summary.updatedAt;
+      const durationMinutes =
+        sessionMeta?.durationMinutes ?? summary.durationMinutes ?? null;
+
+      return {
+        class:
+          [gradeLabel, groupLabel].filter(Boolean).join(" ") || "Тодорхойгүй анги",
+        durationMinutes,
+        endTime:
+          durationMinutes && startTime
+            ? new Date(
+                new Date(startTime).getTime() + durationMinutes * 60_000,
+              ).toISOString()
+            : null,
+        examType: sessionMeta?.examType?.trim() || null,
+        id: summary.examId,
+        questionCount: Math.max((exam?.mathCount ?? 0) + (exam?.mcqCount ?? 0), 0),
+        startTime,
+        subject: sessionMeta?.subject?.trim() || "Математик",
+        title: exam?.title ?? summary.title,
+        topic:
+          sessionMeta?.topics?.find((item) => item?.trim())?.trim() ??
+          "Тодорхойгүй сэдэв",
+      };
+    }),
+  };
+}
+
+function parseExamDate(value?: string | null): Date {
+  if (!value) {
+    return new Date();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function sortCreatedExamsByStartTime(left: Exam, right: Exam) {
+  return right.startTime.getTime() - left.startTime.getTime();
+}
+
+function readCreatedExamsCache(): Exam[] | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(CREATED_EXAMS_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as {
+      expiresAt?: number;
+      exams?: Array<Omit<Exam, "startTime" | "endTime"> & {
+        endTime?: string;
+        startTime: string;
+      }>;
+    };
+
+    if (!parsed.expiresAt || parsed.expiresAt < Date.now() || !parsed.exams) {
+      window.sessionStorage.removeItem(CREATED_EXAMS_CACHE_KEY);
+      return null;
+    }
+
+    return parsed.exams.map((exam) => ({
+      ...exam,
+      endTime: exam.endTime ? new Date(exam.endTime) : undefined,
+      startTime: new Date(exam.startTime),
+    }));
+  } catch {
+    return null;
+  }
+}
+
+function writeCreatedExamsCache(exams: Exam[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      CREATED_EXAMS_CACHE_KEY,
+      JSON.stringify({
+        exams: exams.map((exam) => ({
+          ...exam,
+          endTime: exam.endTime?.toISOString(),
+          startTime: exam.startTime.toISOString(),
+        })),
+        expiresAt: Date.now() + CREATED_EXAMS_CACHE_TTL_MS,
+      }),
+    );
+  } catch {
+    // Ignore storage failures.
+  }
 }

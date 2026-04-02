@@ -16,8 +16,10 @@ type Env = {
   ABLY_API_KEY?: string;
   ABLY_CLIENT_ID_PREFIX?: string;
   ASSETS: AssetBinding;
+  CREATE_EXAM_GRAPHQL_URL?: string;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  NEXT_PUBLIC_CREATE_EXAM_GRAPHQL_URL?: string;
   NEXT_PUBLIC_TAKE_EXAM_GRAPHQL_URL?: string;
   OLLAMA_API_KEY?: string;
   OLLAMA_BASE_URL?: string;
@@ -169,8 +171,45 @@ type OllamaTeacherFeedback = {
   summary: string;
 };
 
+type JsonObject = Record<string, unknown>;
+type GraphqlPayload = {
+  data?: JsonObject;
+  errors?: Array<{ message?: string }>;
+};
+
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+const CREATE_EXAM_LIST_CACHE_TTL_SECONDS = 60;
+const CREATE_EXAM_LIST_QUERY = `
+query FrontendListNewMathExams($limit: Int = 40) {
+  listNewMathExams(limit: $limit) {
+    examId
+    title
+    durationMinutes
+    updatedAt
+  }
+}
+`.trim();
+const CREATE_EXAM_DETAIL_QUERY = `
+query FrontendGetNewMathExam($examId: ID!) {
+  getNewMathExam(examId: $examId) {
+    examId
+    title
+    createdAt
+    updatedAt
+    mathCount
+    mcqCount
+    sessionMeta {
+      durationMinutes
+      examType
+      grade
+      groupClass
+      subject
+      topics
+    }
+  }
+}
+`.trim();
 
 const DASHBOARD_QUERY = `
 fragment FrontendDashboardAttemptFields on AttemptSummary {
@@ -478,21 +517,39 @@ const getEnvValue = (value?: string) => {
 
 const json = (body: unknown, init?: ResponseInit) => Response.json(body, init);
 
+const getCreateExamGraphqlUrl = (env: Env) =>
+  getEnvValue(env.CREATE_EXAM_GRAPHQL_URL) ??
+  getEnvValue(env.NEXT_PUBLIC_CREATE_EXAM_GRAPHQL_URL) ??
+  "https://create-exam-service.tsetsegulziiocherdene.workers.dev/api/graphql";
+
 const getTakeExamGraphqlUrl = (env: Env) =>
   getEnvValue(env.TAKE_EXAM_GRAPHQL_URL) ??
   getEnvValue(env.NEXT_PUBLIC_TAKE_EXAM_GRAPHQL_URL) ??
   "http://localhost:3002/api/graphql";
 
-const buildProgress = (attempt: Record<string, any>, questionCount: number) => {
+const asJsonObject = (value: unknown): JsonObject | null =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as JsonObject)
+    : null;
+
+const asJsonObjectArray = (value: unknown): JsonObject[] =>
+  Array.isArray(value)
+    ? value
+        .map((item) => asJsonObject(item))
+        .filter((item): item is JsonObject => item !== null)
+    : [];
+
+const buildProgress = (attempt: JsonObject, questionCount: number) => {
+  const result = asJsonObject(attempt.result);
+  const answerReview = asJsonObjectArray(attempt.answerReview);
   const answeredQuestionsFromResult =
-    (attempt.result?.correctCount ?? 0) +
-    (attempt.result?.incorrectCount ?? 0) +
-    (attempt.result?.unansweredCount ?? 0);
+    (typeof result?.correctCount === "number" ? result.correctCount : 0) +
+    (typeof result?.incorrectCount === "number" ? result.incorrectCount : 0) +
+    (typeof result?.unansweredCount === "number" ? result.unansweredCount : 0);
   const answeredQuestionsFromReview =
-    attempt.answerReview?.filter(
-      (item: Record<string, any>) =>
-        item.selectedOptionId || item.selectedAnswerText,
-    ).length ?? 0;
+    answerReview.filter(
+      (item) => Boolean(item.selectedOptionId || item.selectedAnswerText),
+    ).length;
   const answeredQuestions = Math.max(
     answeredQuestionsFromResult,
     answeredQuestionsFromReview,
@@ -540,11 +597,11 @@ const fetchDashboardPayload = async (
 
   const rawText = await response.text();
   const trimmedText = rawText.trim();
-  let payload: Record<string, any> | null = null;
+  let payload: GraphqlPayload | null = null;
 
   if (trimmedText) {
     try {
-      payload = JSON.parse(trimmedText) as Record<string, any>;
+      payload = JSON.parse(trimmedText) as GraphqlPayload;
     } catch {
       payload = null;
     }
@@ -616,39 +673,49 @@ async function handleDashboardGet(request: Request, env: Env) {
     }
 
     const data = payload.data;
-    const testsById = new Map<string, Record<string, any>>(
-      data.availableTests.map((test: Record<string, any>) => [test.id, test]),
+    const availableTests = asJsonObjectArray(data.availableTests);
+    const attempts = asJsonObjectArray(data.attempts);
+    const liveMonitoringFeed = asJsonObjectArray(data.liveMonitoringFeed);
+    const testsById = new Map<string, JsonObject>(
+      availableTests
+        .map((test) => [typeof test.id === "string" ? test.id : "", test] as const)
+        .filter(([id]) => id.length > 0),
     );
 
     const normalizedData = {
       ...data,
-      attempts: data.attempts.map((attempt: Record<string, any>) => {
-        const test = testsById.get(attempt.testId);
-        const totalQuestions = test?.criteria.questionCount ?? 0;
+      attempts: attempts.map((attempt) => {
+        const testId = typeof attempt.testId === "string" ? attempt.testId : "";
+        const test = testsById.get(testId);
+        const criteria = asJsonObject(test?.criteria);
+        const totalQuestions =
+          typeof criteria?.questionCount === "number" ? criteria.questionCount : 0;
+        const monitoring = asJsonObject(attempt.monitoring);
+        const result = asJsonObject(attempt.result);
+        const questionResults = asJsonObjectArray(result?.questionResults);
 
         return {
           ...attempt,
           answerReview: attempt.answerReview ?? null,
-          criteria: test?.criteria ?? null,
-          monitoring: attempt.monitoring
+          criteria: criteria ?? null,
+          monitoring: monitoring
             ? {
-                ...attempt.monitoring,
+                ...monitoring,
                 infoCount: 0,
-                recentEvents: attempt.monitoring.recentEvents ?? [],
+                recentEvents: monitoring.recentEvents ?? [],
               }
             : null,
           progress: buildProgress(attempt, totalQuestions),
-          result: attempt.result
+          result: result
             ? {
-                ...attempt.result,
-                questionResults: attempt.result.questionResults.map(
-                  (result: Record<string, any>) => ({
-                    ...result,
-                    answerChangeCount: result.answerChangeCount ?? null,
-                    competency: result.competency,
-                    dwellMs: result.dwellMs ?? null,
-                    prompt: result.prompt,
-                    questionType: result.questionType,
+                ...result,
+                questionResults: questionResults.map((questionResult) => ({
+                    ...questionResult,
+                    answerChangeCount: questionResult.answerChangeCount ?? null,
+                    competency: questionResult.competency,
+                    dwellMs: questionResult.dwellMs ?? null,
+                    prompt: questionResult.prompt,
+                    questionType: questionResult.questionType,
                   }),
                 ),
               }
@@ -656,14 +723,14 @@ async function handleDashboardGet(request: Request, env: Env) {
           teacherSync: null,
         };
       }),
-      availableTests: data.availableTests.map((test: Record<string, any>) => ({
+      availableTests: availableTests.map((test) => ({
         ...test,
       })),
-      liveMonitoringFeed: data.liveMonitoringFeed.map((item: Record<string, any>) => ({
+      liveMonitoringFeed: liveMonitoringFeed.map((item) => ({
         ...item,
-        monitoring: item.monitoring
+        monitoring: asJsonObject(item.monitoring)
           ? {
-              ...item.monitoring,
+              ...asJsonObject(item.monitoring),
               infoCount: 0,
             }
           : null,
@@ -682,6 +749,154 @@ async function handleDashboardGet(request: Request, env: Env) {
           error instanceof Error
             ? error.message
             : "Dashboard route дуудах үед алдаа гарлаа.",
+        targetUrl,
+      },
+      { status: 500 },
+    );
+  }
+}
+
+type CreateExamSummary = {
+  durationMinutes?: number | null;
+  examId: string;
+  title: string;
+  updatedAt: string;
+};
+
+type CreateExamDetail = {
+  createdAt?: string | null;
+  examId: string;
+  mathCount?: number | null;
+  mcqCount?: number | null;
+  sessionMeta?: {
+    durationMinutes?: number | null;
+    examType?: string | null;
+    grade?: number | null;
+    groupClass?: string | null;
+    subject?: string | null;
+    topics?: string[] | null;
+  } | null;
+  title: string;
+  updatedAt?: string | null;
+} | null;
+
+async function handleCreateExamListGet(request: Request, env: Env) {
+  const { searchParams } = new URL(request.url);
+  const parsedLimit = Number(searchParams.get("limit") ?? "40");
+  const limit = Number.isFinite(parsedLimit)
+    ? Math.min(Math.max(parsedLimit, 1), 60)
+    : 40;
+
+  const cacheUrl = new URL(request.url);
+  cacheUrl.search = "";
+  cacheUrl.searchParams.set("limit", String(limit));
+  const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+  const cache = await caches.open("create-exam-list");
+  const cachedResponse = await cache.match(cacheKey);
+
+  if (cachedResponse) {
+    return cachedResponse;
+  }
+
+  const targetUrl = getCreateExamGraphqlUrl(env);
+
+  try {
+    const { payload, response } = await fetchDashboardPayload(
+      targetUrl,
+      CREATE_EXAM_LIST_QUERY,
+      { limit },
+    );
+
+    if (!payload) {
+      return json(
+        {
+          message:
+            "Create exam service JSON биш хариу буцаалаа. Deploy URL эсвэл upstream route-аа шалгана уу.",
+          status: response.status,
+          targetUrl,
+        },
+        { status: 502 },
+      );
+    }
+
+    if (!response.ok || payload.errors?.length || !payload.data) {
+      return json(
+        {
+          message:
+            payload.errors?.[0]?.message ??
+            "Create exam service-ээс шалгалтын жагсаалт авч чадсангүй.",
+          targetUrl,
+        },
+        { status: response.ok ? 502 : response.status },
+      );
+    }
+
+    const summaries =
+      (payload.data.listNewMathExams as CreateExamSummary[] | undefined) ?? [];
+
+    const details = await Promise.allSettled(
+      summaries.map((summary) =>
+        fetchDashboardPayload(targetUrl, CREATE_EXAM_DETAIL_QUERY, {
+          examId: summary.examId,
+        }),
+      ),
+    );
+
+    const exams = summaries.map((summary, index) => {
+      const detailResult = details[index];
+      const detailPayload =
+        detailResult?.status === "fulfilled" ? detailResult.value.payload : null;
+      const exam =
+        (detailPayload?.data?.getNewMathExam as CreateExamDetail | undefined) ??
+        null;
+      const sessionMeta = exam?.sessionMeta;
+      const gradeLabel =
+        typeof sessionMeta?.grade === "number" ? `${sessionMeta.grade}-р анги` : "";
+      const groupLabel = sessionMeta?.groupClass?.trim() ?? "";
+      const className =
+        [gradeLabel, groupLabel].filter(Boolean).join(" ") || "Тодорхойгүй анги";
+      const startTime = exam?.createdAt ?? summary.updatedAt;
+      const durationMinutes =
+        sessionMeta?.durationMinutes ?? summary.durationMinutes ?? null;
+      const endTime =
+        durationMinutes && startTime
+          ? new Date(new Date(startTime).getTime() + durationMinutes * 60_000).toISOString()
+          : null;
+
+      return {
+        class: className,
+        durationMinutes,
+        endTime,
+        examType: sessionMeta?.examType?.trim() || null,
+        id: summary.examId,
+        questionCount: Math.max((exam?.mathCount ?? 0) + (exam?.mcqCount ?? 0), 0),
+        startTime,
+        subject: sessionMeta?.subject?.trim() || "Математик",
+        title: exam?.title ?? summary.title,
+        topic:
+          sessionMeta?.topics?.find((item) => item?.trim())?.trim() ??
+          "Тодорхойгүй сэдэв",
+      };
+    });
+
+    const proxyResponse = json(
+      { exams },
+      {
+        headers: {
+          "Cache-Control": `public, max-age=${CREATE_EXAM_LIST_CACHE_TTL_SECONDS}, s-maxage=${CREATE_EXAM_LIST_CACHE_TTL_SECONDS}`,
+        },
+      },
+    );
+
+    await cache.put(cacheKey, proxyResponse.clone());
+    return proxyResponse;
+  } catch (error) {
+    return json(
+      {
+        message:
+          error instanceof Error
+            ? error.message
+            : "Create exam list route дуудах үед алдаа гарлаа.",
         targetUrl,
       },
       { status: 500 },
@@ -1894,6 +2109,10 @@ async function routeApiRequest(request: Request, env: Env) {
     return handleDashboardGet(request, env);
   }
 
+  if (pathname === "/api/create-exam-list" && request.method === "GET") {
+    return handleCreateExamListGet(request, env);
+  }
+
   if (pathname === "/api/take-exam-approve" && request.method === "POST") {
     return handleApprovePost(request, env);
   }
@@ -1923,7 +2142,7 @@ async function routeApiRequest(request: Request, env: Env) {
   return json({ message: "Not found" }, { status: 404 });
 }
 
-export default {
+const workerApp = {
   async fetch(request: Request, env: Env) {
     const pathname = new URL(request.url).pathname;
 
@@ -1934,3 +2153,5 @@ export default {
     return env.ASSETS.fetch(request);
   },
 };
+
+export default workerApp;
