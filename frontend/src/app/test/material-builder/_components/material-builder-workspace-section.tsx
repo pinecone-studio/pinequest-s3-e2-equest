@@ -1043,80 +1043,55 @@ function SharedLibraryPanel({
   onSelectMaterialId: (id: string) => void;
 }) {
   const client = useApolloClient();
-  const { data, loading } = useQuery(ListNewMathExamsDocument, {
-    variables: {
-      limit: 100,
-      filters: {
-        examType: generalInfo.examType || null,
-        grade: generalInfo.grade ? Number(generalInfo.grade) : null,
-        subject: generalInfo.subject || null,
-      },
-    },
-  });
-  const [libraryExamDetailLoading, setLibraryExamDetailLoading] = useState(false);
+  const listPageSize = 100;
   const [searchValue, setSearchValue] = useState("");
+  const [debouncedSearchValue, setDebouncedSearchValue] = useState("");
   const [durationFilter, setDurationFilter] = useState("all");
   const [teacherFilter, setTeacherFilter] = useState("all");
   const [variantFilter, setVariantFilter] = useState("all");
   const [questionCountFilter, setQuestionCountFilter] = useState("all");
+  const [listOffset] = useState(0);
+  const [libraryExamDetailLoading, setLibraryExamDetailLoading] = useState(false);
   const [previewExamId, setPreviewExamId] = useState<string | null>(null);
   const [editingExamQuestionId, setEditingExamQuestionId] = useState<string | null>(null);
   const [editingExam, setEditingExam] = useState<SharedLibraryExam | null>(null);
+  const [examDetailCache, setExamDetailCache] = useState<Record<string, SharedLibraryExam>>({});
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchValue(searchValue.trim());
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchValue]);
+
+  const { data, loading } = useQuery(ListNewMathExamsDocument, {
+    variables: {
+      limit: listPageSize,
+      offset: listOffset,
+      filters: {
+        durationMinutes: durationFilter !== "all" ? Number(durationFilter) : null,
+        examType: generalInfo.examType || null,
+        grade: generalInfo.grade ? Number(generalInfo.grade) : null,
+        questionCount: questionCountFilter !== "all" ? Number(questionCountFilter) : null,
+        search: debouncedSearchValue || null,
+        subject: generalInfo.subject || null,
+        teacherId: teacherFilter !== "all" ? teacherFilter : null,
+        withVariants:
+          variantFilter === "all" ? null : variantFilter === "with",
+      },
+    },
+  });
 
   const libraryExamSummaries = useMemo(
     () =>
       (
         (data as { listNewMathExams?: SharedLibraryExamSummary[] | null } | undefined)
           ?.listNewMathExams ?? []
-      ).filter((exam) => {
-        const searchTarget = `${exam.title} ${exam.subject ?? ""} ${
-          exam.examType ?? ""
-        }`.toLowerCase();
-
-        if (
-          searchValue.trim() &&
-          !searchTarget.includes(searchValue.trim().toLowerCase())
-        ) {
-          return false;
-        }
-
-        if (
-          durationFilter !== "all" &&
-          String(exam.durationMinutes ?? "") !== durationFilter
-        ) {
-          return false;
-        }
-
-        if (
-          teacherFilter !== "all" &&
-          (exam.teacherId ?? "unknown") !== teacherFilter
-        ) {
-          return false;
-        }
-
-        if (variantFilter !== "all") {
-          const hasVariants = Boolean(exam.withVariants);
-          if (variantFilter === "with" && !hasVariants) return false;
-          if (variantFilter === "without" && hasVariants) return false;
-        }
-
-        if (
-          questionCountFilter !== "all" &&
-          String(exam.questionCount) !== questionCountFilter
-        ) {
-          return false;
-        }
-
-        return true;
-      }),
-    [
-      durationFilter,
-      questionCountFilter,
-      searchValue,
-      teacherFilter,
-      variantFilter,
-      data,
-    ],
+      ),
+    [data],
   );
 
   const teacherOptions = useMemo(() => {
@@ -1146,6 +1121,13 @@ function SharedLibraryPanel({
 
   async function openExamPreview(exam: SharedLibraryExamSummary) {
     onSelectMaterialId(exam.examId);
+    const cachedExam = examDetailCache[exam.examId];
+    if (cachedExam) {
+      setPreviewExamId(exam.examId);
+      setEditingExamQuestionId(null);
+      setEditingExam(structuredClone(cachedExam));
+      return;
+    }
     setLibraryExamDetailLoading(true);
     try {
       const result = await client.query({
@@ -1160,6 +1142,7 @@ function SharedLibraryPanel({
         toast.error("Шалгалтын дэлгэрэнгүй мэдээлэл олдсонгүй.");
         return;
       }
+      setExamDetailCache((prev) => ({ ...prev, [exam.examId]: fullExam }));
       setPreviewExamId(exam.examId);
       setEditingExamQuestionId(null);
       setEditingExam(structuredClone(fullExam));

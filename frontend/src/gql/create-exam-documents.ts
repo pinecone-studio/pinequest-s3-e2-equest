@@ -155,8 +155,8 @@ export const GetExamVariantJobDocument = gql(`
 `);
 
 export const ListNewMathExamsDocument = gql(`
-	query ListNewMathExams($limit: Int = 50, $filters: ListNewMathExamsFilterInput) {
-		listNewMathExams(limit: $limit, filters: $filters) {
+	query ListNewMathExams($limit: Int = 50, $offset: Int = 0, $filters: ListNewMathExamsFilterInput) {
+		listNewMathExams(limit: $limit, offset: $offset, filters: $filters) {
 			examId
 			title
 			grade

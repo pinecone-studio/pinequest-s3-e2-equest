@@ -489,9 +489,14 @@ export type NewMathExamSummary = {
 };
 
 export type ListNewMathExamsFilterInput = {
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
   examType?: InputMaybe<Scalars['String']['input']>;
   grade?: InputMaybe<Scalars['Int']['input']>;
+  questionCount?: InputMaybe<Scalars['Int']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
   subject?: InputMaybe<Scalars['String']['input']>;
+  teacherId?: InputMaybe<Scalars['String']['input']>;
+  withVariants?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type Query = {
@@ -564,6 +569,7 @@ export type QueryGetTeachersListArgs = {
 export type QueryListNewMathExamsArgs = {
   filters?: InputMaybe<ListNewMathExamsFilterInput>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
