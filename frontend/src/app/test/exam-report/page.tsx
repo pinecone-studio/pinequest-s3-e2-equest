@@ -406,6 +406,8 @@ function getExamSortTime(exam: Exam): number {
   return exam.endTime?.getTime() ?? exam.startTime.getTime();
 }
 
+const UNKNOWN_CLASS_VALUE = "__unknown_class__";
+
 function normalizeClassValue(value: string) {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : UNKNOWN_CLASS_VALUE;

@@ -301,7 +301,7 @@ const captureDomFrame = async ({
   const canvas = await html2canvas(target, {
     backgroundColor: "#f7f7f8",
     logging: false,
-    onclone: (clonedDocument) => {
+    onclone: (clonedDocument: Document) => {
       const palette = isDarkMode
         ? HTML2CANVAS_THEME_VARS.dark
         : HTML2CANVAS_THEME_VARS.light;

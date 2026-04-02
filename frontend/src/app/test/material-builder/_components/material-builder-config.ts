@@ -1,28 +1,27 @@
 import {
   BookOpen,
   Database,
-  FileUp,
+  Download,
   FileText,
   Files,
-  Keyboard,
-  Table2,
+  Sparkles,
 } from "lucide-react";
 
 export const sourceOptions = [
   {
     id: "question-bank",
-    icon: Keyboard,
-    label: "Гараар",
+    icon: Sparkles,
+    label: "Асуулт үүсгэх",
   },
   {
     id: "textbook",
     icon: BookOpen,
-    label: "Ном",
+    label: "Сурах бичиг",
   },
   {
     id: "import",
-    icon: FileUp,
-    label: "Файл",
+    icon: Download,
+    label: "Импорт",
   },
   {
     id: "shared-library",
@@ -34,7 +33,7 @@ export const sourceOptions = [
 export type MaterialSourceId = (typeof sourceOptions)[number]["id"];
 
 export const fieldClassName =
-  "!h-[40px] w-full rounded-[10px] border-[#e2e8f0] !bg-[#F4F7FA] px-3 text-[14px] text-slate-800 shadow-none hover:!bg-[#F4F7FA] focus-visible:ring-2 focus-visible:ring-sky-100";
+  "!h-[40px] w-full rounded-[10px] border-[#e2e8f0] !bg-[#eef3ff] px-3 text-[14px] text-slate-800 shadow-none hover:!bg-[#eef3ff] focus-visible:ring-2 focus-visible:ring-sky-100";
 export const fieldWrapperClassName = "flex min-w-0 flex-col gap-2";
 export const optionFieldClassName =
   "!h-[40px] w-full rounded-[10px] border-[#e2e8f0] !bg-[#eef3ff] px-3 text-[14px] text-slate-800 shadow-none hover:!bg-[#eef3ff] focus-visible:ring-2 focus-visible:ring-sky-100";
@@ -53,7 +52,7 @@ export const answerOptions = [
 export const importOptions = [
   { id: "word", icon: FileText, label: "Word" },
   { id: "pdf", icon: Files, label: "PDF" },
-  { id: "excel", icon: Table2, label: "Excel" },
+  { id: "textbook", icon: BookOpen, label: "Ном оруулах" },
 ] as const;
 
 export const textbookSections = [
