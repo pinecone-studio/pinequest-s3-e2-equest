@@ -1,29 +1,11 @@
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-const getRequiredEnv = (key: string) => {
-  const value = process.env[key]?.trim();
-  if (!value) {
-    throw new Error(`${key} environment variable is required.`);
-  }
-
-  return value;
-};
-
-const getS3Client = () =>
-  new S3Client({
-    region: "auto",
-    endpoint: getRequiredEnv("R2_S3_API"),
-    credentials: {
-      accessKeyId: getRequiredEnv("R2_ACCESS_KEY_ID"),
-      secretAccessKey: getRequiredEnv("R2_SECRET_ACCESS_KEY"),
-    },
-  });
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  corsHeaders,
+  createStorageUnavailableResponse,
+  getRequiredEnv,
+  getMissingStorageEnvKeys,
+  getProctoringStorageClient,
+} from "../shared";
 
 export function OPTIONS() {
   return new Response(null, {
@@ -44,7 +26,12 @@ export async function GET(request: Request) {
       );
     }
 
-    const client = getS3Client();
+    const missingEnvKeys = getMissingStorageEnvKeys();
+    if (missingEnvKeys.length > 0) {
+      return createStorageUnavailableResponse(missingEnvKeys);
+    }
+
+    const client = getProctoringStorageClient();
     const result = await client.send(
       new GetObjectCommand({
         Bucket: getRequiredEnv("R2_PROCTORING_BUCKET_NAME"),

@@ -27,7 +27,8 @@ const renderKatex = (value: string, displayMode: boolean) => {
   try {
     return katex.renderToString(value.trim(), {
       displayMode,
-      output: "html",
+      // Include MathML so rendered formulas stay readable to assistive tech.
+      output: "htmlAndMathml",
       strict: "warn",
       throwOnError: false,
     });
@@ -53,6 +54,67 @@ const looksLikeMathCandidate = (value: string) => {
 
 const hasCyrillicText = (value: string) => /[А-Яа-яӨөҮүЁё]/u.test(value);
 
+const looksLikeInlineMathToken = (value: string) => {
+  const text = value.trim();
+  if (!text || hasCyrillicText(text)) {
+    return false;
+  }
+
+  if (/[\\^_=<>±√∑∫∞]/u.test(text)) {
+    return true;
+  }
+
+  if (/[A-Za-z]\([^)]*\)/.test(text)) {
+    return true;
+  }
+
+  if (/\d+\s*[/+*]\s*\d+/.test(text)) {
+    return true;
+  }
+
+  return /[=+*/^]/.test(text) && /[0-9A-Za-z]/.test(text);
+};
+
+const wrapInlineMathToken = (token: string) => {
+  if (!token || token.includes("$") || token.includes("\\(") || token.includes("\\[")) {
+    return token;
+  }
+
+  let working = token;
+  let trailingPunctuation = "";
+  let trailingCyrillicSuffix = "";
+
+  const punctuationMatch = working.match(/[.,!?;:]+$/u);
+  if (punctuationMatch) {
+    trailingPunctuation = punctuationMatch[0];
+    working = working.slice(0, -trailingPunctuation.length);
+  }
+
+  const cyrillicSuffixMatch = working.match(/(-[А-Яа-яӨөҮүЁё]+)$/u);
+  if (cyrillicSuffixMatch) {
+    trailingCyrillicSuffix = cyrillicSuffixMatch[0];
+    working = working.slice(0, -trailingCyrillicSuffix.length);
+  }
+
+  if (!looksLikeInlineMathToken(working)) {
+    return token;
+  }
+
+  return `$${working}$${trailingCyrillicSuffix}${trailingPunctuation}`;
+};
+
+const autoWrapMixedInlineMath = (value: string) =>
+  value
+    .split(/(\s+)/)
+    .map((segment) => {
+      if (!segment || /^\s+$/u.test(segment)) {
+        return segment;
+      }
+
+      return wrapInlineMathToken(segment);
+    })
+    .join("");
+
 const wrapTrailingLatexRuns = (value: string) =>
   value.replace(
     /(\\[A-Za-z][\\A-Za-z0-9\s=+\-*/^_()[\]{}.,|:]+?)(?=(?:\s+[А-Яа-яӨөҮүЁё]|$))/gu,
@@ -67,7 +129,7 @@ const wrapTrailingLatexRuns = (value: string) =>
   );
 
 const autoWrapInlineLatex = (value: string) => {
-  if (!value || value.includes("$") || value.includes("\\(") || value.includes("\\[")) {
+  if (!value) {
     return value;
   }
 
@@ -76,7 +138,7 @@ const autoWrapInlineLatex = (value: string) => {
     (full) => `$${full.trim()}$`,
   );
 
-  return wrapTrailingLatexRuns(withWrappedCommands);
+  return autoWrapMixedInlineMath(wrapTrailingLatexRuns(withWrappedCommands));
 };
 
 const parseMathSegments = (value: string): MathSegment[] => {

@@ -126,6 +126,54 @@ const canvasToBlob = async (canvas: HTMLCanvasElement) => {
   }
 };
 
+const isUnsupportedHtml2CanvasColorLog = (value: unknown) => {
+  if (typeof value === "string") {
+    return value.includes(
+      'Attempting to parse an unsupported color function "lab"',
+    );
+  }
+
+  if (value instanceof Error) {
+    return value.message.includes(
+      'Attempting to parse an unsupported color function "lab"',
+    );
+  }
+
+  return false;
+};
+
+const withFilteredHtml2CanvasLogs = async <T>(
+  action: () => Promise<T>,
+): Promise<T> => {
+  const originalConsoleError = console.error;
+  const originalConsoleWarn = console.warn;
+  const shouldSuppress = (args: unknown[]) =>
+    args.some((value) => isUnsupportedHtml2CanvasColorLog(value));
+
+  console.error = (...args: unknown[]) => {
+    if (shouldSuppress(args)) {
+      return;
+    }
+
+    originalConsoleError(...args);
+  };
+
+  console.warn = (...args: unknown[]) => {
+    if (shouldSuppress(args)) {
+      return;
+    }
+
+    originalConsoleWarn(...args);
+  };
+
+  try {
+    return await action();
+  } finally {
+    console.error = originalConsoleError;
+    console.warn = originalConsoleWarn;
+  }
+};
+
 const waitForVideoReadiness = async (video: HTMLVideoElement) => {
   if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
     return;
@@ -298,22 +346,24 @@ const captureDomFrame = async ({
     document.documentElement.classList.contains("dark") ||
     document.body.classList.contains("dark");
   const { default: html2canvas } = await import("html2canvas");
-  const canvas = await html2canvas(target, {
-    backgroundColor: "#f7f7f8",
-    logging: false,
-    onclone: (clonedDocument) => {
-      const palette = isDarkMode
-        ? HTML2CANVAS_THEME_VARS.dark
-        : HTML2CANVAS_THEME_VARS.light;
+  const canvas = await withFilteredHtml2CanvasLogs(() =>
+    html2canvas(target, {
+      backgroundColor: "#f7f7f8",
+      logging: false,
+      onclone: (clonedDocument) => {
+        const palette = isDarkMode
+          ? HTML2CANVAS_THEME_VARS.dark
+          : HTML2CANVAS_THEME_VARS.light;
 
-      for (const [name, value] of Object.entries(palette)) {
-        clonedDocument.documentElement.style.setProperty(name, value);
-        clonedDocument.body.style.setProperty(name, value);
-      }
-    },
-    scale: Math.min(window.devicePixelRatio || 1, 2),
-    useCORS: true,
-  });
+        for (const [name, value] of Object.entries(palette)) {
+          clonedDocument.documentElement.style.setProperty(name, value);
+          clonedDocument.body.style.setProperty(name, value);
+        }
+      },
+      scale: Math.min(window.devicePixelRatio || 1, 2),
+      useCORS: true,
+    }),
+  );
 
   const { height, width } = getScaledDimensions(canvas.width, canvas.height);
   const finalCanvas = document.createElement("canvas");
@@ -580,6 +630,7 @@ export function useScreenCapture({
             target.offsetWidth > 0 &&
             target.offsetHeight > 0,
         );
+        let encounteredUnsupportedColorError = false;
 
         for (const target of targetCandidates) {
           try {
@@ -593,11 +644,21 @@ export function useScreenCapture({
               break;
             }
           } catch (error) {
+            if (isUnsupportedHtml2CanvasColorLog(error)) {
+              encounteredUnsupportedColorError = true;
+              break;
+            }
+
             console.error("Failed to capture fallback DOM screenshot:", error);
           }
         }
 
         if (!screenshotBlob) {
+          if (encounteredUnsupportedColorError) {
+            console.warn(
+              "DOM screenshot capture skipped because html2canvas could not parse a browser color format. Falling back to synthetic evidence.",
+            );
+          }
           resolvedMode = "limited-monitoring";
         }
       }

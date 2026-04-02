@@ -1,29 +1,45 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { buildProctoringScreenshotKey } from "@/lib/proctoring-screenshots";
+import {
+  buildProctoringObjectUrl,
+  corsHeaders,
+  createStorageUnavailableResponse,
+  getRequiredEnv,
+  getMissingStorageEnvKeys,
+  getProctoringStorageClient,
+} from "../shared";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+const getFormDataValue = (formData: FormData, key: string) => {
+  const value = formData.get(key);
+  return typeof value === "string" ? value.trim() : "";
 };
 
-const getRequiredEnv = (key: string) => {
-  const value = process.env[key]?.trim();
-  if (!value) {
-    throw new Error(`${key} environment variable is required.`);
+const resolveUploadKey = (formData: FormData) => {
+  const providedKey = getFormDataValue(formData, "key");
+  if (providedKey) {
+    return providedKey;
   }
 
-  return value;
-};
+  const attemptId = getFormDataValue(formData, "attemptId");
+  const capturedAt = getFormDataValue(formData, "capturedAt");
+  const eventCode = getFormDataValue(formData, "eventCode");
+  const mode = getFormDataValue(formData, "mode");
+  const studentName = getFormDataValue(formData, "studentName");
+  const userId = getFormDataValue(formData, "userId");
 
-const getS3Client = () =>
-  new S3Client({
-    region: "auto",
-    endpoint: getRequiredEnv("R2_S3_API"),
-    credentials: {
-      accessKeyId: getRequiredEnv("R2_ACCESS_KEY_ID"),
-      secretAccessKey: getRequiredEnv("R2_SECRET_ACCESS_KEY"),
-    },
+  if (!attemptId || !capturedAt || !eventCode || !userId) {
+    return null;
+  }
+
+  return buildProctoringScreenshotKey({
+    attemptId,
+    capturedAt,
+    eventCode,
+    mode,
+    studentName,
+    userId,
   });
+};
 
 export function OPTIONS() {
   return new Response(null, {
@@ -36,12 +52,15 @@ export async function POST(request: Request) {
   try {
     const requestUrl = new URL(request.url);
     const formData = await request.formData();
-    const key = formData.get("key");
+    const key = resolveUploadKey(formData);
     const file = formData.get("file");
 
-    if (typeof key !== "string" || !key.trim()) {
+    if (!key) {
       return Response.json(
-        { message: "key is required." },
+        {
+          message:
+            "key эсвэл attemptId, capturedAt, eventCode, userId талбарууд заавал байна.",
+        },
         { status: 400, headers: corsHeaders },
       );
     }
@@ -53,7 +72,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const client = getS3Client();
+    const missingEnvKeys = getMissingStorageEnvKeys();
+    if (missingEnvKeys.length > 0) {
+      return createStorageUnavailableResponse(missingEnvKeys);
+    }
+
+    const client = getProctoringStorageClient();
     const body = new Uint8Array(await file.arrayBuffer());
 
     await client.send(
@@ -61,17 +85,15 @@ export async function POST(request: Request) {
         Bucket: getRequiredEnv("R2_PROCTORING_BUCKET_NAME"),
         CacheControl: "private, max-age=31536000, immutable",
         ContentType: file.type || "image/jpeg",
-        Key: key.trim(),
+        Key: key,
         Body: body,
       }),
     );
 
     return Response.json(
       {
-        key: key.trim(),
-        publicUrl: `${requestUrl.origin}/api/proctoring-screenshots/object?key=${encodeURIComponent(
-          key.trim(),
-        )}`,
+        key,
+        publicUrl: buildProctoringObjectUrl(requestUrl, key),
       },
       {
         status: 200,
