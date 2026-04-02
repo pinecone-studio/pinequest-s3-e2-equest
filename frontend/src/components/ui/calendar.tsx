@@ -55,10 +55,33 @@ function Calendar({
           }
           return date.toLocaleString(locale?.code, { month: "short" });
         },
+        formatWeekdayName: (date, options) => {
+          const loc = options?.locale ?? locale;
+          if (isMongolianLocale(loc?.code)) {
+            switch (date.getDay()) {
+              case 1:
+                return "Да";
+              case 2:
+                return "Мя";
+              case 3:
+                return "Лха";
+              case 4:
+                return "Пү";
+              case 5:
+                return "Ба";
+              case 6:
+                return "Бя";
+              case 0:
+              default:
+                return "Ня";
+            }
+          }
+          return date.toLocaleDateString(loc?.code, { weekday: "short" });
+        },
         formatCaption: (month, options, dateLib) => {
           const loc = options?.locale ?? locale;
           if (isMongolianLocale(loc?.code)) {
-            return format(month, "yyyy 'оны' LLLL", {
+            return format(month, "yyyy 'он' M 'сар'", {
               locale: loc as DateFnsLocale,
             });
           }

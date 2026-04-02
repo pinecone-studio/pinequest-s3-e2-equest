@@ -38,7 +38,7 @@ export function AiSchedulerHubClient() {
   const navActive = "bg-blue-50 text-blue-900 ring-1 ring-blue-200/80";
 
   return (
-    <div className="min-h-screen bg-[#F1F4FA] px-4">
+    <div className="min-h-screen bg-[#F1F4FA] px-4 font-sans text-zinc-900 antialiased dark:text-zinc-100">
       <div className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col">
         <div className="min-h-0 min-w-0 flex-1">
           {view === "school" ? (

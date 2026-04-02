@@ -83,13 +83,7 @@ import {
   CALENDAR_LAYER_CONSTRAINT,
   constraintLabelMn,
 } from "@/constants/calendarLayerTaxonomy";
-import type { MockPrimaryLesson } from "@/constants/teacherScheduleMock";
-import {
-  DEFAULT_MOCK_TEACHER_ID,
-  MOCK_I_SHIFT_TEACHERS,
-  getMockTeacherById,
-  roomBadgeForPrimaryLesson,
-} from "@/constants/teacherScheduleMock";
+import { roomBadgeForPrimaryLesson } from "@/constants/teacherScheduleMock";
 import {
   ArrowRight,
   CalendarClock,
@@ -112,11 +106,11 @@ import {
   Triangle,
   Sparkles,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 /** I/II ээлж: хичээл 40 мин, завсар 5–15 мин (давхаргын тайлбарт дундаж). */
 const LESSON_MINUTES = 40;
 const BREAK_MINUTES = 10;
-
 function formatPeriodClockRange(
   startHour: number,
   startMinute: number,
@@ -141,7 +135,17 @@ function periodLengthMinutes(
  * хичээл/багшийн нэрийг карт дээр давтахгүй.
  */
 function primaryLessonCardModel(
-  lesson: MockPrimaryLesson & { roomNumber?: string | null },
+  lesson: {
+    colIdx: number;
+    title: string;
+    periodLabel: string;
+    startH: number;
+    startM: number;
+    endH: number;
+    endM: number;
+    slotVariant?: "default" | "free" | "duty";
+    roomNumber?: string | null;
+  },
   opts?: { cabinetRoom?: string; roomNumber?: string | null },
 ) {
   const v = lesson.slotVariant ?? "default";
@@ -521,37 +525,30 @@ const CALENDAR_LAYERS: {
 }[] = [
   {
     id: "primary",
-    label: "Үндсэн хичээл",
+    label: "Хичээлийн хуваарь",
     role: `I/II ээлж · ${LESSON_MINUTES} мин цаг · завсар 5–15 мин (жишээ)`,
     swatch: "bg-sky-400",
     style: "pointer-events-none",
   },
   {
-    id: "ancillary_confirmed",
-    label: "Дагалдах ажил (Confirmed)",
-    role: "Анги удирдсан цаг, Зөвлөх цаг, Баталгаажсан давтлага, Секц. (дизайн mock)",
-    swatch: "bg-indigo-400",
-    style:
-      "ring-1 ring-indigo-300/80 dark:bg-indigo-800/40 dark:ring-indigo-600/60",
-  },
-  {
     id: "confirmed_exam",
-    label: "Баталгаажсан шалгалт",
+    label: "Шалгалтын хуваарь",
     role: "Сурагчдад зарлагдсан албан ёсны шалгалтууд (Locked / Double confirmation нүдлэнэ).",
     swatch: "bg-emerald-500",
   },
   {
-    id: "ai_draft",
-    label: "AI-ийн санал (Draft)",
-    role: "AI-аас санал болгож буй ноорог цагууд (Exam / Extra / Guidance Intent-тай).",
-    swatch: "bg-violet-200",
-    style: "border-2 border-dashed border-violet-400 opacity-80",
-  },
-  {
     id: "school_event",
-    label: "Сургуулийн эвент (Overlay)",
+    label: "Сургуулийн эвент",
     role: "Сургуулийн нэгдсэн календарийн (School Event Calendar) read-only давхарга.",
     swatch: "bg-amber-100 ring-1 ring-amber-400/30",
+  },
+  {
+    id: "ancillary_confirmed",
+    label: "Нэмэлт үйл ажиллагаа (Confirmed)",
+    role: "Анги удирдсан цаг, Зөвлөх цаг, Баталгаажсан давтлага, Секц. (дизайн mock)",
+    swatch: "bg-indigo-400",
+    style:
+      "ring-1 ring-indigo-300/80 dark:bg-indigo-800/40 dark:ring-indigo-600/60",
   },
   {
     id: "personal",
@@ -559,6 +556,13 @@ const CALENDAR_LAYERS: {
     role: "Google Calendar-аас татсан хувийн завгүй цагууд (Private).",
     swatch: "bg-slate-100",
     style: "ring-1 ring-slate-300/80 dark:bg-slate-800 dark:ring-slate-600/80",
+  },
+  {
+    id: "ai_draft",
+    label: "AI-ийн санал",
+    role: "AI-аас санал болгож буй ноорог цагууд (Exam / Extra / Guidance Intent-тай).",
+    swatch: "bg-violet-200",
+    style: "border-2 border-dashed border-violet-400 opacity-80",
   },
   {
     id: "conflict",
@@ -638,6 +642,7 @@ export function AiTeacherPersonalScheduler({
   shellMode = false,
   defaultTeacherShift = "I",
 }: AiTeacherPersonalSchedulerProps) {
+  const router = useRouter();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [testId, setTestId] = useState("");
   const [classId, setClassId] = useState(DEFAULT_CLASS_ID);
@@ -808,16 +813,10 @@ export function AiTeacherPersonalScheduler({
       if (teacherOptions.some((t) => t.id === selectedTeacherId)) {
         return;
       }
-      // Хэрэв өмнө нь fallback mock ID эсвэл хоосон байсан бол real жагсаалтын 1-р багш руу шилжүүлнэ.
-      if (!selectedTeacherId || selectedTeacherId === DEFAULT_MOCK_TEACHER_ID) {
+      if (!selectedTeacherId) {
         setSelectedTeacherId(first);
       }
       return;
-    }
-
-    // Real багш олдохгүй үед л mock fallback (UI тасрахгүй, grid mock хэвээр).
-    if (!selectedTeacherId) {
-      setSelectedTeacherId(DEFAULT_MOCK_TEACHER_ID);
     }
   }, [selectedTeacherId, teacherOptions, teacherLoading]);
 
@@ -840,7 +839,7 @@ export function AiTeacherPersonalScheduler({
     ListTeacherMainLessonsVars
   >(GetTeacherMainLessonsListDocument, {
     variables: {
-      teacherId: selectedTeacherId || DEFAULT_MOCK_TEACHER_ID,
+      teacherId: selectedTeacherId,
       semesterId: DEFAULT_SEMESTER_ID,
       includeDraft: false,
     },
@@ -882,19 +881,7 @@ export function AiTeacherPersonalScheduler({
       ),
     ).sort((a, b) => a.localeCompare(b, "mn"));
 
-    if (fromLive.length) return fromLive;
-
-    const mockTeacher =
-      getMockTeacherById(selectedTeacherId || DEFAULT_MOCK_TEACHER_ID) ??
-      MOCK_I_SHIFT_TEACHERS[0];
-
-    return Array.from(
-      new Set(
-        (mockTeacher.lessons ?? [])
-          .map((lesson) => lesson.title?.trim())
-          .filter((v): v is string => Boolean(v)),
-      ),
-    ).sort((a, b) => a.localeCompare(b, "mn"));
+    return fromLive;
   }, [mainLessonsData?.getTeacherMainLessonsList, selectedTeacherId]);
 
   useEffect(() => {
@@ -904,27 +891,41 @@ export function AiTeacherPersonalScheduler({
   }, [classId, teacherClassOptions]);
 
   const selectedTeacher = useMemo(() => {
-    const mock =
-      getMockTeacherById(DEFAULT_MOCK_TEACHER_ID) ?? MOCK_I_SHIFT_TEACHERS[0];
     const fallbackRealTeacher = teacherOptions[0] ?? null;
     const baseTeacher = selectedTeacherRow ?? fallbackRealTeacher;
     const displayName = baseTeacher?.shortName?.trim()
       ? baseTeacher.shortName
       : baseTeacher
         ? `${baseTeacher.lastName} ${baseTeacher.firstName}`
-        : mock.displayName;
+        : "—";
     const roleNote = baseTeacher
       ? `${teacherDepartmentLabel(baseTeacher.department)} · ${teacherTeachingLevelLabel(baseTeacher.teachingLevel)} · ${baseTeacher.workLoadLimit}/өдөр`
-      : mock.roleNote;
-    return { ...mock, displayName, roleNote };
+      : "Өгөгдөл олдсонгүй.";
+
+    return {
+      id: baseTeacher?.id ?? "",
+      displayName,
+      roleNote,
+      lessons: [],
+    } as const;
   }, [selectedTeacherRow, teacherOptions]);
 
-  type PrimaryLesson = MockPrimaryLesson & { roomNumber?: string | null };
+  type PrimaryLesson = {
+    colIdx: number;
+    title: string;
+    periodLabel: string;
+    startH: number;
+    startM: number;
+    endH: number;
+    endM: number;
+    slotVariant?: "default" | "free" | "duty";
+    roomNumber?: string | null;
+  };
 
   const activePrimaryLessons = useMemo(() => {
     const rows = mainLessonsData?.getTeacherMainLessonsList ?? [];
     if (!rows.length) {
-      return selectedTeacher.lessons.map((l) => ({ ...l })) as PrimaryLesson[];
+      return [] as PrimaryLesson[];
     }
     const lessons: PrimaryLesson[] = [];
     for (const r of rows) {
@@ -947,9 +948,7 @@ export function AiTeacherPersonalScheduler({
         roomNumber: r.classroomRoomNumber ?? null,
       });
     }
-    return lessons.length
-      ? lessons
-      : (selectedTeacher.lessons.map((l) => ({ ...l })) as PrimaryLesson[]);
+    return lessons;
   }, [mainLessonsData?.getTeacherMainLessonsList, selectedTeacher.lessons]);
 
   useLayoutEffect(() => {
@@ -1530,62 +1529,60 @@ export function AiTeacherPersonalScheduler({
                     ? "Ачааллаж байна…"
                     : teacherOptions.length
                       ? `Нийт ${teacherOptions.length} багш`
-                      : "Багш олдсонгүй (fallback: mock)."}
+                      : "Багш олдсонгүй."}
                 </p>
                 <ul className="max-h-[min(60vh,16rem)] space-y-0.5 overflow-y-auto">
-                  {(teacherOptions.length
-                    ? teacherOptions.map((t) => ({
-                        id: t.id,
-                        displayName: (t.shortName?.trim()
-                          ? t.shortName
-                          : `${t.lastName} ${t.firstName}`) as string,
-                        roleNote: `${teacherDepartmentLabel(t.department)} · ${teacherTeachingLevelLabel(t.teachingLevel)}`,
-                        shift: teacherShift,
-                      }))
-                    : MOCK_I_SHIFT_TEACHERS
-                  ).map((t) => {
-                    const on = t.id === selectedTeacherId;
-                    return (
-                      <li key={t.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedTeacherId(t.id);
-                            // schedule mock тул одоохондоо teacherShift-ийг өөрчлөхгүй.
-                            setTeacherPickerOpen(false);
-                          }}
-                          className={cn(
-                            "flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors",
-                            on
-                              ? "bg-sky-50 text-sky-950 dark:bg-sky-950/50 dark:text-sky-50"
-                              : "text-zinc-800 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800/80",
-                          )}
-                        >
-                          <span
+                  {teacherOptions
+                    .map((t) => ({
+                      id: t.id,
+                      displayName: (t.shortName?.trim()
+                        ? t.shortName
+                        : `${t.lastName} ${t.firstName}`) as string,
+                      roleNote: `${teacherDepartmentLabel(t.department)} · ${teacherTeachingLevelLabel(t.teachingLevel)}`,
+                      shift: teacherShift,
+                    }))
+                    .map((t) => {
+                      const on = t.id === selectedTeacherId;
+                      return (
+                        <li key={t.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTeacherId(t.id);
+                              setTeacherPickerOpen(false);
+                            }}
                             className={cn(
-                              "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                              "flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors",
                               on
-                                ? "border-sky-600 bg-sky-600 text-white dark:border-sky-500 dark:bg-sky-500"
-                                : "border-zinc-300 dark:border-zinc-600",
+                                ? "bg-sky-50 text-sky-950 dark:bg-sky-950/50 dark:text-sky-50"
+                                : "text-zinc-800 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800/80",
                             )}
-                            aria-hidden
                           >
-                            {on ? (
-                              <Check className="size-2.5" strokeWidth={3} />
-                            ) : null}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block font-medium">
-                              {t.displayName}
+                            <span
+                              className={cn(
+                                "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                                on
+                                  ? "border-sky-600 bg-sky-600 text-white dark:border-sky-500 dark:bg-sky-500"
+                                  : "border-zinc-300 dark:border-zinc-600",
+                              )}
+                              aria-hidden
+                            >
+                              {on ? (
+                                <Check className="size-2.5" strokeWidth={3} />
+                              ) : null}
                             </span>
-                            <span className="mt-0.5 block text-[11px] font-normal text-zinc-500 dark:text-zinc-400">
-                              {t.roleNote}
+                            <span className="min-w-0 flex-1">
+                              <span className="block font-medium">
+                                {t.displayName}
+                              </span>
+                              <span className="mt-0.5 block text-[11px] font-normal text-zinc-500 dark:text-zinc-400">
+                                {t.roleNote}
+                              </span>
                             </span>
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
+                          </button>
+                        </li>
+                      );
+                    })}
                 </ul>
               </PopoverContent>
             </Popover>
@@ -1705,15 +1702,15 @@ export function AiTeacherPersonalScheduler({
               <div
                 className={cn(
                   panelLight,
-                  "divide-y divide-zinc-100 dark:divide-zinc-800",
+                  "divide-y divide-white/30 border-white/40 bg-white/55 backdrop-blur-md dark:divide-white/10 dark:border-white/10 dark:bg-zinc-950/40",
                 )}
               >
                 <div className="px-3 py-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Эвент ({CALENDAR_LAYERS.length})
+                    Эвент ({CALENDAR_LAYERS.filter((x) => x.id !== "conflict").length})
                   </p>
                 </div>
-                {CALENDAR_LAYERS.map((layer) => {
+                {CALENDAR_LAYERS.filter((x) => x.id !== "conflict").map((layer) => {
                   const on = layerOn[layer.id];
                   const constraintKind = CALENDAR_LAYER_CONSTRAINT[layer.id];
                   return (
@@ -1731,6 +1728,17 @@ export function AiTeacherPersonalScheduler({
                     >
                       <span
                         className={cn(
+                          "shrink-0 rounded-md border p-1 transition-colors",
+                          on
+                            ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
+                            : "border-zinc-300 bg-white text-transparent dark:border-zinc-700 dark:bg-zinc-950",
+                        )}
+                        aria-hidden
+                      >
+                        <Check className="size-3.5" strokeWidth={3} />
+                      </span>
+                      <span
+                        className={cn(
                           "size-2.5 shrink-0 rounded-sm",
                           layer.swatch,
                           layer.style,
@@ -1741,25 +1749,6 @@ export function AiTeacherPersonalScheduler({
                         <span className="block truncate text-sm font-medium">
                           {layer.label}
                         </span>
-                        <span className="line-clamp-2 text-[10px] text-zinc-500 dark:text-zinc-400">
-                          {layer.role}
-                        </span>
-                        <span
-                          className="mt-0.5 line-clamp-1 text-[9px] text-zinc-400 dark:text-zinc-500"
-                          title={constraintLabelMn(constraintKind)}
-                        >
-                          {constraintLabelMn(constraintKind)}
-                        </span>
-                      </span>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                          on
-                            ? "bg-blue-100 text-blue-800 dark:bg-blue-900/70 dark:text-blue-200"
-                            : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
-                        )}
-                      >
-                        {on ? "Идэвхтэй" : "Нуугдсан"}
                       </span>
                     </button>
                   );
@@ -1782,12 +1771,30 @@ export function AiTeacherPersonalScheduler({
               >
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
                   <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                      Энэ 7 хоног
-                    </p>
-                    <p className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                      {weekRangeLabel}
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/ai-scheduler?view=student")}
+                      className="opacity-20 inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-white hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    >
+                      <GraduationCap
+                        className="size-3.5 shrink-0"
+                        strokeWidth={2}
+                        aria-hidden
+                      />
+                      Сурагчийн хуанли
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/ai-scheduler?view=school")}
+                      className="opacity-20 inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-white hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                    >
+                      <CalendarDays
+                        className="size-3.5 shrink-0"
+                        strokeWidth={2}
+                        aria-hidden
+                      />
+                      Сургуулийн хуанли
+                    </button>
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-zinc-200 bg-zinc-50/90 p-0.5 dark:border-zinc-600 dark:bg-zinc-900/80">
                     <button
@@ -1821,7 +1828,7 @@ export function AiTeacherPersonalScheduler({
                     className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500"
                     aria-hidden
                   >
-                    Цаг
+                    {""}
                   </div>
                   {weekDays.map((d) => {
                     const isSel = isSameDay(d, anchor);
@@ -1880,17 +1887,7 @@ export function AiTeacherPersonalScheduler({
                           {row.label}
                         </div>
                       ))}
-                      {SHIFT_MARKER_LAYOUTS.map((mk) => (
-                        <div
-                          key={mk.at}
-                          className="pointer-events-none absolute right-0 z-2 max-w-[2.85rem] -translate-y-1/2 text-right sm:max-w-13"
-                          style={{ top: `${mk.topPct}%` }}
-                        >
-                          <span className="inline-block rounded border border-indigo-200 bg-indigo-50/95 px-0.5 py-px text-[7px] font-bold leading-tight text-indigo-700 shadow-sm dark:border-indigo-500/50 dark:bg-indigo-950/80 dark:text-indigo-200 sm:text-[8px]">
-                            {mk.label}
-                          </span>
-                        </div>
-                      ))}
+                      {/* shift marker labels removed */}
                     </div>
 
                     {weekDays.map((d, colIdx) => {
@@ -1924,7 +1921,7 @@ export function AiTeacherPersonalScheduler({
                             {CALENDAR_OVERLAY_LAYOUTS.map((z) => (
                               <div
                                 key={z.id}
-                                className="calendar-red-zone-stripes pointer-events-auto absolute inset-x-0 z-1 cursor-help border-y border-rose-300/35 dark:border-rose-800/45"
+                                className="calendar-blue-zone-stripes pointer-events-auto absolute inset-x-0 z-1 cursor-help border-y border-blue-300/35 dark:border-blue-800/45"
                                 style={{
                                   top: `${z.topPct}%`,
                                   height: `${z.heightPct}%`,
@@ -1974,7 +1971,7 @@ export function AiTeacherPersonalScheduler({
                             .map((lesson) => {
                               const v = lesson.slotVariant ?? "default";
                               const card = primaryLessonCardModel(lesson, {
-                                cabinetRoom: selectedTeacher.cabinetRoom,
+                                cabinetRoom: undefined,
                                 roomNumber: lesson.roomNumber ?? null,
                               });
                               return (
@@ -2245,30 +2242,12 @@ export function AiTeacherPersonalScheduler({
                     })}
                   </div>
                 </div>
-
-                <p
-                  className={cn(
-                    "mt-2 text-center text-[10px] leading-relaxed",
-                    textDim,
-                  )}
-                >
-                  AI-Powered Operations Center: хуанлийн тор{" "}
-                  {CALENDAR_VIEW_CONFIG.dayVisible.start}–
-                  {CALENDAR_VIEW_CONFIG.dayVisible.end}, critical{" "}
-                  {CALENDAR_VIEW_CONFIG.criticalFocus.start}–
-                  {CALENDAR_VIEW_CONFIG.criticalFocus.end}, улаан түгжрэлийн
-                  overlay constants/calendar.ts-аас. Усан цэнхэр үндсэн хичээл
-                  (I/II ээлж · {LESSON_MINUTES} мин/цаг, завсар 5–15 мин),
-                  баталгаажсан шалгалт, AI Draft, хувийн синк. Сургуулийн эвент
-                  — amber дэвсгэр (mock жилийн хуанли), read-only; хичээлтэй
-                  давхцвал зөрчил. Жишээ + job; бүрэн sync биш.
-                </p>
               </div>
             </main>
 
             {/* Баруун: AI панел */}
-            <aside className="flex w-full shrink-0 m-4 p-4 flex-col  bg-[#F1F4FA]  dark:bg-zinc-950 dark:shadow-[inset_1px_0_0_0_rgba(39,39,42,0.8)] xl:w-[320px] rounded-2xl">
-              <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/90">
+            <aside className="m-4 flex w-full shrink-0 flex-col overflow-hidden rounded-2xl bg-[#F1F4FA] dark:bg-zinc-950 dark:shadow-[inset_1px_0_0_0_rgba(39,39,42,0.8)] xl:w-[320px]">
+              <div className="flex items-center gap-2 rounded-t-2xl border-b border-zinc-200 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/90">
                 <div className="flex items-center gap-1 text-sky-600 dark:text-sky-400">
                   <Sparkles className="size-4" strokeWidth={2} aria-hidden />
                 </div>

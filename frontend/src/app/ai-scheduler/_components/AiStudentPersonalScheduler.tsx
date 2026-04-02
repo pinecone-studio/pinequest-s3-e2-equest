@@ -55,6 +55,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Check,
   ClipboardList,
   GraduationCap,
   Menu,
@@ -79,13 +80,13 @@ function formatMnMonthDay(d: Date) {
 
 /** getISODay: 1=Даваа … 7=Ням */
 const WEEKDAY_LETTER_MN: Record<number, string> = {
-  1: "Д",
-  2: "М",
-  3: "Л",
-  4: "П",
-  5: "Б",
-  6: "Б",
-  7: "Н",
+  1: "Да",
+  2: "Мя",
+  3: "Лха",
+  4: "Пү",
+  5: "Ба",
+  6: "Бя",
+  7: "Ня",
 };
 
 type StudentLayerId =
@@ -758,7 +759,7 @@ export function AiStudentPersonalScheduler({
                     Календарь
                   </p>
                 </div>
-                <div className="flex justify-center">
+                <div className="flex justify-center rounded-xl bg-white p-2 dark:bg-zinc-900">
                   <Calendar
                     mode="single"
                     selected={date}
@@ -772,7 +773,7 @@ export function AiStudentPersonalScheduler({
               <div
                 className={cn(
                   panelLight,
-                  "divide-y divide-zinc-100 dark:divide-zinc-800",
+                  "divide-y divide-white/30 border-white/40 bg-white/55 backdrop-blur-md dark:divide-white/10 dark:border-white/10 dark:bg-zinc-950/40",
                 )}
               >
                 <div className="px-3 py-2">
@@ -798,6 +799,17 @@ export function AiStudentPersonalScheduler({
                     >
                       <span
                         className={cn(
+                          "shrink-0 rounded-md border p-1 transition-colors",
+                          on
+                            ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
+                            : "border-zinc-300 bg-white text-transparent dark:border-zinc-700 dark:bg-zinc-950",
+                        )}
+                        aria-hidden
+                      >
+                        <Check className="size-3.5" strokeWidth={3} />
+                      </span>
+                      <span
+                        className={cn(
                           "size-2.5 shrink-0 rounded-sm",
                           meta.swatch,
                           !on && "opacity-35",
@@ -807,19 +819,6 @@ export function AiStudentPersonalScheduler({
                         <span className="block truncate text-sm font-medium">
                           {meta.label}
                         </span>
-                        <span className="line-clamp-2 text-[10px] text-zinc-500 dark:text-zinc-400">
-                          {meta.hint}
-                        </span>
-                      </span>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                          on
-                            ? "bg-blue-100 text-blue-800 dark:bg-blue-900/70 dark:text-blue-200"
-                            : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
-                        )}
-                      >
-                        {on ? "Идэвхтэй" : "Нуугдсан"}
                       </span>
                     </button>
                   );
@@ -966,7 +965,7 @@ export function AiStudentPersonalScheduler({
                           {CALENDAR_OVERLAY_LAYOUTS.map((z) => (
                             <div
                               key={z.id}
-                              className="calendar-red-zone-stripes pointer-events-auto absolute inset-x-0 z-1 cursor-help border-y border-rose-300/35 dark:border-rose-800/45"
+                              className="calendar-blue-zone-stripes pointer-events-auto absolute inset-x-0 z-1 cursor-help border-y border-blue-300/35 dark:border-blue-800/45"
                               style={{
                                 top: `${z.topPct}%`,
                                 height: `${z.heightPct}%`,
