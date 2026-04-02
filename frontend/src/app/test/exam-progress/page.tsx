@@ -13,6 +13,7 @@ import {
   buildExamList,
   type DashboardApiPayload,
 } from "../live-dashboard/lib/dashboard-adapters";
+import type { AblyConnectionStatus } from "../live-dashboard/lib/types";
 
 const POLL_INTERVAL_MS = 30_000;
 const ACTIVE_CACHE_TTL_MS = 30_000;
@@ -36,7 +37,11 @@ export default function ExamProgressPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [ablyStatus, setAblyStatus] = useState<AblyConnectionStatus | null>(
+    null,
+  );
   const dashboardRequestIdRef = useRef(0);
+  const realtimeRefreshTimeoutRef = useRef<number | null>(null);
 
   const loadDashboard = useCallback(async ({
     force = false,
@@ -77,7 +82,12 @@ export default function ExamProgressPage() {
     }
 
     try {
-      const nextPayload = await fetchTakeExamDashboard(40, selectedExamId);
+      const nextPayload = await fetchTakeExamDashboard(
+        40,
+        selectedExamId,
+        undefined,
+        { forceRefresh: force },
+      );
       if (dashboardRequestIdRef.current !== requestId) {
         return;
       }
@@ -125,6 +135,9 @@ export default function ExamProgressPage() {
     () => exams.find((exam) => exam.id === selectedExamId) ?? null,
     [exams, selectedExamId],
   );
+  const handleForceRefresh = useCallback(() => {
+    void loadDashboard({ force: true });
+  }, [loadDashboard]);
   const breadcrumbItems: BreadcrumbItem[] = selectedExam
     ? [
         { href: "/test/live-dashboard", label: "Нүүр" },
@@ -160,6 +173,183 @@ export default function ExamProgressPage() {
       window.clearInterval(intervalId);
     };
   }, [loadDashboard, shouldPoll]);
+
+  useEffect(() => {
+    if (!selectedExamId) {
+      setAblyStatus(null);
+      return;
+    }
+
+    const authUrl = process.env.NEXT_PUBLIC_ABLY_AUTH_URL || "/api/ably/auth";
+    let isActive = true;
+    let cleanup: (() => void) | null = null;
+    setAblyStatus({
+      lastCheckedAt: new Date().toISOString(),
+      state: "checking",
+    });
+
+    const scheduleRealtimeRefresh = () => {
+      if (realtimeRefreshTimeoutRef.current !== null) {
+        return;
+      }
+
+      realtimeRefreshTimeoutRef.current = window.setTimeout(() => {
+        realtimeRefreshTimeoutRef.current = null;
+        void loadDashboard({ force: true });
+      }, 350);
+    };
+
+    void import("ably")
+      .then((mod) => {
+        if (!isActive) {
+          return;
+        }
+
+        const AblyModule: typeof import("ably") =
+          "default" in mod ? mod.default : mod;
+        const realtime = new AblyModule.Realtime({
+          authMethod: "POST",
+          authUrl,
+        });
+        const channel = realtime.channels.get(`exam-monitoring:${selectedExamId}`);
+        const subscribedEvents = [
+          "attempt.started",
+          "attempt.saved",
+          "attempt.submitted",
+          "attempt.approved",
+          "monitoring.updated",
+        ] as const;
+        const handleRealtimeMessage = () => {
+          scheduleRealtimeRefresh();
+        };
+        const handleConnectionState = (change: {
+          current?: string;
+          reason?: { message?: string };
+        }) => {
+          if (!isActive) {
+            return;
+          }
+
+          const timestamp = new Date().toISOString();
+          const nextState = normalizeAblyConnectionState(change.current);
+
+          if (!nextState) {
+            return;
+          }
+
+          if (nextState === "connected") {
+            setAblyStatus({
+              lastCheckedAt: timestamp,
+              state: "connected",
+            });
+            return;
+          }
+
+          if (nextState === "connecting" || nextState === "checking") {
+            setAblyStatus({
+              lastCheckedAt: timestamp,
+              state: nextState,
+            });
+            return;
+          }
+
+          if (nextState === "failed") {
+            setAblyStatus({
+              error: change.reason?.message ?? "Ably auth эсвэл network алдаа.",
+              lastCheckedAt: timestamp,
+              state: "failed",
+            });
+            return;
+          }
+
+          setAblyStatus({
+            error: change.reason?.message,
+            lastCheckedAt: timestamp,
+            state: nextState,
+          });
+        };
+        let didDisposeRealtime = false;
+        const disposeRealtime = () => {
+          if (didDisposeRealtime) {
+            return;
+          }
+          didDisposeRealtime = true;
+
+          try {
+            realtime.connection.off(handleConnectionState);
+          } catch {
+            // Ignore realtime listener cleanup failures.
+          }
+
+          try {
+            for (const eventName of subscribedEvents) {
+              channel.unsubscribe(eventName, handleRealtimeMessage);
+            }
+          } catch {
+            // Ignore realtime channel cleanup failures.
+          }
+
+          const currentState = realtime.connection.state;
+          if (
+            currentState === "closed" ||
+            currentState === "closing" ||
+            currentState === "failed"
+          ) {
+            return;
+          }
+
+          try {
+            realtime.close();
+          } catch {
+            // Ignore realtime close failures.
+          }
+        };
+
+        try {
+          for (const eventName of subscribedEvents) {
+            channel.subscribe(eventName, handleRealtimeMessage);
+          }
+          realtime.connection.on(handleConnectionState);
+          handleConnectionState({
+            current: realtime.connection.state,
+            reason: realtime.connection.errorReason ?? undefined,
+          });
+        } catch (nextError) {
+          setAblyStatus({
+            error:
+              nextError instanceof Error
+                ? nextError.message
+                : "Ably realtime subscription эхлүүлж чадсангүй.",
+            lastCheckedAt: new Date().toISOString(),
+            state: "failed",
+          });
+          disposeRealtime();
+          return;
+        }
+
+        cleanup = disposeRealtime;
+      })
+      .catch((nextError) => {
+        setAblyStatus({
+          error:
+            nextError instanceof Error
+              ? nextError.message
+              : "Ably realtime эхлүүлж чадсангүй.",
+          lastCheckedAt: new Date().toISOString(),
+          state: "failed",
+        });
+        // Polling remains the fallback.
+      });
+
+    return () => {
+      isActive = false;
+      if (realtimeRefreshTimeoutRef.current !== null) {
+        window.clearTimeout(realtimeRefreshTimeoutRef.current);
+        realtimeRefreshTimeoutRef.current = null;
+      }
+      cleanup?.();
+    };
+  }, [loadDashboard, selectedExamId]);
   const activityExamIds = useMemo(() => {
     const ids = new Set<string>();
 
@@ -264,12 +454,12 @@ export default function ExamProgressPage() {
   if (selectedExam && selectedExamData?.exam) {
     return (
       <TestShell
-        breadcrumbItems={breadcrumbItems}
+        breadcrumbItems={[]}
         actions={
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void loadDashboard({ force: true })}
+            onClick={handleForceRefresh}
             className="h-10 rounded-[14px] px-4 text-[15px] font-semibold"
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
@@ -278,6 +468,7 @@ export default function ExamProgressPage() {
         }
         compactSidebar
         contentClassName="pb-8"
+        description={`${selectedExam.subject} • ${selectedExam.topic} • ${selectedExam.class}`}
         isTeacherRefreshing={isRefreshing}
         meta={
           <>
@@ -290,6 +481,15 @@ export default function ExamProgressPage() {
               {selectedExamHasActiveSystem ? "Систем идэвхтэй" : "Систем идэвхгүй"}
             </span>
             <span>|</span>
+            <span className="flex items-center gap-2">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${getConnectionDotClass(
+                  ablyStatus?.state,
+                )}`}
+              />
+              {formatAblyStatusLabel(ablyStatus)}
+            </span>
+            <span>|</span>
             <span>
               {selectedExamLastUpdated
                 ? `${formatTimeAgo(selectedExamLastUpdated)} шинэчлэгдсэн`
@@ -297,19 +497,21 @@ export default function ExamProgressPage() {
             </span>
           </>
         }
-        onTeacherRefresh={() => null}
+        onTeacherRefresh={handleForceRefresh}
         sidebarCollapsible
         teacherVariant="none"
         title={selectedExam.title}
       >
-        <ExamProgressMonitoring
-          exam={selectedExamData.exam}
-          events={selectedExamData.events}
-          lastUpdated={selectedExamLastUpdated}
-          onBack={() => setSelectedExamId(null)}
-          reviewAttempts={selectedExamData.attempts}
-          students={selectedExamData.students}
-        />
+        <div className="mx-auto w-full max-w-[1460px]">
+          <ExamProgressMonitoring
+            exam={selectedExamData.exam}
+            events={selectedExamData.events}
+            lastUpdated={selectedExamLastUpdated}
+            onBack={() => setSelectedExamId(null)}
+            reviewAttempts={selectedExamData.attempts}
+            students={selectedExamData.students}
+          />
+        </div>
       </TestShell>
     );
   }
@@ -319,27 +521,29 @@ export default function ExamProgressPage() {
       breadcrumbItems={breadcrumbItems}
       title="Шалгалтын явц"
       isTeacherRefreshing={isRefreshing}
-      onTeacherRefresh={() => void loadDashboard({ force: true })}
+      onTeacherRefresh={handleForceRefresh}
       sidebarCollapsible
       teacherVariant="live"
     >
-      {error ? (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      ) : null}
+      <div className="mx-auto w-full max-w-[1460px]">
+        {error ? (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
 
-      {isLoading && !payload ? (
-        <div className="flex min-h-[60vh] items-center justify-center rounded-[22px] border border-dashed border-slate-300 bg-white px-6 text-sm text-slate-500">
-          Шалгалтын явц ачаалж байна...
-        </div>
-      ) : (
-        <ExamProgressOverview
-          examMetaById={examMetaById}
-          exams={progressExams}
-          onSelectExam={(exam) => setSelectedExamId(exam.id)}
-        />
-      )}
+        {isLoading && !payload ? (
+          <div className="flex min-h-[60vh] items-center justify-center rounded-[22px] border border-dashed border-slate-300 bg-white px-6 text-sm text-slate-500">
+            Шалгалтын явц ачаалж байна...
+          </div>
+        ) : (
+          <ExamProgressOverview
+            examMetaById={examMetaById}
+            exams={progressExams}
+            onSelectExam={(exam) => setSelectedExamId(exam.id)}
+          />
+        )}
+      </div>
     </TestShell>
   );
 }
@@ -448,4 +652,61 @@ function formatTimeAgo(date: Date): string {
 
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays} өдрийн өмнө`;
+}
+
+function getConnectionDotClass(state?: AblyConnectionStatus["state"]): string {
+  switch (state) {
+    case "connected":
+      return "bg-[#17a34a]";
+    case "connecting":
+    case "checking":
+      return "bg-[#f59e0b]";
+    case "disconnected":
+    case "failed":
+      return "bg-[#dc2626]";
+    default:
+      return "bg-slate-400";
+  }
+}
+
+function normalizeAblyConnectionState(
+  state?: string,
+): AblyConnectionStatus["state"] | null {
+  switch (state) {
+    case "connected":
+      return "connected";
+    case "connecting":
+      return "connecting";
+    case "initialized":
+    case "closing":
+    case "closed":
+      return "checking";
+    case "disconnected":
+    case "suspended":
+      return "disconnected";
+    case "failed":
+      return "failed";
+    default:
+      return state ? "checking" : null;
+  }
+}
+
+function formatAblyStatusLabel(status: AblyConnectionStatus | null): string {
+  if (!status) {
+    return "Ably шалгаж байна";
+  }
+
+  switch (status.state) {
+    case "connected":
+      return "Ably realtime холбогдсон";
+    case "connecting":
+    case "checking":
+      return "Ably realtime холбогдож байна";
+    case "disconnected":
+      return "Ably realtime тасарсан";
+    case "failed":
+      return "Ably realtime холбогдоогүй";
+    default:
+      return "Ably realtime шалгаж байна";
+  }
 }

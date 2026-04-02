@@ -41,6 +41,7 @@ type TestHeaderBarProps = {
   isTeacherRefreshing?: boolean;
   meta?: ReactNode;
   onTeacherRefresh?: (() => void) | null;
+  rightSlot?: ReactNode;
   teacherVariant?: TeacherVariant;
   title: string;
 };
@@ -73,6 +74,7 @@ export function TestHeaderBar({
   isTeacherRefreshing = false,
   meta,
   onTeacherRefresh = null,
+  rightSlot,
   teacherVariant = "default",
   title,
 }: TestHeaderBarProps) {
@@ -103,11 +105,15 @@ export function TestHeaderBar({
   return (
     <header className="row-start-1 col-start-2 flex items-center justify-between border-b border-slate-200 bg-white px-8">
       <div className="min-w-0">
-        {shouldRenderBreadcrumb
-          ? breadcrumb ?? <TestBreadcrumb items={resolvedBreadcrumbItems} />
-          : null}
+        {shouldRenderBreadcrumb ? (
+          breadcrumb ?? <TestBreadcrumb items={resolvedBreadcrumbItems} />
+        ) : (
+          <h1 className="truncate text-[18px] font-bold leading-tight text-slate-900">
+            {title}
+          </h1>
+        )}
         {description ? (
-          <p className="mt-2 truncate text-[13px] font-medium text-slate-500">
+          <p className="mt-1 truncate text-[13px] font-medium text-slate-500">
             {description}
           </p>
         ) : null}

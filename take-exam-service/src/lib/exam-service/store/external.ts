@@ -1,3 +1,4 @@
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type {
 	AttemptAnswerReviewItem,
 	ExamOption,
@@ -7,7 +8,16 @@ import type {
 	ExamTest,
 } from "@/lib/exam-service/types";
 import type { DbClient } from "@/lib/db";
-import { normalizeFreeResponseAnswer } from "./common";
+import * as schema from "@/lib/db/schema";
+import { deleteJsonFromKv, readJsonFromKv, writeJsonToKv } from "./cache";
+import {
+	AVAILABLE_TESTS_CACHE_KEY,
+	EXTERNAL_NEW_MATH_SYNC_CACHE_TTL_SECONDS,
+	TEST_CACHE_INDEX_KEY,
+	areEquivalentFreeResponseAnswers,
+	externalNewMathSyncCacheKey,
+	testCacheKey,
+} from "./common";
 import { getAttemptResults } from "./results";
 import { savePublishedTest } from "./tests";
 
@@ -126,6 +136,12 @@ export type ExternalNewMathExam = {
 	updatedAt: string;
 };
 
+type CachedExternalNewMathSync = {
+	imported: ImportedExternalExam[];
+	limit: number;
+	syncedAt: string;
+};
+
 type ListNewMathExamsResponse = {
 	listNewMathExams: ExternalNewMathExamSummary[];
 };
@@ -218,22 +234,6 @@ const buildExternalQuestionMap = (externalExam: ExternalNewMathExam) =>
 	new Map(
 		externalExam.questions.map((question) => [question.id, question] as const),
 	);
-
-const getExternalCorrectOptionId = (
-	question?: ExternalNewMathExamQuestion,
-) => {
-	if (!question || question.type !== "MCQ") {
-		return "";
-	}
-
-	const correctIndex =
-		typeof question.correctOption === "number" ? question.correctOption : null;
-	if (correctIndex == null || correctIndex < 0) {
-		return "";
-	}
-
-	return `${question.id}-option-${correctIndex}`;
-};
 
 const getExternalCorrectAnswerText = (
 	question?: ExternalNewMathExamQuestion,
@@ -496,19 +496,16 @@ export const buildCreateExamServiceResult = async (
 			};
 		}
 
-		const studentAnswer = normalizeFreeResponseAnswer(row.selectedOptionId);
-		const expectedAnswer = normalizeFreeResponseAnswer(
-			externalQuestion?.answerLatex ?? null,
+		const expectedAnswer = getExternalCorrectAnswerText(externalQuestion) ?? "";
+		const isCorrect = areEquivalentFreeResponseAnswers(
+			row.selectedOptionId,
+			expectedAnswer,
 		);
-		const isCorrect =
-			studentAnswer !== "" &&
-			expectedAnswer !== "" &&
-			studentAnswer === expectedAnswer;
 
 		return {
 			answerChangeCount: row.answerChangeCount ?? 0,
 			competency: row.competency,
-			correctOptionId: "",
+			correctOptionId: expectedAnswer,
 			dwellMs: row.dwellMs ?? 0,
 			explanation:
 				getExternalExplanation(externalQuestion) ||
@@ -598,11 +595,88 @@ export const importExternalNewMathExam = async (
 	};
 };
 
+const archiveMissingExternalNewMathExams = async (
+	db: DbClient,
+	kv?: KVNamespace,
+) => {
+	const publishedExternalTests = await db.query.tests.findMany({
+		where: and(
+			eq(schema.tests.status, "published"),
+			eq(schema.tests.answerKeySource, "teacher_service"),
+			eq(schema.tests.sourceService, "create-exam-service"),
+		),
+		columns: {
+			id: true,
+			generatorTestId: true,
+		},
+	});
+
+	if (publishedExternalTests.length === 0) {
+		return [];
+	}
+
+	const missingIds = (
+		await Promise.all(
+			publishedExternalTests.map(async (test) => {
+				try {
+					await getExternalNewMathExam(test.generatorTestId);
+					return null;
+				} catch (error) {
+					if (
+						error instanceof Error &&
+						error.message === "External exam олдсонгүй."
+					) {
+						return test.id;
+					}
+
+					console.warn(
+						`Failed to verify external exam "${test.id}" while syncing available tests:`,
+						error,
+					);
+					return null;
+				}
+			}),
+		)
+	).filter((testId): testId is string => Boolean(testId));
+
+	if (missingIds.length === 0) {
+		return [];
+	}
+
+	await db
+		.update(schema.tests)
+		.set({
+			status: "archived",
+			updatedAt: sql`CURRENT_TIMESTAMP`,
+		})
+		.where(inArray(schema.tests.id, missingIds));
+
+	await Promise.all([
+		deleteJsonFromKv(kv, AVAILABLE_TESTS_CACHE_KEY),
+		deleteJsonFromKv(kv, TEST_CACHE_INDEX_KEY),
+		...missingIds.map((testId) => deleteJsonFromKv(kv, testCacheKey(testId))),
+	]);
+
+	return missingIds;
+};
+
 export const syncExternalNewMathExams = async (
 	db: DbClient,
 	kv?: KVNamespace,
 	limit = 20,
+	options?: { force?: boolean },
 ) => {
+	const syncCacheKey = externalNewMathSyncCacheKey(limit);
+	if (!options?.force) {
+		const cachedSync = await readJsonFromKv<CachedExternalNewMathSync>(
+			kv,
+			syncCacheKey,
+		);
+		if (cachedSync?.imported) {
+			return cachedSync.imported;
+		}
+	}
+
 	const exams = await listExternalNewMathExams(limit);
 	const imported: ImportedExternalExam[] = [];
 
@@ -613,6 +687,19 @@ export const syncExternalNewMathExams = async (
 			console.error(`Failed to sync external exam "${exam.examId}":`, error);
 		}
 	}
+
+	await archiveMissingExternalNewMathExams(db, kv);
+
+	await writeJsonToKv(
+		kv,
+		syncCacheKey,
+		{
+			imported,
+			limit,
+			syncedAt: new Date().toISOString(),
+		} satisfies CachedExternalNewMathSync,
+		EXTERNAL_NEW_MATH_SYNC_CACHE_TTL_SECONDS,
+	);
 
 	return imported;
 };

@@ -3,6 +3,7 @@ import type { ExamAnswerInput, ExamTest } from "@/lib/exam-service/types";
 import { DbClient } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import {
+	AVAILABLE_TESTS_CACHE_KEY,
 	ATTEMPT_CACHE_TTL_SECONDS,
 	TEST_CACHE_INDEX_KEY,
 	TEST_CACHE_TTL_SECONDS,
@@ -71,6 +72,8 @@ export const syncPublishedTestCache = async (
 		title: test.title,
 		description: test.description,
 		criteria: test.criteria,
+		answerKeySource: test.answerKeySource ?? "local",
+		sourceService: test.sourceService ?? null,
 		timeLimitMinutes: test.timeLimitMinutes,
 		updatedAt,
 	};
@@ -81,6 +84,7 @@ export const syncPublishedTestCache = async (
 	].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
 	await writeJsonToKv(kv, TEST_CACHE_INDEX_KEY, nextIndex, TEST_CACHE_TTL_SECONDS);
+	await deleteJsonFromKv(kv, AVAILABLE_TESTS_CACHE_KEY);
 };
 
 export const readCachedTest = async (

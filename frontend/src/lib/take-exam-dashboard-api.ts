@@ -2,6 +2,271 @@ import type { DashboardApiPayload } from "@/app/test/live-dashboard/lib/dashboar
 import { getTakeExamGraphqlUrl } from "@/lib/take-exam-graphql";
 
 const DASHBOARD_QUERY = `
+query FrontendDashboard($limit: Int!, $forceRefresh: Boolean) {
+  availableTests(forceRefresh: $forceRefresh) {
+    id
+    title
+    description
+    updatedAt
+    criteria {
+      className
+      difficulty
+      gradeLevel
+      questionCount
+      subject
+      topic
+    }
+  }
+  attempts(forceRefresh: $forceRefresh) {
+    attemptId
+    testId
+    title
+    studentId
+    studentName
+    status
+    answerKeySource
+    score
+    maxScore
+    percentage
+    startedAt
+    submittedAt
+    monitoring {
+      totalEvents
+      warningCount
+      dangerCount
+      lastEventAt
+      recentEvents {
+        id
+        code
+        severity
+        title
+        detail
+        occurredAt
+        mode
+        screenshotCapturedAt
+        screenshotStorageKey
+        screenshotUrl
+      }
+    }
+    result {
+      score
+      maxScore
+      percentage
+      correctCount
+      incorrectCount
+      unansweredCount
+      questionResults {
+        questionId
+        prompt
+        competency
+        questionType
+        selectedOptionId
+        correctOptionId
+        isCorrect
+        pointsAwarded
+        maxPoints
+        explanation
+        explanationSource
+        dwellMs
+        answerChangeCount
+      }
+    }
+    answerReview {
+      questionId
+      prompt
+      competency
+      questionType
+      selectedOptionId
+      selectedAnswerText
+      correctAnswerText
+      points
+      responseGuide
+      dwellMs
+      answerChangeCount
+    }
+    feedback {
+      headline
+      summary
+      strengths
+      improvements
+      source
+    }
+  }
+  liveMonitoringFeed(limit: $limit) {
+    attemptId
+    testId
+    title
+    studentId
+    studentName
+    status
+    startedAt
+    submittedAt
+    monitoring {
+      totalEvents
+      warningCount
+      dangerCount
+      lastEventAt
+    }
+    latestEvent {
+      id
+      code
+      severity
+      title
+      detail
+      occurredAt
+      mode
+      screenshotCapturedAt
+      screenshotStorageKey
+      screenshotUrl
+    }
+  }
+}
+`.trim();
+
+const DASHBOARD_WITH_MATERIAL_QUERY = `
+query FrontendDashboardWithMaterial($limit: Int!, $testId: String!, $forceRefresh: Boolean) {
+  availableTests(forceRefresh: $forceRefresh) {
+    id
+    title
+    description
+    updatedAt
+    criteria {
+      className
+      difficulty
+      gradeLevel
+      questionCount
+      subject
+      topic
+    }
+  }
+  attempts(forceRefresh: $forceRefresh) {
+    attemptId
+    testId
+    title
+    studentId
+    studentName
+    status
+    answerKeySource
+    score
+    maxScore
+    percentage
+    startedAt
+    submittedAt
+    monitoring {
+      totalEvents
+      warningCount
+      dangerCount
+      lastEventAt
+      recentEvents {
+        id
+        code
+        severity
+        title
+        detail
+        occurredAt
+        mode
+        screenshotCapturedAt
+        screenshotStorageKey
+        screenshotUrl
+      }
+    }
+    result {
+      score
+      maxScore
+      percentage
+      correctCount
+      incorrectCount
+      unansweredCount
+      questionResults {
+        questionId
+        prompt
+        competency
+        questionType
+        selectedOptionId
+        correctOptionId
+        isCorrect
+        pointsAwarded
+        maxPoints
+        explanation
+        explanationSource
+        dwellMs
+        answerChangeCount
+      }
+    }
+    answerReview {
+      questionId
+      prompt
+      competency
+      questionType
+      selectedOptionId
+      selectedAnswerText
+      correctAnswerText
+      points
+      responseGuide
+      dwellMs
+      answerChangeCount
+    }
+    feedback {
+      headline
+      summary
+      strengths
+      improvements
+      source
+    }
+  }
+  liveMonitoringFeed(limit: $limit) {
+    attemptId
+    testId
+    title
+    studentId
+    studentName
+    status
+    startedAt
+    submittedAt
+    monitoring {
+      totalEvents
+      warningCount
+      dangerCount
+      lastEventAt
+    }
+    latestEvent {
+      id
+      code
+      severity
+      title
+      detail
+      occurredAt
+      mode
+      screenshotCapturedAt
+      screenshotStorageKey
+      screenshotUrl
+    }
+  }
+  testMaterial(testId: $testId, forceRefresh: $forceRefresh) {
+    testId
+    title
+    questions {
+      questionId
+      prompt
+      type
+      points
+      competency
+      imageUrl
+      audioUrl
+      videoUrl
+      correctOptionId
+      responseGuide
+      answerLatex
+      options {
+        id
+        text
+      }
+    }
+  }
+}
+`.trim();
+
+const LEGACY_DASHBOARD_QUERY = `
 query FrontendDashboard($limit: Int!) {
   availableTests {
     id
@@ -123,7 +388,7 @@ query FrontendDashboard($limit: Int!) {
 }
 `.trim();
 
-const DASHBOARD_WITH_MATERIAL_QUERY = `
+const LEGACY_DASHBOARD_WITH_MATERIAL_QUERY = `
 query FrontendDashboardWithMaterial($limit: Int!, $testId: String!) {
   availableTests {
     id
@@ -251,9 +516,6 @@ query FrontendDashboardWithMaterial($limit: Int!, $testId: String!) {
       type
       points
       competency
-      imageUrl
-      audioUrl
-      videoUrl
       responseGuide
       options {
         id
@@ -276,6 +538,27 @@ const hasMissingFieldError = (
   payload.errors?.some((error) =>
     error.message?.includes(`Cannot query field "${fieldName}"`),
   ) ?? false;
+
+const hasUnknownArgumentError = (
+  payload: { errors?: Array<{ message?: string }> },
+  argumentName: string,
+) =>
+  payload.errors?.some((error) =>
+    error.message?.includes(`Unknown argument "${argumentName}"`),
+  ) ?? false;
+
+const shouldRetryWithLegacyDashboard = (
+  payload: { errors?: Array<{ message?: string }> } | null,
+) =>
+  Boolean(
+    payload &&
+      (
+        hasMissingFieldError(payload, "answerLatex") ||
+        hasMissingFieldError(payload, "correctOptionId") ||
+        hasMissingFieldError(payload, "testMaterial") ||
+        hasUnknownArgumentError(payload, "forceRefresh")
+      ),
+  );
 
 const buildProgress = (attempt: Record<string, any>, questionCount: number) => {
   const answeredQuestionsFromResult =
@@ -350,34 +633,61 @@ export const fetchTakeExamDashboard = async (
   limit: number,
   testId?: string | null,
   graphqlUrl?: string,
+  {
+    forceRefresh = false,
+  }: {
+    forceRefresh?: boolean;
+  } = {},
 ): Promise<DashboardApiPayload> => {
   let { payload, response } = await fetchGraphqlPayload<any>(
     testId ? DASHBOARD_WITH_MATERIAL_QUERY : DASHBOARD_QUERY,
-    testId ? { limit, testId } : { limit },
+    testId ? { forceRefresh, limit, testId } : { forceRefresh, limit },
     graphqlUrl,
   );
 
-  if (
-    testId &&
-    response.ok &&
-    payload &&
-    hasMissingFieldError(payload, "testMaterial")
-  ) {
-    const fallback = await fetchGraphqlPayload<any>(
-      DASHBOARD_QUERY,
-      { limit },
-      graphqlUrl,
-    );
-    response = fallback.response;
-    payload = fallback.payload?.data
-      ? {
-          ...fallback.payload,
-          data: {
-            ...fallback.payload.data,
-            testMaterial: null,
-          },
-        }
-      : fallback.payload;
+  if (response.ok && shouldRetryWithLegacyDashboard(payload)) {
+    if (testId) {
+      const fallback = await fetchGraphqlPayload<any>(
+        LEGACY_DASHBOARD_WITH_MATERIAL_QUERY,
+        { limit, testId },
+        graphqlUrl,
+      );
+
+      response = fallback.response;
+      payload = fallback.payload;
+
+      if (
+        response.ok &&
+        payload &&
+        hasMissingFieldError(payload, "testMaterial")
+      ) {
+        const materiallessFallback = await fetchGraphqlPayload<any>(
+          LEGACY_DASHBOARD_QUERY,
+          { limit },
+          graphqlUrl,
+        );
+
+        response = materiallessFallback.response;
+        payload = materiallessFallback.payload?.data
+          ? {
+              ...materiallessFallback.payload,
+              data: {
+                ...materiallessFallback.payload.data,
+                testMaterial: null,
+              },
+            }
+          : materiallessFallback.payload;
+      }
+    } else {
+      const fallback = await fetchGraphqlPayload<any>(
+        LEGACY_DASHBOARD_QUERY,
+        { limit },
+        graphqlUrl,
+      );
+
+      response = fallback.response;
+      payload = fallback.payload;
+    }
   }
 
   if (!response.ok || payload?.errors?.length || !payload?.data) {
