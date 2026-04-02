@@ -14,6 +14,10 @@ import {
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -29,46 +33,24 @@ import {
   GetExamVariantJobDocument,
   GetNewMathExamDocument,
   SaveNewMathExamDocument,
+  SaveExamVariantsDocument,
+  RequestExamVariantsDocument,
 } from "@/gql/create-exam-documents";
-import {
-  MathExamQuestionType,
-  type SaveNewMathExamInput,
-  type SaveNewMathExamPayload,
-} from "@/gql/graphql";
-import { Button } from "@/components/ui/button";
+import { MathExamQuestionType } from "@/gql/graphql";
 import { TestShell } from "../../_components/test-shell";
 import type { BreadcrumbItem } from "../../_components/test-header-bar";
 import {
   GeneralInfoSection,
-  type MaterialBuilderExamType,
-  type MaterialBuilderGeneralInfo,
+  type GeneralInfoValues,
 } from "./general-info-section";
 import {
-  ImportSection,
-  type ImportedTextbookCard,
-} from "./import-section";
+  MaterialBuilderWorkspaceSection,
+  type PreviewQuestion,
+} from "./material-builder-workspace-section";
 import {
   sharedLibraryMaterials,
   type MaterialSourceId,
 } from "./material-builder-config";
-import { QuestionBankSection } from "./question-bank-section";
-import { SharedLibrarySection } from "./shared-library-section";
-import { SourceSelector } from "./source-selector";
-import { TextbookLibrarySection } from "./textbook-library-section";
-import {
-  TextbookSection,
-  type TextbookGeneratedState,
-} from "./textbook-section";
-import type {
-  TextbookMaterial,
-  TextbookUploadedAsset,
-} from "@/features/textbook-processing/types";
-import { buildUploadedAssetFromMaterial } from "@/features/textbook-processing/material-asset";
-import {
-  loadPersistedImportedTextbookCards,
-  persistImportedTextbookCards,
-} from "@/features/textbook-processing/persisted-material-cache";
-import { useTextbookMaterialLibrary } from "@/features/textbook-processing/use-textbook-material-library";
 
 type GeneratedVariant = {
   id: string;
@@ -120,86 +102,114 @@ const defaultGeneralInfo: GeneralInfoValues = {
   grade: "",
   examType: "",
   examName: "",
-  examType: "progress",
-  grade: 10,
+  durationMinutes: "",
+};
+const demoGeneralInfo: GeneralInfoValues = {
   subject: "math",
+  grade: "9",
+  examType: "progress",
+  examName: "Алгебр явцын шалгалт",
+  durationMinutes: "30",
 };
 
-function stripChoicePrefix(value: string) {
-  return String(value || "")
-    .replace(/^(?:[A-D]|[АБВГ]|[1-4])(?:\s*[\).:\-–]|\s+)\s*/iu, "")
-    .trim();
-}
+function normalizeVariantQuestions(
+  questions: GeneratedVariant["questions"],
+): GeneratedVariant["questions"] {
+  function normalizeVariantText(value?: string | null) {
+    if (value == null) return value ?? null;
 
-function toSessionExamType(value: MaterialBuilderExamType) {
-  switch (value) {
-    case "midterm":
-      return "term";
-    case "final":
-      return "year_final";
-    default:
-      return value;
-  }
-}
-
-function getDifficultySummary(state: TextbookGeneratedState) {
-  const activeEntries = Object.entries(
-    state.generatedTest.difficultyCountsApplied,
-  ).filter(([, count]) => Number(count) > 0);
-
-  if (activeEntries.length !== 1) {
-    return "mixed";
+    return normalizeBackendMathText(
+      value.replace(/\\\{/g, "{").replace(/\\\}/g, "}"),
+    );
   }
 
-  return activeEntries[0]?.[0] || "mixed";
+  return questions.map((question, index) => ({
+    ...question,
+    position: index + 1,
+    prompt: normalizeVariantText(question.prompt) ?? "",
+    options: (question.options ?? []).map(
+      (option) => normalizeVariantText(option) ?? "",
+    ),
+    correctAnswer: normalizeVariantText(question.correctAnswer),
+    explanation: normalizeVariantText(question.explanation),
+  }));
 }
 
-function getCorrectOptionIndex(correctAnswer: string, optionCount: number) {
-  const normalized = String(correctAnswer || "").trim().toUpperCase();
-  const index = ["A", "B", "C", "D"].indexOf(normalized);
-
-  return index >= 0 && index < optionCount ? index : undefined;
+function getDisplayVariantTitle(variant: GeneratedVariant) {
+  return `Хувилбар ${variant.variantNumber}`;
 }
 
-function normalizePoints(value: number) {
-  const parsed = Math.trunc(Number(value) || 0);
-  return parsed >= 1 ? parsed : 1;
+function normalizeBuilderSubject(value?: string | null) {
+  const normalized = value?.trim().toLowerCase() ?? "";
+
+  if (!normalized) return "";
+  if (normalized === "math" || normalized.includes("мат")) return "math";
+  if (normalized === "physics" || normalized.includes("физ")) return "physics";
+  if (normalized === "chemistry" || normalized.includes("хим"))
+    return "chemistry";
+
+  return "";
 }
 
-function buildResponseGuide(answer: string, sourceExcerpt: string) {
-  const parts = [
-    sourceExcerpt.trim() ? `Эх сурвалж: ${sourceExcerpt.trim()}` : "",
-    answer.trim() ? `Зөв хариу: ${answer.trim()}` : "",
-  ].filter(Boolean);
+function normalizeBuilderExamType(value?: string | null) {
+  const normalized = value?.trim().toLowerCase() ?? "";
 
-  return parts.length ? parts.join("\n") : undefined;
+  if (!normalized) return "";
+  if (normalized === "progress" || normalized.includes("явц"))
+    return "progress";
+  if (normalized === "quarter" || normalized.includes("улир")) return "quarter";
+  if (normalized === "state" || normalized.includes("улс")) return "state";
+  if (normalized === "benchmark" || normalized.includes("жишиг"))
+    return "benchmark";
+  if (normalized === "unit" || normalized.includes("бүлэг")) return "unit";
+
+  return "";
 }
 
-function buildTextbookSaveInput(
-  generalInfo: MaterialBuilderGeneralInfo,
-  textbookState: TextbookGeneratedState,
-  examId: string | null,
-): SaveNewMathExamInput {
-  const mcqQuestions = textbookState.generatedTest.questions.map((question) => {
-    const options = question.choices.map((choice) => {
-      const stripped = stripChoicePrefix(choice);
-      return stripped || choice.trim();
-    });
+function mapExistingExamToGeneralInfo(exam: ExistingExam): GeneralInfoValues {
+  return {
+    subject: normalizeBuilderSubject(exam.sessionMeta?.subject),
+    grade:
+      typeof exam.sessionMeta?.grade === "number"
+        ? String(exam.sessionMeta.grade)
+        : "",
+    examType: normalizeBuilderExamType(exam.sessionMeta?.examType),
+    examName: exam.title,
+    durationMinutes:
+      typeof exam.sessionMeta?.durationMinutes === "number"
+        ? String(exam.sessionMeta.durationMinutes)
+        : "",
+  };
+}
+
+function mapExistingExamToPreviewQuestions(
+  exam: ExistingExam,
+): PreviewQuestion[] {
+  return exam.questions.map((question, index) => {
+    const normalizedType = question.type.trim().toLowerCase();
+    const isWritten = normalizedType === "math" || normalizedType === "written";
+    const answers = isWritten
+      ? [question.answerLatex?.trim() || ""]
+      : (question.options ?? []).map((option) => String(option));
 
     return {
-      type: MathExamQuestionType.Mcq,
-      prompt:
-        question.bookProblem.trim() ||
-        question.question.trim() ||
-        "Сонголтот асуулт",
-      points: normalizePoints(question.points),
-      options,
-      correctOption: getCorrectOptionIndex(
-        question.correctAnswer,
-        options.length,
-      ),
+      id: `existing-${exam.examId}-${question.id}-${index + 1}`,
+      index: index + 1,
+      question: question.prompt,
+      questionType: isWritten ? "written" : "single-choice",
+      answers,
+      correct:
+        !isWritten &&
+        typeof question.correctOption === "number" &&
+        question.correctOption >= 0
+          ? question.correctOption
+          : 0,
+      points: question.points ?? 1,
+      source: exam.title,
+      explanation: question.responseGuide ?? undefined,
     };
   });
+}
 
 function buildBaseExamInput(args: {
   examId?: string;
@@ -211,156 +221,88 @@ function buildBaseExamInput(args: {
   const mcqQuestions = args.previewQuestions.filter(
     (question) => question.questionType !== "written",
   );
-  const topics = textbookState.selectedSectionTitles.filter((title) =>
-    title.trim().length > 0,
+  const writtenQuestions = args.previewQuestions.filter(
+    (question) => question.questionType === "written",
   );
-  const r2Path = `${textbookState.uploadedAsset.bucketName}/${textbookState.uploadedAsset.key}`;
-  const pageSummary = textbookState.generatedTest.sourcePages.length
-    ? `pages: ${textbookState.generatedTest.sourcePages.join(", ")}`
-    : "";
-  const sourceContext = [
-    textbookState.bookTitle.trim(),
-    textbookState.fileName.trim(),
-    `r2: ${r2Path}`,
-    pageSummary,
-  ]
-    .filter(Boolean)
-    .join(" | ");
 
   return {
-    examId: examId || undefined,
-    title:
-      generalInfo.examName.trim() || `${textbookState.bookTitle.trim()} шалгалт`,
+    examId: args.examId,
+    title: args.generalInfo.examName.trim(),
     mcqCount: mcqQuestions.length,
-    mathCount: mathQuestions.length,
-    totalPoints,
-    generator: {
-      difficulty: getDifficultySummary(textbookState),
-      topics: topics.join(", ") || undefined,
-      sourceContext: sourceContext || undefined,
-    },
+    mathCount: writtenQuestions.length,
+    totalPoints: args.previewQuestions.length,
     sessionMeta: {
-      grade: generalInfo.grade,
-      examType: toSessionExamType(generalInfo.examType),
-      subject: generalInfo.subject,
-      topics: topics.length ? topics : undefined,
-      durationMinutes: generalInfo.durationMinutes,
-      description: `R2 asset: ${r2Path}`,
+      grade: Number(args.generalInfo.grade),
+      examType: args.generalInfo.examType,
+      subject: args.generalInfo.subject,
+      durationMinutes: Number(args.generalInfo.durationMinutes),
+      withVariants: args.hasGeneratedVariants,
+      variantCount: args.hasGeneratedVariants ? args.generatedVariantsCount : 0,
     },
-    questions,
+    questions: args.previewQuestions.map((question) => ({
+      type:
+        question.questionType === "written"
+          ? MathExamQuestionType.Math
+          : MathExamQuestionType.Mcq,
+      prompt: question.question,
+      points: question.points,
+      options:
+        question.questionType === "written" ? undefined : question.answers,
+      correctOption:
+        question.questionType === "written" ? undefined : question.correct,
+      answerLatex:
+        question.questionType === "written"
+          ? (question.answers[0] ?? "").trim() || undefined
+          : undefined,
+      responseGuide:
+        question.questionType === "written"
+          ? question.explanation?.trim() || undefined
+          : undefined,
+    })),
   };
 }
 
-function syncImportedTextbookCard(
-  current: ImportedTextbookCard,
-  next: {
-    material: TextbookMaterial | null;
-    uploadedAsset: TextbookUploadedAsset | null;
-  },
+function getCorrectOptionIndex(
+  question: GeneratedVariant["questions"][number],
 ) {
-  const { material, uploadedAsset } = next;
-
-  return {
-    ...current,
-    title: material?.title?.trim() || current.title,
-    fileName: material?.fileName || uploadedAsset?.fileName || current.fileName,
-    materialId: material?.id || current.materialId || null,
-    materialStage: material?.stage || current.materialStage || null,
-    materialStatus: material?.status || current.materialStatus || "idle",
-    pageCount: material?.pageCount ?? current.pageCount ?? 0,
-    sectionCount: material?.sectionCount ?? current.sectionCount ?? 0,
-    subchapterCount: material?.subchapterCount ?? current.subchapterCount ?? 0,
-    errorMessage: material?.errorMessage ?? null,
-    uploadedAsset: uploadedAsset || current.uploadedAsset || null,
-  } satisfies ImportedTextbookCard;
-}
-
-function hasImportedTextbookCardChanged(
-  current: ImportedTextbookCard,
-  next: ImportedTextbookCard,
-) {
-  return (
-    current.title !== next.title ||
-    current.fileName !== next.fileName ||
-    current.materialId !== next.materialId ||
-    current.materialStage !== next.materialStage ||
-    current.materialStatus !== next.materialStatus ||
-    current.pageCount !== next.pageCount ||
-    current.sectionCount !== next.sectionCount ||
-    current.subchapterCount !== next.subchapterCount ||
-    current.errorMessage !== next.errorMessage ||
-    current.uploadedAsset?.bucketName !== next.uploadedAsset?.bucketName ||
-    current.uploadedAsset?.key !== next.uploadedAsset?.key ||
-    current.uploadedAsset?.fileName !== next.uploadedAsset?.fileName ||
-    current.uploadedAsset?.size !== next.uploadedAsset?.size ||
-    current.uploadedAsset?.uploadedAt !== next.uploadedAsset?.uploadedAt ||
-    current.uploadedAsset?.contentType !== next.uploadedAsset?.contentType
+  const correctAnswer = (question.correctAnswer ?? "").trim();
+  if (!correctAnswer) return -1;
+  return (question.options ?? []).findIndex(
+    (option) => option.trim() === correctAnswer,
   );
 }
 
-function createLibraryTextbookCard(material: TextbookMaterial): ImportedTextbookCard {
+function buildVariantMutationInput(
+  variant: GeneratedVariant,
+  generalInfo: GeneralInfoValues,
+) {
   return {
-    createdAt: material.createdAt,
-    errorMessage: material.errorMessage ?? null,
-    file: null,
-    fileName: material.fileName,
-    id: material.id,
-    materialId: material.id,
-    materialStage: material.stage,
-    materialStatus: material.status,
-    pageCount: material.pageCount,
-    sectionCount: material.sectionCount,
-    subchapterCount: material.subchapterCount,
-    title:
-      material.title?.trim() || material.fileName.replace(/\.pdf$/i, "") || material.fileName,
-    uploadedAsset: buildUploadedAssetFromMaterial(material),
+    variantId: variant.id,
+    examId: undefined,
+    title: `${generalInfo.examName || "Шалгалт"} · ${variant.title}`,
+    grade: Number(generalInfo.grade) || undefined,
+    examType: generalInfo.examType || undefined,
+    subject: generalInfo.subject || undefined,
+    durationMinutes: Number(generalInfo.durationMinutes) || undefined,
+    questions: variant.questions.map((question) => ({
+      order: question.position,
+      prompt: question.prompt,
+      type: question.type,
+      options: question.options ?? [],
+      correctAnswer: question.correctAnswer ?? null,
+      explanation: question.explanation ?? null,
+    })),
   };
-}
-
-function importedTextbookMatchesMaterial(
-  item: ImportedTextbookCard,
-  material: TextbookMaterial,
-) {
-  return (
-    item.materialId === material.id ||
-    (item.uploadedAsset?.bucketName === material.bucketName &&
-      item.uploadedAsset?.key === material.r2Key)
-  );
-}
-
-function mergeTextbookLibraryItems(
-  importedTextbooks: ImportedTextbookCard[],
-  materials: TextbookMaterial[],
-) {
-  const matchedSessionIds = new Set<string>();
-  const persistedItems = materials.map((material) => {
-    const matchingSessionItem =
-      importedTextbooks.find((item) => importedTextbookMatchesMaterial(item, material)) || null;
-
-    if (!matchingSessionItem) {
-      return createLibraryTextbookCard(material);
-    }
-
-    matchedSessionIds.add(matchingSessionItem.id);
-    return syncImportedTextbookCard(matchingSessionItem, {
-      material,
-      uploadedAsset: buildUploadedAssetFromMaterial(material),
-    });
-  });
-  const sessionOnlyItems = importedTextbooks.filter(
-    (item) => !matchedSessionIds.has(item.id),
-  );
-
-  return [...sessionOnlyItems, ...persistedItems].sort(
-    (left, right) =>
-      Date.parse(right.createdAt || "") - Date.parse(left.createdAt || ""),
-  );
 }
 
 export default function MaterialBuilderPageContent() {
   const searchParams = useSearchParams();
   const editingExamId = searchParams.get("examId")?.trim() ?? "";
+  const isDashboardCreateMode =
+    searchParams.get("from")?.trim() === "live-dashboard";
   const isEditingExistingExam = editingExamId.length > 0;
+  const useHeaderNavigationLayout =
+    isEditingExistingExam || isDashboardCreateMode;
   const builderTitle = isEditingExistingExam
     ? "Шалгалт үүсгэх"
     : "Шалгалтын материал үүсгэх";
@@ -370,25 +312,37 @@ export default function MaterialBuilderPageContent() {
         { href: "/test/live-dashboard", label: "Миний шалгалтууд" },
         { active: true, label: builderTitle },
       ]
+    : isDashboardCreateMode
+      ? [
+          { href: "/test/live-dashboard", label: "Нүүр" },
+          { href: "/test/live-dashboard", label: "Миний шалгалтууд" },
+          { active: true, label: "Шинэ шалгалт үүсгэх" },
+        ]
     : [
         { href: "/test/live-dashboard", label: "Нүүр" },
         { active: true, label: builderTitle },
       ];
   const [source, setSource] = useState<MaterialSourceId>("question-bank");
+  const [selectedSharedMaterialId, setSelectedSharedMaterialId] =
+    useState<string>(sharedLibraryMaterials[0]?.id ?? "");
   const [generalInfo, setGeneralInfo] =
-    useState<MaterialBuilderGeneralInfo>(DEFAULT_GENERAL_INFO);
-  const [textbookGeneratedState, setTextbookGeneratedState] =
-    useState<TextbookGeneratedState | null>(null);
-  const [selectedSharedMaterialId, setSelectedSharedMaterialId] = useState<string>(
-    sharedLibraryMaterials[0]?.id ?? "",
-  );
-  const [importedTextbooks, setImportedTextbooks] = useState<ImportedTextbookCard[]>(
+    useState<GeneralInfoValues>(defaultGeneralInfo);
+  const [variantDialogOpen, setVariantDialogOpen] = useState(false);
+  const [variantViewerOpen, setVariantViewerOpen] = useState(false);
+  const [variantCount, setVariantCount] = useState("2");
+  const [previewQuestions, setPreviewQuestions] = useState<PreviewQuestion[]>(
     [],
   );
-  const [activeImportedTextbookId, setActiveImportedTextbookId] = useState<string | null>(
+  const [variantJobId, setVariantJobId] = useState<string | null>(null);
+  const [generatedVariants, setGeneratedVariants] = useState<
+    GeneratedVariant[]
+  >([]);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
     null,
   );
-  const [selectedTextbookLibraryId, setSelectedTextbookLibraryId] = useState<string | null>(
+  const [checkedVariantIds, setCheckedVariantIds] = useState<string[]>([]);
+  const [confirmedVariantIds, setConfirmedVariantIds] = useState<string[]>([]);
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(
     null,
   );
   const [draggedConfirmedQuestion, setDraggedConfirmedQuestion] = useState<{
@@ -425,11 +379,36 @@ export default function MaterialBuilderPageContent() {
     fetchPolicy: "no-cache",
   });
 
-  const activeImportedTextbook =
-    importedTextbooks.find((item) => item.id === activeImportedTextbookId) || null;
-  const textbookLibraryItems = useMemo(
-    () => mergeTextbookLibraryItems(importedTextbooks, persistedTextbookMaterials),
-    [importedTextbooks, persistedTextbookMaterials],
+  const canGenerateVariants = useMemo(
+    () => previewQuestions.length > 0 && Number(variantCount) > 0,
+    [previewQuestions.length, variantCount],
+  );
+  const selectedVariant = useMemo(
+    () =>
+      generatedVariants.find((variant) => variant.id === selectedVariantId) ??
+      null,
+    [generatedVariants, selectedVariantId],
+  );
+  const isGeneratingVariants = requestingVariants || Boolean(variantJobId);
+  const isPersistingVariant =
+    confirmingVariants || savingExam || savingVariantAsExam;
+  const hasGeneratedVariants = generatedVariants.length > 0;
+  const confirmedVariants = useMemo(
+    () =>
+      generatedVariants.filter(
+        (variant) =>
+          variant.status === "confirmed" ||
+          confirmedVariantIds.includes(variant.id),
+      ),
+    [confirmedVariantIds, generatedVariants],
+  );
+  const shouldShowVariantViewerButton = hasGeneratedVariants;
+  const checkedVariants = useMemo(
+    () =>
+      generatedVariants.filter((variant) =>
+        checkedVariantIds.includes(variant.id),
+      ),
+    [checkedVariantIds, generatedVariants],
   );
   const resolvedVariantCount =
     confirmedVariants.length > 0
@@ -526,29 +505,72 @@ export default function MaterialBuilderPageContent() {
   }, [editingExamId, fetchExistingExam, isEditingExistingExam]);
 
   useEffect(() => {
-    setSavedExamId(null);
-  }, [textbookGeneratedState?.generatedTest]);
+    if (!variantJobId) return;
 
-  useEffect(() => {
-    const restored = loadPersistedImportedTextbookCards().map((item) => ({
-      ...item,
-      file: null,
-    }));
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    if (restored.length > 0) {
-      setImportedTextbooks((current) => {
-        if (current.length > 0) {
-          return current;
-        }
-        return restored;
+    const poll = async () => {
+      const result = await fetchVariantJob({
+        variables: { jobId: variantJobId },
       });
-    }
+      const job = (
+        result.data as
+          | {
+              getExamVariantJob?: {
+                status?: string;
+                errorMessage?: string | null;
+                variants?: GeneratedVariant[] | null;
+              } | null;
+            }
+          | undefined
+      )?.getExamVariantJob;
 
-    setHasHydratedImportedTextbooks(true);
-  }, []);
+      if (!job || cancelled) return;
 
-  useEffect(() => {
-    if (!hasHydratedImportedTextbooks) {
+      if (job.status === "completed") {
+        const nextVariants = (job.variants ?? []).map((variant) => ({
+          ...variant,
+          questions: normalizeVariantQuestions(variant.questions),
+        }));
+        setGeneratedVariants(nextVariants);
+        setSelectedVariantId(nextVariants[0]?.id ?? null);
+        setCheckedVariantIds([]);
+        setVariantJobId(null);
+        if (variantToastIdRef.current) {
+          toast.dismiss(variantToastIdRef.current);
+          variantToastIdRef.current = null;
+        }
+        toast.success("AI хувилбарууд бэлэн боллоо.");
+        return;
+      }
+
+      if (job.status === "failed") {
+        setVariantJobId(null);
+        if (variantToastIdRef.current) {
+          toast.dismiss(variantToastIdRef.current);
+          variantToastIdRef.current = null;
+        }
+        toast.error(job.errorMessage || "AI хувилбар үүсгэхэд алдаа гарлаа.");
+        return;
+      }
+
+      timer = setTimeout(() => {
+        void poll();
+      }, 2000);
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [fetchVariantJob, variantJobId]);
+
+  async function handleRequestVariants() {
+    if (!canGenerateVariants) {
+      toast.error("Эхлээд шалгалтын асуултуудаа бүрдүүлнэ үү.");
       return;
     }
 
@@ -573,122 +595,431 @@ export default function MaterialBuilderPageContent() {
           },
         });
 
-  async function handleSave() {
-    if (source !== "textbook" && source !== "import") {
-      toast.error("Одоогоор зөвхөн `Сурах бичиг` болон `Импорт` хэсгийн хадгалалт холбогдсон.");
-      return;
-    }
+        baseExamId =
+          (
+            saveResult.data as
+              | {
+                  saveNewMathExam?: {
+                    examId?: string | null;
+                  } | null;
+                }
+              | undefined
+          )?.saveNewMathExam?.examId ?? null;
 
-    if (!textbookGeneratedState) {
-      toast.error("Эхлээд `Шалгалт үүсгэх` дээр дарж тестээ бэлдэнэ үү.");
-      return;
-    }
+        if (!baseExamId) {
+          throw new Error(
+            "AI хувилбар үүсгэхийн өмнө үндсэн шалгалтыг хадгалж чадсангүй.",
+          );
+        }
 
-    setIsSaving(true);
+        setSavedExamId(baseExamId);
+      }
 
-    try {
-      const input = buildTextbookSaveInput(
-        generalInfo,
-        textbookGeneratedState,
-        savedExamId,
+      const result = await requestExamVariants({
+        variables: {
+          input: {
+            examId: baseExamId,
+            variantCount: Number(variantCount),
+            questions: previewQuestions.map((question) => ({
+              order: question.index,
+              prompt: question.question,
+              type: question.questionType,
+              options:
+                question.questionType === "written" ? [] : question.answers,
+              correctAnswer:
+                question.questionType === "written"
+                  ? (question.answers[0] ?? null)
+                  : (question.answers[question.correct] ?? null),
+              explanation:
+                question.questionType === "written"
+                  ? (question.explanation ?? null)
+                  : null,
+            })),
+          },
+        },
+      });
+
+      const payload = (
+        result.data as
+          | {
+              requestExamVariants?: {
+                success?: boolean;
+                message?: string;
+                jobId?: string | null;
+              };
+            }
+          | undefined
+      )?.requestExamVariants;
+
+      if (!payload?.success || !payload.jobId) {
+        toast.error(
+          payload?.message || "AI хувилбар үүсгэх хүсэлт амжилтгүй боллоо.",
+        );
+        return;
+      }
+
+      setVariantJobId(payload.jobId);
+      setGeneratedVariants([]);
+      setSelectedVariantId(null);
+      setCheckedVariantIds([]);
+      setConfirmedVariantIds([]);
+      setVariantDialogOpen(false);
+      variantToastIdRef.current = toast.loading(
+        "AI хувилбар боловсруулж байна...",
+        {
+          description: "Тоон утга, хариултуудыг шинэчилж байна.",
+        },
       );
-      const result = await saveNewMathExamMutation({
-        variables: { input },
-      });
-
-      if (result.error) {
-        throw new Error(result.error.message);
-      }
-
-      const data = result.data as
-        | { saveNewMathExam?: SaveNewMathExamPayload }
-        | undefined;
-      const examId = data?.saveNewMathExam?.examId;
-      if (!examId) {
-        throw new Error("Хадгалалтын хариунаас examId ирсэнгүй.");
-      }
-
-      setSavedExamId(examId);
-      toast.success("Шалгалтыг амжилттай хадгаллаа.");
-
-      await apolloClient.refetchQueries({
-        include: [ListNewMathExamsDocument],
-      });
     } catch (error) {
+      if (variantToastIdRef.current) {
+        toast.dismiss(variantToastIdRef.current);
+        variantToastIdRef.current = null;
+      }
       toast.error(
         error instanceof Error
           ? error.message
-          : "Шалгалтыг хадгалах үед алдаа гарлаа.",
+          : "AI хувилбар үүсгэх хүсэлт амжилтгүй боллоо.",
       );
-    } finally {
-      setIsSaving(false);
     }
   }
 
-  function handleTextbookPicked(file: File) {
-    const nextCard: ImportedTextbookCard = {
-      id:
-        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      file,
-      fileName: file.name,
-      title: file.name.replace(/\.pdf$/i, "").trim() || file.name,
-      createdAt: new Date().toISOString(),
-      materialId: null,
-      materialStage: null,
-      materialStatus: "idle",
-      pageCount: 0,
-      sectionCount: 0,
-      subchapterCount: 0,
-      uploadedAsset: null,
-    };
-
-    setImportedTextbooks((current) => [nextCard, ...current].slice(0, 8));
-    setActiveImportedTextbookId(nextCard.id);
-    setQueuedImportedTextbookId(nextCard.id);
-    toast.success("Ном нэмэгдлээ. Доор progress-тай боловсруулалт эхэлнэ.");
+  function handleGeneralInfoDemo() {
+    setGeneralInfo(demoGeneralInfo);
   }
 
-  function handleOpenImportedTextbook(importId: string) {
-    setActiveImportedTextbookId(importId);
-    setQueuedImportedTextbookId(importId);
+  function handleGeneralInfoReset() {
+    setGeneralInfo(defaultGeneralInfo);
   }
 
-  function handleImportedTextbookMaterialStateChange(next: {
-    importId: string;
-    material: TextbookMaterial | null;
-    uploadedAsset: TextbookUploadedAsset | null;
-  }) {
-    setImportedTextbooks((current) => {
-      let hasChanges = false;
-
-      const updated = current.map((item) => {
-        if (item.id !== next.importId) {
-          return item;
-        }
-
-        const synced = syncImportedTextbookCard(item, next);
-        if (hasImportedTextbookCardChanged(item, synced)) {
-          hasChanges = true;
-          return synced;
-        }
-
-        return item;
-      });
-
-      return hasChanges ? updated : current;
-    });
+  function updateVariantQuestion(
+    variantId: string,
+    questionId: string,
+    updater: (
+      question: GeneratedVariant["questions"][number],
+    ) => GeneratedVariant["questions"][number],
+  ) {
+    setGeneratedVariants((prev) =>
+      prev.map((variant) =>
+        variant.id !== variantId
+          ? variant
+          : {
+              ...variant,
+              questions: normalizeVariantQuestions(
+                variant.questions.map((question) =>
+                  question.id === questionId ? updater(question) : question,
+                ),
+              ),
+            },
+      ),
+    );
   }
 
-  function handleTextbookLibrarySelect(importId: string) {
-    const selected = textbookLibraryItems.find((item) => item.id === importId);
-    if (!selected) {
+  function deleteVariantQuestion(variantId: string, questionId: string) {
+    setGeneratedVariants((prev) =>
+      prev.map((variant) =>
+        variant.id !== variantId
+          ? variant
+          : {
+              ...variant,
+              questions: normalizeVariantQuestions(
+                variant.questions.filter(
+                  (question) => question.id !== questionId,
+                ),
+              ),
+            },
+      ),
+    );
+  }
+
+  function reorderVariantQuestions(
+    variantId: string,
+    questions: GeneratedVariant["questions"],
+  ) {
+    setGeneratedVariants((prev) =>
+      prev.map((variant) =>
+        variant.id === variantId
+          ? {
+              ...variant,
+              questions: normalizeVariantQuestions(questions),
+            }
+          : variant,
+      ),
+    );
+  }
+
+  function moveConfirmedVariantQuestion(
+    variantId: string,
+    questionId: string,
+    direction: "up" | "down",
+  ) {
+    const variant = generatedVariants.find((item) => item.id === variantId);
+    if (!variant) return;
+
+    const currentIndex = variant.questions.findIndex(
+      (question) => question.id === questionId,
+    );
+    if (currentIndex === -1) return;
+
+    const targetIndex =
+      direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= variant.questions.length) return;
+
+    const next = [...variant.questions];
+    [next[currentIndex], next[targetIndex]] = [
+      next[targetIndex],
+      next[currentIndex],
+    ];
+    reorderVariantQuestions(variantId, next);
+  }
+
+  function deleteConfirmedVariantQuestion(
+    variantId: string,
+    questionId: string,
+  ) {
+    const variant = generatedVariants.find((item) => item.id === variantId);
+    if (!variant) return;
+
+    reorderVariantQuestions(
+      variantId,
+      variant.questions.filter((question) => question.id !== questionId),
+    );
+  }
+
+  function dropConfirmedVariantQuestion(
+    variantId: string,
+    targetQuestionId: string,
+  ) {
+    if (
+      !draggedConfirmedQuestion ||
+      draggedConfirmedQuestion.variantId !== variantId ||
+      draggedConfirmedQuestion.questionId === targetQuestionId
+    ) {
+      setDraggedConfirmedQuestion(null);
+      setDragTargetConfirmedQuestion(null);
       return;
     }
 
-    if (!selected.materialId && !selected.uploadedAsset) {
-      toast.message("Энэ ном боловсруулж дуусаагүй байна. Импорт хэсгээс явцыг нь харна уу.");
+    const variant = generatedVariants.find((item) => item.id === variantId);
+    if (!variant) return;
+
+    const draggedIndex = variant.questions.findIndex(
+      (question) => question.id === draggedConfirmedQuestion.questionId,
+    );
+    const targetIndex = variant.questions.findIndex(
+      (question) => question.id === targetQuestionId,
+    );
+    if (
+      draggedIndex === -1 ||
+      targetIndex === -1 ||
+      draggedIndex === targetIndex
+    ) {
+      setDraggedConfirmedQuestion(null);
+      setDragTargetConfirmedQuestion(null);
+      return;
+    }
+
+    const next = [...variant.questions];
+    const [draggedItem] = next.splice(draggedIndex, 1);
+    next.splice(targetIndex, 0, draggedItem);
+    reorderVariantQuestions(variantId, next);
+    setDraggedConfirmedQuestion(null);
+    setDragTargetConfirmedQuestion(null);
+  }
+
+  function handleDeleteVariant(variantId: string) {
+    setGeneratedVariants((prev) => {
+      const next = prev.filter((variant) => variant.id !== variantId);
+      setEditingQuestionId(null);
+      setCheckedVariantIds((current) =>
+        current.filter((checkedId) => checkedId !== variantId),
+      );
+      if (selectedVariantId === variantId) {
+        setSelectedVariantId(next[0]?.id ?? null);
+      }
+      if (!next.length) {
+        setVariantViewerOpen(false);
+      }
+      return next;
+    });
+  }
+
+  function toggleCheckedVariant(variantId: string, checked: boolean) {
+    setCheckedVariantIds((prev) =>
+      checked
+        ? [...new Set([...prev, variantId])]
+        : prev.filter((id) => id !== variantId),
+    );
+  }
+
+  function handleConfirmVariant() {
+    if (checkedVariants.length === 0) {
+      toast.error("Батлах AI хувилбаруудаа checkbox-оор сонгоно уу.");
+      return;
+    }
+
+    void (async () => {
+      try {
+        const result = await confirmExamVariants({
+          variables: {
+            inputs: checkedVariants.map((variant) => ({
+              variantId: variant.id,
+              questions: variant.questions.map((question) => ({
+                order: question.position,
+                prompt: question.prompt,
+                type: question.type,
+                options: question.options ?? [],
+                correctAnswer: question.correctAnswer ?? null,
+                explanation: question.explanation ?? null,
+              })),
+            })),
+          },
+        });
+
+        const payload = (
+          result.data as
+            | {
+                confirmExamVariants?: {
+                  success?: boolean;
+                  message?: string;
+                  variants?: Array<{
+                    id: string;
+                    status?: string | null;
+                    confirmedAt?: string | null;
+                  } | null> | null;
+                } | null;
+              }
+            | undefined
+        )?.confirmExamVariants;
+
+        if (!payload?.success || !payload.variants?.length) {
+          toast.error(payload?.message || "AI хувилбар батлахад алдаа гарлаа.");
+          return;
+        }
+
+        const confirmedMap = new Map(
+          payload.variants
+            .filter(Boolean)
+            .map((variant) => [variant!.id, variant!]),
+        );
+        setGeneratedVariants((prev) =>
+          prev.map((variant) =>
+            confirmedMap.has(variant.id)
+              ? {
+                  ...variant,
+                  status: confirmedMap.get(variant.id)?.status ?? "confirmed",
+                  confirmedAt:
+                    confirmedMap.get(variant.id)?.confirmedAt ?? null,
+                }
+              : variant,
+          ),
+        );
+        setConfirmedVariantIds((prev) =>
+          Array.from(new Set([...prev, ...confirmedMap.keys()])),
+        );
+        setCheckedVariantIds([]);
+        setVariantViewerOpen(false);
+        toast.success(
+          payload.message ||
+            `${confirmedMap.size} AI хувилбарыг амжилттай баталлаа.`,
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "AI хувилбар батлахад алдаа гарлаа.",
+        );
+      }
+    })();
+  }
+
+  function handleSaveVariantsAsNewExams() {
+    if (checkedVariants.length === 0) {
+      toast.error(
+        "Шинэ шалгалт болгох AI хувилбаруудаа checkbox-оор сонгоно уу.",
+      );
+      return;
+    }
+
+    void (async () => {
+      try {
+        setSavingVariantAsExam(true);
+        const result = await saveExamVariants({
+          variables: {
+            inputs: checkedVariants.map((variant) =>
+              buildVariantMutationInput(variant, generalInfo),
+            ),
+          },
+        });
+
+        const payload = (
+          result.data as
+            | {
+                saveExamVariants?: {
+                  success?: boolean;
+                  message?: string;
+                  examIds?: Array<string | null> | null;
+                  variants?: Array<{
+                    id: string;
+                    status?: string | null;
+                    savedAt?: string | null;
+                    savedExamId?: string | null;
+                    confirmedAt?: string | null;
+                  } | null> | null;
+                } | null;
+              }
+            | undefined
+        )?.saveExamVariants;
+
+        if (!payload?.success || !payload.variants?.length) {
+          throw new Error(
+            payload?.message || "Шинэ шалгалт болгож хадгалж чадсангүй.",
+          );
+        }
+
+        const savedMap = new Map(
+          payload.variants
+            .filter(Boolean)
+            .map((variant) => [variant!.id, variant!]),
+        );
+        setGeneratedVariants((prev) =>
+          prev.map((variant) =>
+            savedMap.has(variant.id)
+              ? {
+                  ...variant,
+                  status: savedMap.get(variant.id)?.status ?? "saved",
+                  confirmedAt: savedMap.get(variant.id)?.confirmedAt ?? null,
+                  savedAt: savedMap.get(variant.id)?.savedAt ?? null,
+                  savedExamId: savedMap.get(variant.id)?.savedExamId ?? null,
+                }
+              : variant,
+          ),
+        );
+        setCheckedVariantIds([]);
+        toast.success(
+          payload.message ||
+            `${savedMap.size} AI хувилбарыг шинэ шалгалт болгож хадгаллаа.`,
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Шинэ шалгалт болгож хадгалахад алдаа гарлаа.",
+        );
+      } finally {
+        setSavingVariantAsExam(false);
+      }
+    })();
+  }
+
+  async function handleSaveExam() {
+    if (previewQuestions.length === 0) {
+      toast.error("Хадгалахаас өмнө дор хаяж нэг асуулт нэмнэ үү.");
+      return;
+    }
+
+    const title = generalInfo.examName.trim();
+    if (!title) {
+      toast.error("Шалгалтын нэрээ оруулна уу.");
       return;
     }
 
@@ -741,9 +1072,15 @@ export default function MaterialBuilderPageContent() {
       breadcrumbItems={breadcrumbItems}
       title={builderTitle}
       contentClassName="px-6 py-0 sm:px-8 lg:px-10"
-      hideSidebar={isEditingExistingExam}
-      sidebarCollapsible={!isEditingExistingExam}
-      teacherVariant={isEditingExistingExam ? "none" : undefined}
+      hideSidebar={useHeaderNavigationLayout}
+      sidebarCollapsible={!useHeaderNavigationLayout}
+      teacherVariant={
+        isEditingExistingExam
+          ? "none"
+          : isDashboardCreateMode
+            ? "switcher"
+            : undefined
+      }
     >
       <div className="min-h-[calc(100vh-3rem)] w-full pb-10 pt-1">
         {isEditingExistingExam && pageHeading ? (

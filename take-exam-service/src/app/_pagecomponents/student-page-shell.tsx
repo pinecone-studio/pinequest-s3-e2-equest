@@ -41,13 +41,13 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type {
-  AttemptAnswerReviewItem,
   AttemptSummary,
   GetProgressResponse,
   StudentInfo,
   SubmitAnswersResponse,
   TeacherTestSummary,
 } from "@/lib/exam-service/types";
+import { cn } from "@/lib/utils";
 import {
   estimateDurationMinutes,
   formatDate,

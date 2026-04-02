@@ -8,7 +8,6 @@ import {
   CalendarClock,
   CheckSquare,
   ChevronDown,
-  FileQuestion,
   GraduationCap,
   ListChecks,
   PanelLeftClose,
@@ -44,12 +43,6 @@ const navigationItems: NavigationItem[] = [
     href: "/test/exam-report",
     icon: BarChart3,
     label: "Шалгалтын тайлан",
-  },
-
-  {
-    href: "/test/material-builder",
-    icon: FileQuestion,
-    label: "Шалгалтын материал үүсгэх",
   },
   {
     href: "/ai-scheduler",

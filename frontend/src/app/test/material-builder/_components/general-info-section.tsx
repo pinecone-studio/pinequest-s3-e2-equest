@@ -15,18 +15,20 @@ import {
   fieldWrapperClassName,
 } from "./material-builder-config";
 
-export type MaterialBuilderSubject = "math" | "physics" | "chemistry";
+export type MaterialBuilderSubject = "" | "math" | "physics" | "chemistry";
 export type MaterialBuilderExamType =
+  | ""
   | "progress"
-  | "midterm"
-  | "final"
-  | "practice";
+  | "quarter"
+  | "state"
+  | "benchmark"
+  | "unit";
 
-export type MaterialBuilderGeneralInfo = {
-  durationMinutes: number;
+export type GeneralInfoValues = {
+  durationMinutes: string;
   examName: string;
   examType: MaterialBuilderExamType;
-  grade: number;
+  grade: string;
   subject: MaterialBuilderSubject;
 };
 
@@ -39,10 +41,16 @@ type Props = {
 };
 
 export function GeneralInfoSection({
+  onApplyDemo,
   onChange,
   onReset,
   showUtilityActions = true,
+  values,
 }: Props) {
+  const patch = (nextPartial: Partial<GeneralInfoValues>) => {
+    onChange({ ...values, ...nextPartial });
+  };
+
   return (
     <section className="rounded-[18px] border border-[#e3e9f4] bg-white px-5 py-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] sm:px-6">
       <div className="mb-5 flex items-center justify-between gap-3">
@@ -54,38 +62,42 @@ export function GeneralInfoSection({
         </div>
         {showUtilityActions ? (
           <div className="flex items-center gap-1.5">
-            <Button
+            <button
               type="button"
-              variant="outline"
               onClick={onApplyDemo}
               className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-55 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
             >
               Demo
-            </Button>
-            <Button
+            </button>
+            <button
               type="button"
-              variant="outline"
               onClick={onReset}
               className="h-7 cursor-pointer rounded-[8px] border-slate-100 bg-transparent px-2 text-[11px] font-normal text-slate-400 opacity-55 shadow-none hover:border-slate-200 hover:bg-slate-50 hover:text-slate-500 hover:opacity-100"
             >
               Reset
-            </Button>
+            </button>
           </div>
         ) : null}
       </div>
 
       <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="subject" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="subject"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Хичээл
           </Label>
           <Select
-            value={value.subject}
+            value={values.subject}
             onValueChange={(nextValue: MaterialBuilderSubject) =>
               patch({ subject: nextValue })
             }
           >
-            <SelectTrigger id="subject" className={`${fieldClassName} cursor-pointer`}>
+            <SelectTrigger
+              id="subject"
+              className={`${fieldClassName} cursor-pointer`}
+            >
               <SelectValue placeholder="Хичээл сонгох" />
             </SelectTrigger>
             <SelectContent>
@@ -97,14 +109,20 @@ export function GeneralInfoSection({
         </div>
 
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="classroom" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="classroom"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Анги
           </Label>
           <Select
-            value={String(value.grade)}
-            onValueChange={(nextValue) => patch({ grade: Number(nextValue) || 10 })}
+            value={values.grade}
+            onValueChange={(nextValue) => patch({ grade: nextValue })}
           >
-            <SelectTrigger id="classroom" className={`${fieldClassName} cursor-pointer`}>
+            <SelectTrigger
+              id="classroom"
+              className={`${fieldClassName} cursor-pointer`}
+            >
               <SelectValue placeholder="Анги сонгох" />
             </SelectTrigger>
             <SelectContent>
@@ -117,47 +135,60 @@ export function GeneralInfoSection({
         </div>
 
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="exam-type" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="exam-type"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Төрөл
           </Label>
           <Select
-            value={value.examType}
+            value={values.examType}
             onValueChange={(nextValue: MaterialBuilderExamType) =>
               patch({ examType: nextValue })
             }
           >
-            <SelectTrigger id="exam-type" className={`${fieldClassName} cursor-pointer`}>
+            <SelectTrigger
+              id="exam-type"
+              className={`${fieldClassName} cursor-pointer`}
+            >
               <SelectValue placeholder="Төрөл сонгох" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="progress">Явцын</SelectItem>
-              <SelectItem value="midterm">Дунд шалгалт</SelectItem>
-              <SelectItem value="final">Эцсийн шалгалт</SelectItem>
-              <SelectItem value="practice">Дадлага</SelectItem>
+              <SelectItem value="quarter">Улирлын</SelectItem>
+              <SelectItem value="state">Улсын</SelectItem>
+              <SelectItem value="benchmark">Жишиг</SelectItem>
+              <SelectItem value="unit">Бүлэг сэдэв</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="exam-name" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="exam-name"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Шалгалтын нэр
           </Label>
           <Input
             id="exam-name"
-            value={value.examName}
+            value={values.examName}
             onChange={(event) => patch({ examName: event.target.value })}
             className={fieldClassName}
           />
         </div>
 
         <div className={fieldWrapperClassName}>
-          <Label htmlFor="duration-left" className="text-[14px] font-medium text-slate-800">
+          <Label
+            htmlFor="duration-left"
+            className="text-[14px] font-medium text-slate-800"
+          >
             Үргэлжлэх минут
           </Label>
           <Select
-            value={String(value.durationMinutes)}
+            value={values.durationMinutes}
             onValueChange={(nextValue) =>
-              patch({ durationMinutes: Number(nextValue) || 30 })
+              patch({ durationMinutes: nextValue })
             }
           >
             <SelectTrigger
@@ -174,7 +205,6 @@ export function GeneralInfoSection({
             </SelectContent>
           </Select>
         </div>
-
       </div>
     </section>
   );

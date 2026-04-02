@@ -187,6 +187,7 @@ type MockStudentAcademicRecord = {
 type MockWeakQuestionSeed = {
   label: string;
   prompt: string;
+  questionType?: string | null;
   weight: number;
 };
 
@@ -197,12 +198,15 @@ const MOCK_REPORT_YEAR = 2026;
 const MOCK_WEAK_QUESTION_BANK: MockWeakQuestionSeed[] = [
   {
     label: "A03",
-    prompt: "Тэнцэтгэлийн шийдийг алхам бүрээр зөв задлах бодлого",
+    prompt: "Тэгшитгэл $2x + 5 = 17$-ыг бодож, $x$-ийн утгыг ол.",
+    questionType: "math",
     weight: 1.1,
   },
   {
     label: "A07",
-    prompt: "Хувь, харьцааны бодлогыг нөхцөлөөс нь зөв загварчлах асуулт",
+    prompt:
+      "Илэрхийлэл $\\frac{3}{4}x + \\frac{1}{2} = 5$ үед $x$-ийг зөв олсон эсэхийг шалгах бодлого.",
+    questionType: "math",
     weight: 1.25,
   },
   {
@@ -212,7 +216,8 @@ const MOCK_WEAK_QUESTION_BANK: MockWeakQuestionSeed[] = [
   },
   {
     label: "A16",
-    prompt: "Функцийн графикаас утга уншиж дүгнэлт хийх асуулт",
+    prompt: "Функцийн $y = 2x^2 - 3x + 1$ графикаас утга уншиж дүгнэлт хийх асуулт",
+    questionType: "math",
     weight: 1.3,
   },
   {
@@ -493,6 +498,7 @@ function buildMockWeakQuestions(
       label: item.label,
       missedCount: Math.round((students.length * errorRate) / 100),
       prompt: item.prompt,
+      questionType: item.questionType ?? null,
       totalCount: students.length,
     };
   })

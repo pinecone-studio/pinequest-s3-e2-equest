@@ -330,7 +330,7 @@ export function TeacherExamGallery({
 
           <div onClick={(event) => event.stopPropagation()}>
             <Link
-              href="/test/material-builder"
+              href="/test/material-builder?from=live-dashboard"
               className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#0b5cab] px-6 text-[16px] font-semibold text-white shadow-[0_12px_24px_rgba(11,92,171,0.18)] transition-transform hover:-translate-y-0.5"
             >
               <PlusCircle className="h-4 w-4" />

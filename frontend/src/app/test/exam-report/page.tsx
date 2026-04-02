@@ -36,6 +36,8 @@ import {
 } from "./lib/report-format";
 
 const POLL_INTERVAL_MS = 30_000;
+const REPORT_CACHE_KEY = "test-exam-report-dashboard-cache-v1";
+const REPORT_CACHE_TTL_MS = 2 * 60 * 1000;
 const ALL_GRADES_VALUE = "all";
 const ALL_GROUPS_VALUE = "all";
 const ALL_TYPES_VALUE = "all";
@@ -67,6 +69,7 @@ export default function ExamReportPage() {
 
       setPayload(nextPayload);
       setError(null);
+      writeReportPayloadCache(nextPayload);
     } catch (nextError) {
       setError(
         nextError instanceof Error
@@ -85,7 +88,20 @@ export default function ExamReportPage() {
       return;
     }
 
-    void loadDashboard(true);
+    const cached = readReportPayloadCache();
+
+    if (cached) {
+      setPayload(cached.payload);
+      setError(null);
+      setIsLoading(false);
+    }
+
+    const shouldRefreshImmediately =
+      !cached || Date.now() - cached.cachedAt > REPORT_CACHE_TTL_MS;
+
+    if (shouldRefreshImmediately) {
+      void loadDashboard(!cached);
+    }
 
     const intervalId = window.setInterval(() => {
       void loadDashboard(false);
@@ -451,6 +467,11 @@ export default function ExamReportPage() {
 const FILTER_TRIGGER_CLASSNAME =
   "!h-[41px] w-[108px] min-w-[108px] shrink-0  border border-[#d9e2ec] !bg-white px-4 text-[15px] font-medium text-slate-700 shadow-none hover:bg-white focus-visible:border-[#d9e2ec] focus-visible:ring-0 data-[placeholder]:text-slate-700 [&_[data-slot=select-value]]:max-w-[60px] [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left";
 
+type ReportPayloadCache = {
+  cachedAt: number;
+  payload: DashboardApiPayload;
+};
+
 function HeaderTitle({ title }: { title: string }): ReactNode {
   return (
     <div className="text-[18px] font-bold tracking-tight text-slate-900 sm:text-[20px]">
@@ -479,9 +500,56 @@ function getExamSortTime(exam: Exam): number {
   return exam.endTime?.getTime() ?? exam.startTime.getTime();
 }
 
-const UNKNOWN_CLASS_VALUE = "__unknown_class__";
-
 function normalizeClassValue(value: string) {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : UNKNOWN_CLASS_VALUE;
+}
+
+function readReportPayloadCache(): ReportPayloadCache | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(REPORT_CACHE_KEY);
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue) as Partial<ReportPayloadCache>;
+    if (
+      typeof parsed.cachedAt !== "number" ||
+      !parsed.payload ||
+      typeof parsed.payload !== "object"
+    ) {
+      window.sessionStorage.removeItem(REPORT_CACHE_KEY);
+      return null;
+    }
+
+    return {
+      cachedAt: parsed.cachedAt,
+      payload: parsed.payload as DashboardApiPayload,
+    };
+  } catch {
+    window.sessionStorage.removeItem(REPORT_CACHE_KEY);
+    return null;
+  }
+}
+
+function writeReportPayloadCache(payload: DashboardApiPayload) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      REPORT_CACHE_KEY,
+      JSON.stringify({
+        cachedAt: Date.now(),
+        payload,
+      } satisfies ReportPayloadCache),
+    );
+  } catch {
+    // Ignore storage errors and keep the page functional.
+  }
 }

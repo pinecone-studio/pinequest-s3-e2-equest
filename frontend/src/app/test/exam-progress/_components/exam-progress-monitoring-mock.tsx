@@ -678,23 +678,25 @@ function PerformanceTabContent({
   const selectedAttemptScoreSummary = selectedAttempt
     ? `${selectedAttemptScoreLabel} (${calculateAttemptPercentage(selectedAttempt)}%)`
     : "0/0 (0%)";
-  const filteredQuestions = selectedAttempt.questions.filter((question) => {
-    if (questionFilter === "correct") {
-      return question.reviewState === "correct";
-    }
-    if (questionFilter === "incorrect") {
-      return question.reviewState === "incorrect";
-    }
-    if (questionFilter === "open") {
-      return question.requiresManualReview || isOpenEndedQuestion(question);
-    }
+  const filteredQuestions =
+    selectedAttempt?.questions.filter((question) => {
+      if (questionFilter === "correct") {
+        return question.reviewState === "correct";
+      }
+      if (questionFilter === "incorrect") {
+        return question.reviewState === "incorrect";
+      }
+      if (questionFilter === "open") {
+        return question.requiresManualReview || isOpenEndedQuestion(question);
+      }
 
-    return true;
-  });
+      return true;
+    }) ?? [];
   const visibleSelectedQuestion =
     filteredQuestions.find((question) => question.id === selectedQuestionId) ?? null;
   const visibleSelectedQuestionReviewed = Boolean(
-    visibleSelectedQuestion &&
+    selectedAttempt &&
+      visibleSelectedQuestion &&
       isQuestionReviewed(selectedAttempt, visibleSelectedQuestion),
   );
 

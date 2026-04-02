@@ -16,6 +16,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { normalizeBackendMathText } from "@/lib/normalize-math-text";
+import { normalizeStructuredContent } from "@/lib/normalize-structured-content";
 import type { WeakQuestion } from "../lib/report-adapters";
 
 interface ReportWeakQuestionsProps {
@@ -28,6 +30,15 @@ const LIGHT_BAR_START = [246, 236, 229] as const;
 const LIGHT_BAR_END = [238, 228, 222] as const;
 const STRONG_BAR_START = [249, 102, 18] as const;
 const STRONG_BAR_END = [226, 75, 10] as const;
+const CYRILLIC_TEXT_PATTERN = /[А-Яа-яӨөҮүЁё]/u;
+const EXPLICIT_MATH_DELIMITER_PATTERN =
+  /\\\[[\s\S]+?\\\]|\\\([^)]+?\\\)|\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/;
+const QUESTION_LABEL_PREFIX_PATTERN =
+  /^(?<label>(?:[Qq]|[Aa])\d+\.\s*)(?<body>[\s\S]+)$/u;
+const LATEX_MATH_RUN_PATTERN =
+  /((?:[Qq]\d+\.\s*)?[A-Za-z0-9\\()[\]{}^_.,:+\-*/=<>| ]*\\[A-Za-z]+[A-Za-z0-9\\()[\]{}^_.,:+\-*/=<>| ]*)(?=(?:\s+[А-Яа-яӨөҮүЁё]|$))/gu;
+const ASCII_EQUATION_RUN_PATTERN =
+  /(^|[\s(])((?![Qq]\d+\.\s)[A-Za-z0-9][A-Za-z0-9\s:+\-*/=^_()[\]{}.,|<>]*[=^_][A-Za-z0-9\s:+\-*/=^_()[\]{}.,|<>]*[A-Za-z0-9])([.?!,;:]?)(?=$|[\s)])/g;
 
 function clamp(value: number, min = 0, max = 1): number {
   return Math.min(Math.max(value, min), max);
@@ -65,7 +76,133 @@ function getPercentColor(errorRate: number): string {
 }
 
 function isMathQuestionType(value?: string | null): boolean {
-  return value?.trim().toLowerCase() === "math";
+  const normalized = value?.trim().toLowerCase();
+
+  return (
+    normalized === "math" ||
+    normalized === "written" ||
+    normalized === "open-ended" ||
+    normalized === "open_ended" ||
+    normalized === "equation"
+  );
+}
+
+function looksMathLikePrompt(value: string): boolean {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    /\\(?:frac|sqrt|left|right|cdot|times|div|pm|mp|leq|geq|neq|alpha|beta|theta|pi|sum|int)\b/.test(
+      normalized,
+    ) ||
+    /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\[[\s\S]+?\\\]|\\\([^)]+?\\\)/.test(
+      normalized,
+    ) ||
+    /(?:\d|[A-Za-z])[ \t]*[=+\-*/^<>][ \t]*(?:\d|[A-Za-z])/.test(normalized) ||
+    /(?:x|y|z|a|b|c)\s*[_^]\s*\{?[\dA-Za-z+-]+\}?/.test(normalized)
+  );
+}
+
+function containsCyrillicText(value: string): boolean {
+  return CYRILLIC_TEXT_PATTERN.test(value);
+}
+
+function isWeakQuestionMathCandidate(value: string): boolean {
+  const trimmed = value.trim();
+
+  if (!trimmed || CYRILLIC_TEXT_PATTERN.test(trimmed)) {
+    return false;
+  }
+
+  if (/^[Qq]\d+\.$/.test(trimmed)) {
+    return false;
+  }
+
+  if (/^[A-Za-z]$/.test(trimmed) || /^[-+]?\d+(?:[.,]\d+)?$/.test(trimmed)) {
+    return false;
+  }
+
+  return (
+    /\\[A-Za-z]+/.test(trimmed) ||
+    /[_^=]/.test(trimmed) ||
+    /[A-Za-z0-9)\]}]\s*[:+\-*/<>]\s*[A-Za-z0-9\\([{]/.test(trimmed)
+  );
+}
+
+function wrapWeakQuestionMathCandidate(value: string): string {
+  const trimmed = value.trim();
+  const labeledMatch = trimmed.match(QUESTION_LABEL_PREFIX_PATTERN);
+  const label = labeledMatch?.groups?.label ?? "";
+  const body = labeledMatch?.groups?.body ?? trimmed;
+  const leadingWhitespace = body.match(/^\s*/u)?.[0] ?? "";
+  const bodyWithoutLeadingWhitespace = body.slice(leadingWhitespace.length);
+  const firstMathCharacterIndex = bodyWithoutLeadingWhitespace.search(
+    /[A-Za-z0-9\\([{]/u,
+  );
+  const leadingText =
+    firstMathCharacterIndex > 0
+      ? `${leadingWhitespace}${bodyWithoutLeadingWhitespace.slice(0, firstMathCharacterIndex)}`
+      : leadingWhitespace;
+  const mathCandidate =
+    firstMathCharacterIndex > 0
+      ? bodyWithoutLeadingWhitespace.slice(firstMathCharacterIndex)
+      : bodyWithoutLeadingWhitespace;
+  const trimmedMathCandidate = mathCandidate.trimEnd();
+  const trailingPunctuation =
+    trimmedMathCandidate.match(/[.?!,;:]$/u)?.[0] ?? "";
+  const mathBody = trailingPunctuation
+    ? trimmedMathCandidate.slice(0, -trailingPunctuation.length)
+    : trimmedMathCandidate;
+
+  if (!isWeakQuestionMathCandidate(mathBody)) {
+    return value;
+  }
+
+  return `${label}${leadingText}$${mathBody.trim()}$${trailingPunctuation}`;
+}
+
+function normalizeWeakQuestionPrompt(value: string): string {
+  const structuredContent = normalizeStructuredContent(value).trim();
+
+  if (!structuredContent) {
+    return "";
+  }
+
+  if (EXPLICIT_MATH_DELIMITER_PATTERN.test(structuredContent)) {
+    return normalizeBackendMathText(structuredContent);
+  }
+
+  const withWrappedLatexRuns = structuredContent.replace(
+    LATEX_MATH_RUN_PATTERN,
+    (candidate) => wrapWeakQuestionMathCandidate(candidate),
+  );
+  const withWrappedAsciiRuns = withWrappedLatexRuns.replace(
+    ASCII_EQUATION_RUN_PATTERN,
+    (_full, boundary: string, expression: string, punctuation: string) =>
+      `${boundary}$${expression.trim()}$${punctuation ?? ""}`,
+  );
+
+  return normalizeBackendMathText(withWrappedAsciiRuns);
+}
+
+function getQuestionPrompt(prompt: string): string {
+  const normalized = normalizeWeakQuestionPrompt(prompt);
+
+  return normalized || "Асуултын текст олдсонгүй.";
+}
+
+function shouldDisplayAsMath(question: WeakQuestion): boolean {
+  return (
+    isMathQuestionType(question.questionType) ||
+    looksMathLikePrompt(question.prompt)
+  );
+}
+
+function shouldForceMathPrompt(question: WeakQuestion, prompt: string): boolean {
+  return shouldDisplayAsMath(question) && !containsCyrillicText(prompt);
 }
 
 export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
@@ -103,8 +240,9 @@ export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
           {questions.length > 0 ? (
             <div className="flex max-h-[220px] flex-1 flex-col justify-center gap-4 overflow-y-auto pr-1">
               {visibleQuestions.map((question, index) => {
-                const prompt =
-                  question.prompt.trim() || "Асуултын текст олдсонгүй.";
+                const prompt = getQuestionPrompt(question.prompt);
+                const shouldRenderAsMath = shouldDisplayAsMath(question);
+                const shouldForceMath = shouldForceMathPrompt(question, prompt);
 
                 return (
                   <Tooltip key={`${question.label}-${index}`}>
@@ -144,7 +282,8 @@ export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
                       <MathPreviewText
                         content={prompt}
                         contentSource="backend"
-                        displayMode={isMathQuestionType(question.questionType)}
+                        displayMode={shouldRenderAsMath}
+                        forceMath={shouldForceMath}
                         className="text-[12px] leading-5 text-white [&_.katex-display]:overflow-x-auto [&_.katex]:text-white"
                       />
                     </TooltipContent>
@@ -173,8 +312,9 @@ export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
           <ScrollArea className="h-[calc(85vh-120px)]">
             <div className="space-y-4 px-6 py-5">
               {questions.map((question, index) => {
-                const prompt =
-                  question.prompt.trim() || "Асуултын текст олдсонгүй.";
+                const prompt = getQuestionPrompt(question.prompt);
+                const shouldRenderAsMath = shouldDisplayAsMath(question);
+                const shouldForceMath = shouldForceMathPrompt(question, prompt);
 
                 return (
                   <div
@@ -190,10 +330,9 @@ export function ReportWeakQuestions({ questions }: ReportWeakQuestionsProps) {
                           <MathPreviewText
                             content={prompt}
                             contentSource="backend"
-                            displayMode={isMathQuestionType(
-                              question.questionType,
-                            )}
-                            className="text-[13px] leading-5 text-[#1f2937] [&_.katex-display]:overflow-x-auto"
+                            displayMode={shouldRenderAsMath}
+                            forceMath={shouldForceMath}
+                            className="text-[13px] leading-5 text-[#1f2937] [&_.katex-display]:overflow-x-auto [&_.katex]:text-[#1f2937]"
                           />
                         </div>
                       </div>
