@@ -6,7 +6,7 @@ import type {
 } from "@/lib/exam-service/types";
 import { DbClient } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
-import { getQuestionOptions } from "./common";
+import { areEquivalentFreeResponseAnswers, getQuestionOptions } from "./common";
 
 const isLikelyInstructionText = (value: string) => {
 	const normalized = value.trim().toLowerCase();
@@ -158,20 +158,35 @@ export const getAttemptAnswerReview = async (
 export const computeResult = (
 	questions: AttemptResultRow[],
 ): ExamResultSummary => {
-	const questionResults: ExamQuestionResult[] = questions.map((q) => ({
-		answerChangeCount: q.answerChangeCount ?? 0,
-		competency: q.competency,
-		dwellMs: q.dwellMs ?? 0,
-		prompt: q.prompt,
-		questionId: q.questionId,
-		questionType: (q.questionType as "single-choice" | "math") ?? "single-choice",
-		selectedOptionId: q.selectedOptionId,
-		correctOptionId: q.correctOptionId,
-		isCorrect: q.selectedOptionId === q.correctOptionId,
-		pointsAwarded: q.selectedOptionId === q.correctOptionId ? q.points : 0,
-		maxPoints: q.points,
-		explanation: q.explanation,
-	}));
+	const questionResults: ExamQuestionResult[] = questions.map((q) => {
+		const questionType =
+			(q.questionType as "single-choice" | "math") ?? "single-choice";
+		const expectedMathAnswer =
+			getSanitizedMathAnswerText(q.answerLatex) ??
+			getSanitizedMathAnswerText(q.responseGuide) ??
+			getSanitizedMathAnswerText(q.correctOptionId) ??
+			"";
+		const isCorrect =
+			questionType === "math"
+				? areEquivalentFreeResponseAnswers(q.selectedOptionId, expectedMathAnswer)
+				: q.selectedOptionId === q.correctOptionId;
+
+		return {
+			answerChangeCount: q.answerChangeCount ?? 0,
+			competency: q.competency,
+			dwellMs: q.dwellMs ?? 0,
+			prompt: q.prompt,
+			questionId: q.questionId,
+			questionType,
+			selectedOptionId: q.selectedOptionId,
+			correctOptionId:
+				questionType === "math" ? expectedMathAnswer : q.correctOptionId,
+			isCorrect,
+			pointsAwarded: isCorrect ? q.points : 0,
+			maxPoints: q.points,
+			explanation: q.explanation,
+		};
+	});
 
 	const score = questionResults.reduce((total, result) => total + result.pointsAwarded, 0);
 	const maxScore = questionResults.reduce((total, result) => total + result.maxPoints, 0);

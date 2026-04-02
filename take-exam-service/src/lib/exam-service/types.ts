@@ -195,6 +195,20 @@ export type ExamSession = {
 	questions: StudentExamQuestion[];
 };
 
+export type TeacherExamQuestion = StudentExamQuestion & {
+	correctOptionId?: string | null;
+	answerLatex?: string | null;
+};
+
+export type TeacherExamSession = {
+	testId: string;
+	title: string;
+	description: string;
+	criteria: TestCriteria;
+	timeLimitMinutes: number;
+	questions: TeacherExamQuestion[];
+};
+
 export type StartExamResponse = {
 	attemptId: string;
 	status: "in_progress";

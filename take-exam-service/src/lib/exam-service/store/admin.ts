@@ -58,6 +58,9 @@ type ApproveAttemptOptions = {
 const clampPoints = (value: number, maxPoints: number) =>
 	Math.max(0, Math.min(Math.round(value), maxPoints));
 
+const isMissingExternalExamError = (error: unknown) =>
+	error instanceof Error && error.message === "External exam олдсонгүй.";
+
 const buildReviewedResult = (
 	rows: Awaited<ReturnType<typeof getAttemptResults>>,
 	review?: AttemptReviewPayload,
@@ -150,39 +153,58 @@ export const listAttempts = async (
 	const summaries: AttemptSummary[] = [];
 	const externalExamCache = new Map<
 		string,
-		Awaited<ReturnType<typeof getExternalNewMathExam>>
+		Awaited<ReturnType<typeof getExternalNewMathExam>> | null
 	>();
 
 	for (const record of records) {
-			const test = await db.query.tests.findFirst({
-				where: eq(schema.tests.id, record.testId),
-			});
-			const teacherSyncExport = await db.query.teacherSubmissionExports.findFirst({
-				where: eq(schema.teacherSubmissionExports.attemptId, record.id),
-			});
-			const attemptState = await resolveAttemptState(db, record.id, kv);
-			const answeredQuestions = Object.values(attemptState.answers).filter(Boolean).length;
-			const answerKeySource = test?.answerKeySource ?? "local";
-			const teacherCheckedResult = parseStoredTeacherResult(record.teacherResultJson);
-			const hasReviewableAnswers =
-				answerKeySource === "local" &&
-				(record.status === "submitted" || record.status === "approved");
-			const resultRows = hasReviewableAnswers
-				? await getAttemptResults(db, record.id)
-				: [];
-			let answerReview = await getAttemptAnswerReview(db, record.id);
-			let provisionalTeacherResult = undefined;
-			let externalExam = undefined;
-			if (
-				answerKeySource === "teacher_service" &&
-				test?.sourceService === "create-exam-service" &&
-				(record.status === "submitted" || record.status === "approved")
-			) {
+		const test = await db.query.tests.findFirst({
+			where: eq(schema.tests.id, record.testId),
+		});
+		const teacherSyncExport = await db.query.teacherSubmissionExports.findFirst({
+			where: eq(schema.teacherSubmissionExports.attemptId, record.id),
+		});
+		const attemptState = await resolveAttemptState(db, record.id, kv);
+		const answeredQuestions = Object.values(attemptState.answers).filter(Boolean).length;
+		const answerKeySource = test?.answerKeySource ?? "local";
+		const teacherCheckedResult = parseStoredTeacherResult(record.teacherResultJson);
+		const hasReviewableAnswers =
+			answerKeySource === "local" &&
+			(record.status === "submitted" || record.status === "approved");
+		const resultRows = hasReviewableAnswers
+			? await getAttemptResults(db, record.id)
+			: [];
+		let answerReview = await getAttemptAnswerReview(db, record.id);
+		let provisionalTeacherResult = undefined;
+		let externalExam = undefined;
+		if (
+			answerKeySource === "teacher_service" &&
+			test?.sourceService === "create-exam-service" &&
+			(record.status === "submitted" || record.status === "approved")
+		) {
+			const cachedExternalExam = externalExamCache.get(test.generatorTestId);
+			if (cachedExternalExam !== undefined) {
+				externalExam = cachedExternalExam ?? undefined;
+			} else {
 				try {
-					externalExam =
-						externalExamCache.get(test.generatorTestId) ??
-						(await getExternalNewMathExam(test.generatorTestId));
+					externalExam = await getExternalNewMathExam(test.generatorTestId);
 					externalExamCache.set(test.generatorTestId, externalExam);
+				} catch (error) {
+					if (isMissingExternalExamError(error)) {
+						externalExamCache.set(test.generatorTestId, null);
+						console.warn(
+							`Skipping provisional teacher result for ${record.id}: external exam "${test.generatorTestId}" олдсонгүй.`,
+						);
+					} else {
+						console.error(
+							`Failed to load external exam "${test.generatorTestId}" for ${record.id}:`,
+							error,
+						);
+					}
+				}
+			}
+
+			if (externalExam) {
+				try {
 					answerReview = hydrateCreateExamServiceAnswerReview(
 						answerReview,
 						externalExam,
@@ -201,43 +223,44 @@ export const listAttempts = async (
 					);
 				}
 			}
-			const result =
-				answerKeySource === "teacher_service"
-					? provisionalTeacherResult
-						? mergeCreateExamServiceResult(
-								teacherCheckedResult,
-								provisionalTeacherResult,
-							)
-						: teacherCheckedResult
-					: teacherCheckedResult ??
-						(hasReviewableAnswers
-							? computeResult(resultRows)
-							: undefined);
+		}
+		const result =
+			answerKeySource === "teacher_service"
+				? provisionalTeacherResult
+					? mergeCreateExamServiceResult(
+							teacherCheckedResult,
+							provisionalTeacherResult,
+						)
+					: teacherCheckedResult
+				: teacherCheckedResult ??
+					(hasReviewableAnswers
+						? computeResult(resultRows)
+						: undefined);
 		const isApproved = record.status === "approved";
 
 		summaries.push({
 			attemptId: record.id,
-				testId: record.testId,
-				title: test?.title || "Unknown Test",
-				studentId: record.studentId,
-				studentName: record.studentName,
-				status: record.status,
-				answerKeySource,
-				criteria: test
+			testId: record.testId,
+			title: test?.title || "Unknown Test",
+			studentId: record.studentId,
+			studentName: record.studentName,
+			status: record.status,
+			answerKeySource,
+			criteria: test
 				? {
-						gradeLevel: test.gradeLevel,
-							className: test.className,
-							subject: test.subject,
-							topic: test.topic,
-							difficulty: "medium",
-							questionCount: attemptState.totalQuestions,
-						}
-					: undefined,
-				progress: computeProgress(answeredQuestions, attemptState.totalQuestions),
-				score: isApproved ? record.score ?? undefined : undefined,
-				maxScore: isApproved ? record.maxScore ?? undefined : undefined,
-				percentage: isApproved ? record.percentage ?? undefined : undefined,
-				startedAt: record.startedAt,
+					gradeLevel: test.gradeLevel,
+					className: test.className,
+					subject: test.subject,
+					topic: test.topic,
+					difficulty: "medium",
+					questionCount: attemptState.totalQuestions,
+				}
+				: undefined,
+			progress: computeProgress(answeredQuestions, attemptState.totalQuestions),
+			score: isApproved ? record.score ?? undefined : undefined,
+			maxScore: isApproved ? record.maxScore ?? undefined : undefined,
+			percentage: isApproved ? record.percentage ?? undefined : undefined,
+			startedAt: record.startedAt,
 				submittedAt: record.submittedAt ?? undefined,
 				result,
 				answerReview,

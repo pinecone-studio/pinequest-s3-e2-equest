@@ -4,11 +4,13 @@ import { ensureExamSchema } from "@/lib/db/bootstrap";
 import { students } from "@/lib/db/schema";
 import { seedStudents } from "@/lib/db/seed";
 import {
+	invalidateAttemptsSummaryCache,
+	listAvailableTests,
 	listLiveMonitoringFeed,
 	listAttempts,
 	listExternalNewMathExams,
-	listTests,
 	getTestMaterial,
+	syncExternalNewMathExams,
 } from "@/lib/exam-service/store";
 
 type ResolverEnv = {
@@ -35,36 +37,67 @@ export const queries = {
 		}
 		return all;
 	},
-		availableTests: async () => {
+		availableTests: async (
+			_: unknown,
+			{ forceRefresh }: { forceRefresh?: boolean } = {},
+		) => {
 			const env = getResolverEnv();
 			const db = createDb(env.DB);
 			await ensureExamSchema(env.DB);
-			const tests = await listTests(db, env.EXAM_CACHE);
-			return tests.map((t) => ({
-				...t,
-				answerKeySource:
-					"answerKeySource" in t ? t.answerKeySource ?? "local" : "local",
-				criteria: {
-				gradeLevel: "criteria" in t ? t.criteria.gradeLevel : t.gradeLevel,
-				className: "criteria" in t ? t.criteria.className : t.className,
-				subject: "criteria" in t ? t.criteria.subject : t.subject,
-				topic: "criteria" in t ? t.criteria.topic : t.topic,
-				difficulty: "criteria" in t ? t.criteria.difficulty : "medium",
-				questionCount: "criteria" in t ? t.criteria.questionCount : 0,
-			},
-			}));
+			if (forceRefresh) {
+				try {
+					await syncExternalNewMathExams(db, env.EXAM_CACHE, 20, {
+						force: true,
+					});
+				} catch (error) {
+					console.error("Failed to sync external exams on availableTests refresh:", error);
+				}
+			}
+
+			let tests = await listAvailableTests(db, env.EXAM_CACHE, {
+				force: forceRefresh,
+			});
+			if (tests.length === 0) {
+				try {
+					await syncExternalNewMathExams(db, env.EXAM_CACHE, 20, {
+						force: true,
+					});
+					tests = await listAvailableTests(db, env.EXAM_CACHE, {
+						force: true,
+					});
+				} catch (error) {
+					console.error("Failed to backfill external exams for availableTests:", error);
+				}
+			}
+			return tests;
 		},
-		attempts: async () => {
+		attempts: async (
+			_: unknown,
+			{ forceRefresh }: { forceRefresh?: boolean } = {},
+		) => {
 			const env = getResolverEnv();
 			const db = createDb(env.DB);
 			await ensureExamSchema(env.DB);
+			if (forceRefresh) {
+				await invalidateAttemptsSummaryCache(env.EXAM_CACHE);
+			}
 			return listAttempts(db, env.EXAM_CACHE);
 		},
-		testMaterial: async (_: unknown, { testId }: { testId: string }) => {
+		testMaterial: async (
+			_: unknown,
+			{
+				testId,
+				forceRefresh,
+			}: { forceRefresh?: boolean; testId: string },
+		) => {
 			const env = getResolverEnv();
 			const db = createDb(env.DB);
 			await ensureExamSchema(env.DB);
-			return getTestMaterial(db, testId, env.EXAM_CACHE);
+			return getTestMaterial(
+				db,
+				testId,
+				forceRefresh ? undefined : env.EXAM_CACHE,
+			);
 		},
 		liveMonitoringFeed: async (
 		_: unknown,

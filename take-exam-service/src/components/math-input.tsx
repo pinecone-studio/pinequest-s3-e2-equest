@@ -138,6 +138,7 @@ const TAB_CONFIG: Record<ActiveTab, TabConfig> = {
       { key: "basic-0", label: "0", latex: "0", span: "col-span-2" },
       { key: "basic-decimal", label: ".", latex: "." },
       { key: "basic-plus", label: "+", latex: "+" },
+      { key: "basic-equals", label: "=", latex: "=" },
     ],
   },
   function: {
@@ -317,18 +318,18 @@ function isStructureKey(action: KeyAction) {
 
 function getPaletteActionClassName(action: KeyAction) {
   if (isNumericKey(action)) {
-    return "bg-[#f3f3f5] text-slate-900 hover:bg-[#ececef]"
+    return "bg-[#f5faff] text-slate-900 hover:bg-[#ebf7ff]"
   }
 
   if (isPrimaryOperatorKey(action)) {
-    return "bg-white text-slate-900 hover:bg-[#f8f8fa]"
+    return "bg-white text-slate-900 hover:bg-sky-50"
   }
 
   if (isStructureKey(action)) {
-    return "bg-white text-slate-900 hover:bg-[#f8f8fa]"
+    return "bg-white text-slate-900 hover:bg-sky-50"
   }
 
-  return "bg-white text-slate-800 hover:bg-[#f8f8fa]"
+  return "bg-white text-slate-800 hover:bg-sky-50"
 }
 
 function ensureStyle(id: string, href: string) {
@@ -746,6 +747,8 @@ export function MathInput({
     ? false
     : !librariesReady.mathquill || Boolean(libraryError)
   const useNativeTextareaFallback = !isPaletteMode && keyboardDisabled
+  const showTextEditorInPrimaryArea = useNativeTextareaFallback || manualTextMode
+  const editorModeLabel = showTextEditorInPrimaryArea ? "TEXT" : activeConfig.label
 
   useEffect(() => {
     if (isPaletteMode) {
@@ -879,7 +882,7 @@ export function MathInput({
     <div
       className={cn(
         isPaletteMode
-          ? "w-full overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_22px_40px_-34px_rgba(15,23,42,0.22)]"
+          ? "w-full overflow-hidden rounded-[28px] border border-sky-100 bg-[#f8fcff] shadow-[0_22px_40px_-34px_rgba(39,167,234,0.18)]"
           : "w-full overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_18px_40px_-32px_rgba(15,23,42,0.18)]",
         className
       )}
@@ -887,17 +890,17 @@ export function MathInput({
       <div
         className={cn(
           isPaletteMode
-            ? "border-b border-slate-200 bg-white px-3 pb-2 pt-3 sm:px-3"
+            ? "border-b border-sky-100 bg-[#f8fcff] px-3 pb-2 pt-3 sm:px-3"
             : "border-b border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] px-4 pb-4 pt-4 sm:px-5"
         )}
       >
         {isPaletteMode ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-6 items-center gap-1 border-b border-slate-200 pb-2 text-slate-900">
+            <div className="grid grid-cols-6 items-center gap-1 border-b border-sky-100 pb-2 text-slate-900">
               <button
                 type="button"
                 aria-label="Insert text block"
-                className="flex h-10 items-center justify-center rounded-xl text-[1.15rem] font-medium transition hover:bg-slate-100"
+                className="flex h-10 items-center justify-center rounded-xl text-[1.15rem] font-medium transition hover:bg-sky-50"
                 onClick={handleTextModeToggle}
                 onMouseDown={(event) => event.preventDefault()}
               >
@@ -906,7 +909,7 @@ export function MathInput({
               <button
                 type="button"
                 aria-label="Undo"
-                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-sky-50"
                 onClick={undoStackRef.current.length === 0 ? undefined : undo}
                 onMouseDown={(event) => event.preventDefault()}
               >
@@ -915,7 +918,7 @@ export function MathInput({
               <button
                 type="button"
                 aria-label="Move cursor left"
-                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-sky-50"
                 onClick={handleMoveLeft}
                 onMouseDown={(event) => event.preventDefault()}
               >
@@ -924,7 +927,7 @@ export function MathInput({
               <button
                 type="button"
                 aria-label="Move cursor right"
-                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-sky-50"
                 onClick={handleMoveRight}
                 onMouseDown={(event) => event.preventDefault()}
               >
@@ -933,7 +936,7 @@ export function MathInput({
               <button
                 type="button"
                 aria-label="Insert system line"
-                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100 disabled:opacity-50"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-sky-50 disabled:opacity-50"
                 onClick={onInsertSystemLine ?? insertSystemLineBreak}
                 onMouseDown={(event) => event.preventDefault()}
               >
@@ -942,7 +945,7 @@ export function MathInput({
               <button
                 type="button"
                 aria-label="Clear input"
-                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-slate-100"
+                className="flex h-10 items-center justify-center rounded-xl text-slate-800 transition hover:bg-sky-50"
                 onClick={handleClear}
                 onMouseDown={(event) => event.preventDefault()}
               >
@@ -960,7 +963,7 @@ export function MathInput({
                       key={action.key}
                       type="button"
                       aria-label={action.label}
-                      className="flex h-9 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50"
+                      className="flex h-9 items-center justify-center rounded-full border border-sky-100 bg-white text-slate-700 transition hover:bg-sky-50"
                       onClick={action.onClick}
                       onMouseDown={(event) => event.preventDefault()}
                     >
@@ -1055,71 +1058,67 @@ export function MathInput({
             <div className="mt-4 rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_14px_28px_-24px_rgba(15,23,42,0.16)]">
               <div className="mb-3 flex items-center justify-between gap-3 text-[11px] font-semibold tracking-[0.22em] text-slate-500">
                 <span>ШУУД ЗАСВАРЛАХ</span>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] text-slate-600 uppercase">{activeConfig.label}</span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] text-slate-600 uppercase">
+                  {editorModeLabel}
+                </span>
               </div>
 
               <div className="rounded-[30px] border border-slate-200 bg-white px-5 py-4 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.12)]">
-                {useNativeTextareaFallback ? (
-                  <>
-                    <textarea
-                      aria-label="Math input"
-                      ref={fallbackTextareaRef}
-                      value={latex}
-                      onChange={handleFallbackTextareaChange}
-                      placeholder={placeholder}
-                      spellCheck={false}
-                      className="min-h-20 w-full resize-y border-0 bg-transparent text-[1rem] leading-7 text-slate-900 outline-none"
-                    />
-                    <p className="mt-2 text-xs leading-5 text-slate-500">
-                      {libraryError
-                        ? "Математикийн keyboard ачаалагдсангүй. Түр fallback text input ашиглаж байна."
-                        : "Математикийн keyboard ачаалж байна. Энэ хооронд энд шууд бичиж болно."}
-                    </p>
-                  </>
-                ) : (
+                {!useNativeTextareaFallback ? (
                   <>
                     <div
                       ref={editorRef}
                       aria-label="Math input"
-                      className="math-input-editor min-h-20 w-full text-[1.55rem] text-slate-900"
+                      className={cn(
+                        "math-input-editor min-h-20 w-full text-[1.55rem] text-slate-900",
+                        manualTextMode && "hidden"
+                      )}
                     />
-                    {!latex && (
+                    {!manualTextMode && !latex && (
                       <p className="pointer-events-none mt-2 text-sm text-slate-400">
                         {placeholder}
                       </p>
                     )}
                   </>
-                )}
-              </div>
+                ) : null}
 
-              {manualTextMode && !useNativeTextareaFallback ? (
-                <div className="mt-3 rounded-[24px] border border-sky-200 bg-sky-50/70 p-3">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
-                      ABC MODE
-                    </p>
-                    <button
-                      type="button"
-                      className="text-xs font-semibold text-sky-700 transition hover:text-sky-900"
-                      onClick={() => setManualTextMode(false)}
+                {showTextEditorInPrimaryArea ? (
+                  <>
+                    <textarea
+                      aria-label={useNativeTextareaFallback ? "Math input" : "Text input"}
+                      ref={fallbackTextareaRef}
+                      value={latex}
+                      onChange={handleFallbackTextareaChange}
+                      placeholder={
+                        useNativeTextareaFallback
+                          ? placeholder
+                          : "Үсэг, хувьсагч эсвэл LaTeX энд бичнэ үү..."
+                      }
+                      spellCheck={false}
+                      className={cn(
+                        "w-full resize-y border-0 bg-transparent text-slate-900 outline-none",
+                        useNativeTextareaFallback
+                          ? "min-h-20 text-[1rem] leading-7"
+                          : "min-h-28 rounded-[18px] border border-sky-200 bg-sky-50/40 px-3 py-2.5 text-[1rem] leading-7 transition focus:border-sky-300 focus:bg-white"
+                      )}
+                    />
+                    <p
+                      className={cn(
+                        "mt-2 text-xs leading-5",
+                        useNativeTextareaFallback
+                          ? "text-slate-500"
+                          : "text-sky-800/80"
+                      )}
                     >
-                      Буцаах
-                    </button>
-                  </div>
-                  <textarea
-                    ref={fallbackTextareaRef}
-                    aria-label="Text input"
-                    value={latex}
-                    onChange={handleFallbackTextareaChange}
-                    placeholder="Үсэг, хувьсагч эсвэл LaTeX энд бичнэ үү..."
-                    spellCheck={false}
-                    className="min-h-20 w-full resize-y rounded-[18px] border border-sky-200 bg-white px-3 py-2.5 text-[1rem] leading-7 text-slate-900 outline-none transition focus:border-sky-300"
-                  />
-                  <p className="mt-2 text-xs leading-5 text-sky-800/80">
-                    Энд бичсэн утга дээрх MathQuill талбарт шууд sync хийгдэнэ.
-                  </p>
-                </div>
-              ) : null}
+                      {libraryError
+                        ? "Математикийн keyboard ачаалагдсангүй. Түр fallback text input ашиглаж байна."
+                        : manualTextMode
+                          ? "Энгийн текстээ энд шууд бичнэ. Хүсвэл ABC товчоор math editor руу буцаж болно."
+                          : "Математикийн keyboard ачаалж байна. Энэ хооронд энд шууд бичиж болно."}
+                    </p>
+                  </>
+                ) : null}
+              </div>
 
               {libraryError && (
                 <p className="mt-3 rounded-2xl border border-rose-200/90 bg-rose-50 px-3 py-2 text-sm text-rose-600">
@@ -1134,7 +1133,7 @@ export function MathInput({
       <div
         className={cn(
           isPaletteMode
-            ? "border-b border-slate-200 bg-white px-3 py-3 sm:px-3"
+            ? "border-b border-sky-100 bg-[#f8fcff] px-3 py-3 sm:px-3"
             : "border-b border-slate-200 bg-white px-3 py-3 sm:px-4"
         )}
       >
@@ -1160,10 +1159,10 @@ export function MathInput({
                     : "rounded-[18px] px-3 py-3 text-xs font-semibold tracking-[0.16em] transition",
                   isActive
                     ? isPaletteMode
-                      ? "border-slate-900 bg-slate-900 text-white"
+                      ? "border-[#27a7ea] bg-[#27a7ea] text-white shadow-[0_12px_24px_-18px_rgba(39,167,234,0.55)]"
                       : "bg-slate-900 text-white shadow-[0_16px_24px_-18px_rgba(15,23,42,0.55)]"
                     : isPaletteMode
-                      ? "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                      ? "border-sky-100 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50"
                       : "bg-transparent text-slate-500 hover:bg-slate-100/90 hover:text-slate-900"
                 )}
                 onClick={() => setActiveTab(tab)}
@@ -1192,7 +1191,7 @@ export function MathInput({
       <div
         className={cn(
           isPaletteMode
-            ? "bg-white px-0 pb-0 pt-0"
+            ? "bg-[#f8fcff] px-0 pb-0 pt-0"
             : "bg-slate-50/70 p-3 sm:p-4"
         )}
       >
@@ -1200,7 +1199,7 @@ export function MathInput({
           className={cn(
             "grid",
             activeConfig.cols,
-            isPaletteMode ? "gap-px bg-slate-200" : "gap-2 sm:gap-3"
+            isPaletteMode ? "gap-px bg-sky-100" : "gap-2 sm:gap-3"
           )}
         >
           {activeConfig.keys.map((action) => (

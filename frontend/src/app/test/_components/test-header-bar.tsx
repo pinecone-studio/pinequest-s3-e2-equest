@@ -109,7 +109,7 @@ export function TestHeaderBar({
           ? breadcrumb ?? <TestBreadcrumb items={resolvedBreadcrumbItems} />
           : null}
         {description ? (
-          <p className="mt-2 truncate text-[13px] font-medium text-slate-500">
+          <p className="mt-1 truncate text-[13px] font-medium text-slate-500">
             {description}
           </p>
         ) : null}
