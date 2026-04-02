@@ -35,6 +35,7 @@ import {
   type ExamSessionMetadata,
   type ExamSessionSubject,
 } from "@/lib/exam-session-metadata";
+import { confirmDeleteAction } from "@/lib/confirm-destructive-action";
 
 function formatExamDateMn(isoDate: string): string | null {
   if (!isoDate.trim()) return null;
@@ -121,7 +122,16 @@ export function ExamSessionMetadataForm({
     setTopicDraft("");
   };
 
-  const removeTopic = (v: string) => {
+  const removeTopic = async (v: string) => {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ сэдвийг",
+        "Сэдвийн сонголтоос хасагдана.",
+      ))
+    ) {
+      return;
+    }
+
     patch({ topics: metadata.topics.filter((x) => x !== v) });
   };
 

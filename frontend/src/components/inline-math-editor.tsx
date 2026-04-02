@@ -390,8 +390,8 @@ const InlineMathEditor = forwardRef<
         }}
         className={cn(
           variant === "embedded"
-            ? "h-8 min-w-[6rem] bg-transparent px-0 text-sm text-foreground outline-none"
-            : "h-8 min-w-[8rem] rounded-md border border-emerald-500/30 bg-background/90 px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50",
+            ? "h-8 min-w-[6rem] cursor-text bg-transparent px-0 text-sm text-foreground outline-none"
+            : "h-8 min-w-[8rem] cursor-text rounded-md border border-emerald-500/30 bg-background/90 px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50",
           className,
         )}
       />
@@ -403,8 +403,8 @@ const InlineMathEditor = forwardRef<
       <div
         className={cn(
           variant === "embedded"
-            ? "inline-flex min-h-8 min-w-[6rem] items-center bg-transparent px-0 py-0 align-middle"
-            : "inline-flex min-h-8 min-w-[8rem] items-center rounded-md border border-emerald-500/30 bg-background/90 px-2 py-1 align-middle shadow-sm",
+            ? "inline-flex min-h-8 min-w-[6rem] cursor-text items-center bg-transparent px-0 py-0 align-middle"
+            : "inline-flex min-h-8 min-w-[8rem] cursor-text items-center rounded-md border border-emerald-500/30 bg-background/90 px-2 py-1 align-middle shadow-sm",
           className,
         )}
         onClick={(event) => event.stopPropagation()}

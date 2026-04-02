@@ -11,7 +11,7 @@ export const sourceOptions = [
   {
     id: "question-bank",
     icon: Sparkles,
-    label: "Асуулт үүсгэх",
+    label: "Гараар үүсгэх",
   },
   {
     id: "textbook",

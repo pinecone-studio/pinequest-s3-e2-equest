@@ -38,6 +38,7 @@ import {
   RequestExamVariantsDocument,
 } from "@/gql/create-exam-documents";
 import { MathExamQuestionType } from "@/gql/graphql";
+import { confirmDeleteAction } from "@/lib/confirm-destructive-action";
 import { TestShell } from "../../_components/test-shell";
 import type { BreadcrumbItem } from "../../_components/test-header-bar";
 import {
@@ -425,6 +426,16 @@ export default function MaterialBuilderPageContent() {
   const isPersistingVariant =
     confirmingVariants || savingExam || savingVariantAsExam;
   const hasGeneratedVariants = generatedVariants.length > 0;
+  const hasUnconfirmedGeneratedVariants = useMemo(
+    () =>
+      generatedVariants.some(
+        (variant) =>
+          variant.status !== "confirmed" &&
+          variant.status !== "saved" &&
+          !confirmedVariantIds.includes(variant.id),
+      ),
+    [confirmedVariantIds, generatedVariants],
+  );
   const confirmedVariants = useMemo(
     () =>
       generatedVariants.filter(
@@ -434,7 +445,8 @@ export default function MaterialBuilderPageContent() {
       ),
     [confirmedVariantIds, generatedVariants],
   );
-  const shouldShowVariantViewerButton = hasGeneratedVariants;
+  const shouldShowVariantViewerButton =
+    hasGeneratedVariants && hasUnconfirmedGeneratedVariants;
   const checkedVariants = useMemo(
     () =>
       generatedVariants.filter((variant) =>
@@ -753,7 +765,16 @@ export default function MaterialBuilderPageContent() {
     );
   }
 
-  function deleteVariantQuestion(variantId: string, questionId: string) {
+  async function deleteVariantQuestion(variantId: string, questionId: string) {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ AI асуултыг",
+        "Сонгосон AI хувилбараас энэ асуулт устна.",
+      ))
+    ) {
+      return;
+    }
+
     setGeneratedVariants((prev) =>
       prev.map((variant) =>
         variant.id !== variantId
@@ -811,10 +832,19 @@ export default function MaterialBuilderPageContent() {
     reorderVariantQuestions(variantId, next);
   }
 
-  function deleteConfirmedVariantQuestion(
+  async function deleteConfirmedVariantQuestion(
     variantId: string,
     questionId: string,
   ) {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ AI асуултыг",
+        "Баталсан AI хувилбараас энэ асуулт устна.",
+      ))
+    ) {
+      return;
+    }
+
     const variant = generatedVariants.find((item) => item.id === variantId);
     if (!variant) return;
 
@@ -865,7 +895,16 @@ export default function MaterialBuilderPageContent() {
     setDragTargetConfirmedQuestion(null);
   }
 
-  function handleDeleteVariant(variantId: string) {
+  async function handleDeleteVariant(variantId: string) {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ AI хувилбарыг",
+        "Сонгосон AI хувилбар бүрэн устна.",
+      ))
+    ) {
+      return;
+    }
+
     setGeneratedVariants((prev) => {
       const next = prev.filter((variant) => variant.id !== variantId);
       setEditingQuestionId(null);
@@ -1150,13 +1189,15 @@ export default function MaterialBuilderPageContent() {
           </div>
         ) : (
           <>
-            <GeneralInfoSection
-              values={generalInfo}
-              onChange={setGeneralInfo}
-              onApplyDemo={handleGeneralInfoDemo}
-              onReset={handleGeneralInfoReset}
-              showUtilityActions={!isEditingExistingExam}
-            />
+            <div className="mt-3">
+              <GeneralInfoSection
+                values={generalInfo}
+                onChange={setGeneralInfo}
+                onApplyDemo={handleGeneralInfoDemo}
+                onReset={handleGeneralInfoReset}
+                showUtilityActions={!isEditingExistingExam}
+              />
+            </div>
             <MaterialBuilderWorkspaceSection
               generalInfo={generalInfo}
               source={source}

@@ -49,6 +49,7 @@ import {
   type ExamSessionMetadata,
   type ExamSessionSubject,
 } from "@/lib/exam-session-metadata";
+import { confirmDeleteAction } from "@/lib/confirm-destructive-action";
 
 const EXAM_DRAFT_STORAGE_KEY = "pinequest-math-exam-draft";
 
@@ -560,7 +561,16 @@ export default function MathExam() {
     ]);
   }
 
-  function removeQuestion(questionId: string) {
+  async function removeQuestion(questionId: string) {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ асуултыг",
+        "Шалгалтын жагсаалтаас хасагдана.",
+      ))
+    ) {
+      return;
+    }
+
     setQuestions((currentQuestions) =>
       currentQuestions.filter((question) => question.id !== questionId),
     );

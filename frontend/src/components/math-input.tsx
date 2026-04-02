@@ -1072,8 +1072,8 @@ export function MathInput({
               type="button"
               className={cn(
                 isPaletteMode
-                  ? "flex min-h-[4.15rem] flex-col items-center justify-center px-2 py-3 text-center transition disabled:cursor-not-allowed disabled:opacity-50"
-                  : "flex min-h-[3.85rem] flex-col items-center justify-center rounded-[24px] border px-2 py-3 text-center transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50",
+                  ? "flex min-h-[4.15rem] cursor-pointer flex-col items-center justify-center px-2 py-3 text-center transition disabled:cursor-not-allowed disabled:opacity-50"
+                  : "flex min-h-[3.85rem] cursor-pointer flex-col items-center justify-center rounded-[24px] border px-2 py-3 text-center transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50",
                 getPaletteActionClassName(action),
                 action.span
               )}
