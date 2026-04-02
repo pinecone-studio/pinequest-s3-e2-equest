@@ -40,12 +40,20 @@
    * AI Scheduler — producer энд; consumer тусдаа Worker (`workers/exam-schedule-consumer`).
    * Queue: `wrangler queues create exam-scheduler-queue` (эсвэл Dashboard).
    * Consumer deploy: `npm run deploy:exam-schedule-consumer` + `wrangler secret put GEMINI_API_KEY -c workers/exam-schedule-consumer/wrangler.toml`
+   *
+   * AI Exam Variants — producer энд; consumer тусдаа Worker (`workers/exam-variant-consumer`).
+   * Queue: `wrangler queues create exam-variant-queue`
+   * Consumer deploy: `npm run deploy:exam-variant-consumer` + `wrangler secret put GEMINI_API_KEY -c workers/exam-variant-consumer/wrangler.toml`
    */
   "queues": {
     "producers": [
       {
         "queue": "exam-scheduler-queue",
         "binding": "SCHEDULER_QUEUE",
+      },
+      {
+        "queue": "exam-variant-queue",
+        "binding": "EXAM_VARIANT_QUEUE",
       },
     ],
   },

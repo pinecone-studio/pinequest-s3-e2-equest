@@ -1,0 +1,20 @@
+name = "exam-variant-consumer"
+main = "src/index.ts"
+compatibility_date = "2026-03-17"
+compatibility_flags = ["nodejs_compat"]
+
+[placement]
+mode = "smart"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "create-exams"
+database_id = "f90dad03-6683-4e49-b58b-167632fdc471"
+
+[[queues.consumers]]
+queue = "exam-variant-queue"
+max_batch_size = 1
+max_batch_timeout = 2
+
+[vars]
+GEMINI_MODEL = "gemini-flash-latest"

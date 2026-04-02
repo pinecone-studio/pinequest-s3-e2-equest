@@ -4,14 +4,14 @@ import {
   FileUp,
   FileText,
   Files,
-  PenSquare,
+  Keyboard,
   Table2,
 } from "lucide-react";
 
 export const sourceOptions = [
   {
     id: "question-bank",
-    icon: PenSquare,
+    icon: Keyboard,
     label: "Гараар",
   },
   {
@@ -34,7 +34,7 @@ export const sourceOptions = [
 export type MaterialSourceId = (typeof sourceOptions)[number]["id"];
 
 export const fieldClassName =
-  "!h-[40px] w-full rounded-[10px] border-[#e2e8f0] !bg-[#eef3ff] px-3 text-[14px] text-slate-800 shadow-none hover:!bg-[#eef3ff] focus-visible:ring-2 focus-visible:ring-sky-100";
+  "!h-[40px] w-full rounded-[10px] border-[#e2e8f0] !bg-[#F4F7FA] px-3 text-[14px] text-slate-800 shadow-none hover:!bg-[#F4F7FA] focus-visible:ring-2 focus-visible:ring-sky-100";
 export const fieldWrapperClassName = "flex min-w-0 flex-col gap-2";
 export const optionFieldClassName =
   "!h-[40px] w-full rounded-[10px] border-[#e2e8f0] !bg-[#eef3ff] px-3 text-[14px] text-slate-800 shadow-none hover:!bg-[#eef3ff] focus-visible:ring-2 focus-visible:ring-sky-100";

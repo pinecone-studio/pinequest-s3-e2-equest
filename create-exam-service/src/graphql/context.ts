@@ -8,6 +8,8 @@ export interface GraphQLContext {
 		DB?: D1Database;
 		/** AI scheduler — GraphQL mutation-аас мессеж илгээнэ */
 		SCHEDULER_QUEUE?: Queue;
+		/** AI exam variants — GraphQL mutation-аас мессеж илгээнэ */
+		EXAM_VARIANT_QUEUE?: Queue;
 		/** Workers AI — бусад туршилтууд (одоогоор `analyzeQuestion` нь Gemini). */
 		AI?: Ai;
 		/** Google AI Studio / Gemini API — илүүдэл нэр (secret). `GEMINI_API_KEY`-тэй адил ашиглагдана. */
@@ -29,6 +31,7 @@ export async function createGraphQLContext(): Promise<GraphQLContext> {
 	const e = env as CloudflareEnv & {
 		DB?: D1Database;
 		SCHEDULER_QUEUE?: Queue;
+		EXAM_VARIANT_QUEUE?: Queue;
 		AI?: Ai;
 		GOOGLE_AI_API_KEY?: string;
 		GEMINI_API_KEY?: string;
@@ -40,6 +43,7 @@ export async function createGraphQLContext(): Promise<GraphQLContext> {
 		env: {
 			DB: e.DB,
 			SCHEDULER_QUEUE: e.SCHEDULER_QUEUE,
+			EXAM_VARIANT_QUEUE: e.EXAM_VARIANT_QUEUE,
 			AI: e.AI,
 			GOOGLE_AI_API_KEY:
 				e.GOOGLE_AI_API_KEY ?? process.env.GOOGLE_AI_API_KEY,

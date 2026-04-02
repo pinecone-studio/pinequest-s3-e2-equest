@@ -37,11 +37,135 @@ export const SaveNewMathExamDocument = gql(`
 	}
 `);
 
+export const RequestExamVariantsDocument = gql(`
+	mutation RequestExamVariants($input: RequestExamVariantsInput!) {
+		requestExamVariants(input: $input) {
+			success
+			message
+			jobId
+		}
+	}
+`);
+
+export const ConfirmExamVariantDocument = gql(`
+	mutation ConfirmExamVariant($input: ConfirmExamVariantInput!) {
+		confirmExamVariant(input: $input) {
+			success
+			message
+			variant {
+				id
+				status
+				confirmedAt
+				savedAt
+				savedExamId
+			}
+		}
+	}
+`);
+
+export const ConfirmExamVariantsDocument = gql(`
+	mutation ConfirmExamVariants($inputs: [ConfirmExamVariantInput!]!) {
+		confirmExamVariants(inputs: $inputs) {
+			success
+			message
+			variants {
+				id
+				status
+				confirmedAt
+				savedAt
+				savedExamId
+			}
+		}
+	}
+`);
+
+export const SaveExamVariantDocument = gql(`
+	mutation SaveExamVariant($input: SaveExamVariantInput!) {
+		saveExamVariant(input: $input) {
+			success
+			message
+			examId
+			variant {
+				id
+				status
+				confirmedAt
+				savedAt
+				savedExamId
+			}
+		}
+	}
+`);
+
+export const SaveExamVariantsDocument = gql(`
+	mutation SaveExamVariants($inputs: [SaveExamVariantInput!]!) {
+		saveExamVariants(inputs: $inputs) {
+			success
+			message
+			examIds
+			variants {
+				id
+				status
+				confirmedAt
+				savedAt
+				savedExamId
+			}
+		}
+	}
+`);
+
+export const GetExamVariantJobDocument = gql(`
+	query GetExamVariantJob($jobId: ID!) {
+		getExamVariantJob(jobId: $jobId) {
+			jobId
+			examId
+			status
+			variantCount
+			sourceQuestionsJson
+			resultJson
+			errorMessage
+			requestedBy
+			requestedAt
+			startedAt
+			completedAt
+			updatedAt
+			variants {
+				id
+				jobId
+				examId
+				variantNumber
+				title
+				status
+				confirmedAt
+				savedAt
+				savedExamId
+				createdAt
+				updatedAt
+				questions {
+					id
+					position
+					type
+					prompt
+					options
+					correctAnswer
+					explanation
+				}
+			}
+		}
+	}
+`);
+
 export const ListNewMathExamsDocument = gql(`
-	query ListNewMathExams($limit: Int = 50) {
-		listNewMathExams(limit: $limit) {
+	query ListNewMathExams($limit: Int = 50, $offset: Int = 0, $filters: ListNewMathExamsFilterInput) {
+		listNewMathExams(limit: $limit, offset: $offset, filters: $filters) {
 			examId
 			title
+			grade
+			examType
+			subject
+			teacherId
+			withVariants
+			variantCount
+			questionCount
 			durationMinutes
 			updatedAt
 		}

@@ -48,6 +48,8 @@ function wrapMathSegmentRaw(raw: string, nextLatex: string) {
 }
 
 type MathAssistFieldProps = {
+  className?: string;
+  contentClassName?: string;
   id?: string;
   multiline?: boolean;
   onChange: (value: string) => void;
@@ -63,6 +65,8 @@ type MathAssistFieldProps = {
 };
 
 export function MathAssistField({
+  className,
+  contentClassName,
   id,
   multiline = false,
   onChange,
@@ -88,7 +92,10 @@ export function MathAssistField({
     mathIndex: number;
     raw: string;
   } | null>(null);
-  const normalizedValue = useMemo(() => normalizeStructuredContent(value), [value]);
+  const normalizedValue = useMemo(
+    () => normalizeStructuredContent(value),
+    [value],
+  );
   const selectionRef = useRef({
     end: normalizedValue.length,
     start: normalizedValue.length,
@@ -109,8 +116,7 @@ export function MathAssistField({
       }),
     [normalizedValue, previewDisplayMode, previewForceMath],
   );
-  const usesRenderedMathEditor =
-    previewForceMath || mathSegments.length > 0;
+  const usesRenderedMathEditor = previewForceMath || mathSegments.length > 0;
   const supportsWholeRichTextEditor = multiline && !usesRenderedMathEditor;
   const supportsActiveTextFormatting =
     supportsWholeRichTextEditor || activeTextIndex !== null;
@@ -152,7 +158,8 @@ export function MathAssistField({
       return;
     }
 
-    activeMathRawRef.current = nextActiveSegment?.raw ?? activeMathRawRef.current;
+    activeMathRawRef.current =
+      nextActiveSegment?.raw ?? activeMathRawRef.current;
     setActiveMathLatex(nextActiveSegment?.content ?? editableValue);
   }, [activeMathIndex, editableValue, mathSegments, previewForceMath]);
 
@@ -354,7 +361,9 @@ export function MathAssistField({
     }
 
     setActiveMathLatex(nextLatex);
-    onChange(replaceMathSegmentValue(editableValue, activeMathIndex, nextLatex));
+    onChange(
+      replaceMathSegmentValue(editableValue, activeMathIndex, nextLatex),
+    );
   }
 
   function handleActiveMathEnter() {
@@ -369,13 +378,18 @@ export function MathAssistField({
     }
 
     const targetSegment =
-      mathSegments.find((segment) => segment.mathIndex === targetMathIndex) ?? null;
+      mathSegments.find((segment) => segment.mathIndex === targetMathIndex) ??
+      null;
     const insertedRaw = wrapMathSegmentRaw(
       targetSegment?.raw ?? activeMathRawRef.current ?? "$ $",
       "",
     );
     const nextMathIndex = targetMathIndex + 1;
-    const nextValue = insertMathSegmentAfter(editableValue, targetMathIndex, insertedRaw);
+    const nextValue = insertMathSegmentAfter(
+      editableValue,
+      targetMathIndex,
+      insertedRaw,
+    );
 
     setIsEditing(true);
     setIsKeyboardOpen(true);
@@ -452,9 +466,9 @@ export function MathAssistField({
     const preferredSegment =
       preferredMathIndex === null
         ? null
-        : mathSegments.find(
+        : (mathSegments.find(
             (segment) => segment.mathIndex === preferredMathIndex,
-          ) ?? null;
+          ) ?? null);
     const firstSegment = preferredSegment ?? mathSegments[0];
 
     if (firstSegment) {
@@ -494,7 +508,10 @@ export function MathAssistField({
 
       if (beginMathEditing()) {
         requestAnimationFrame(() => {
-          inlineMathEditorRef.current?.insertLatex(nextChunk, moveLeftAfterWrite);
+          inlineMathEditorRef.current?.insertLatex(
+            nextChunk,
+            moveLeftAfterWrite,
+          );
         });
         return;
       }
@@ -656,6 +673,7 @@ export function MathAssistField({
       multiline
         ? "flex field-sizing-content min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 pr-12 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
         : "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 pr-12 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30",
+      className,
     ),
     id,
     onClick: syncSelection,
@@ -671,7 +689,9 @@ export function MathAssistField({
     activeTextIndex !== null &&
     textSegments.some((segment) => segment.textIndex === activeTextIndex);
   const hasActiveRenderedEditor =
-    usesRenderedMathEditor || activeMathIndex !== null || activeTextIndex !== null;
+    usesRenderedMathEditor ||
+    activeMathIndex !== null ||
+    activeTextIndex !== null;
   const shouldShowRenderedPreview =
     hasActiveRenderedEditor ||
     (!isEditing &&
@@ -680,18 +700,20 @@ export function MathAssistField({
       Boolean(editableValue.trim()));
   const shouldShowLivePreview =
     !usesRenderedMathEditor &&
-    (isEditing || isKeyboardOpen || activeMathIndex !== null || activeTextIndex !== null) &&
+    (isEditing ||
+      isKeyboardOpen ||
+      activeMathIndex !== null ||
+      activeTextIndex !== null) &&
     Boolean(editableValue.trim()) &&
     (previewForceMath || containsMathPreviewSyntax(editableValue));
   const topFieldClassName = cn(
-    multiline
-      ? "flex min-h-16 w-full"
-      : "flex min-h-8 w-full items-center",
+    multiline ? "flex min-h-16 w-full" : "flex min-h-8 w-full items-center",
     hasActiveRenderedEditor
       ? "rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 pr-12"
       : multiline
         ? "rounded-lg border border-input bg-transparent px-2.5 py-2 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30"
         : "rounded-lg border border-input bg-transparent px-2.5 py-1 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30",
+    className,
   );
 
   return (
@@ -735,7 +757,7 @@ export function MathAssistField({
                 contentSource="preview"
                 displayMode={previewDisplayMode}
                 forceMath={previewForceMath}
-                className="w-full text-foreground"
+                className={cn("w-full text-foreground", contentClassName)}
                 activeMathIndex={activeMathIndex}
                 activeTextIndex={activeTextIndex}
                 onMathSegmentClick={activateMathSegment}
@@ -761,7 +783,11 @@ export function MathAssistField({
                 )}
               />
             ) : (
-              <span className="text-muted-foreground">{placeholder}</span>
+              <span
+                className={cn("pl-1.5 text-muted-foreground", contentClassName)}
+              >
+                {placeholder}
+              </span>
             )}
           </div>
         ) : (
@@ -779,11 +805,11 @@ export function MathAssistField({
                   onChange={onChange}
                   autoFocus={isEditing}
                   richText
-                  className="relative z-10 min-h-[3rem]"
+                  className={cn("relative z-10 min-h-[3rem]", contentClassName)}
                 />
               </div>
-	            ) : multiline ? (
-	              <textarea
+            ) : multiline ? (
+              <textarea
                 ref={(node) => {
                   inputRef.current = node;
                 }}
@@ -797,15 +823,15 @@ export function MathAssistField({
                     setIsEditing(false);
                   }
                 }}
-	                onChange={(event) => {
-	                  resetInlineEditorState();
-	                  onChange(event.target.value);
-	                }}
-	                onFocus={() => {
-	                  resetInlineEditorState();
-	                  setIsEditing(true);
-	                }}
-	              />
+                onChange={(event) => {
+                  resetInlineEditorState();
+                  onChange(event.target.value);
+                }}
+                onFocus={() => {
+                  resetInlineEditorState();
+                  setIsEditing(true);
+                }}
+              />
             ) : (
               <input
                 ref={(node) => {
@@ -821,15 +847,15 @@ export function MathAssistField({
                     setIsEditing(false);
                   }
                 }}
-	                onChange={(event) => {
-	                  resetInlineEditorState();
-	                  onChange(event.target.value);
-	                }}
-	                onFocus={() => {
-	                  resetInlineEditorState();
-	                  setIsEditing(true);
-	                }}
-	              />
+                onChange={(event) => {
+                  resetInlineEditorState();
+                  onChange(event.target.value);
+                }}
+                onFocus={() => {
+                  resetInlineEditorState();
+                  setIsEditing(true);
+                }}
+              />
             )}
           </>
         )}
@@ -837,7 +863,10 @@ export function MathAssistField({
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="absolute right-1 top-1"
+          className={cn(
+            "absolute right-1 top-1 cursor-pointer bg-transparent text-slate-500 hover:bg-transparent hover:text-[#0b5cab]",
+            isKeyboardOpen && "bg-transparent text-[#0b5cab]",
+          )}
           onClick={() => {
             setIsEditing(true);
             setIsKeyboardOpen((current) => !current);
@@ -871,8 +900,8 @@ export function MathAssistField({
             variant="ghost"
             size="icon-sm"
             className={cn(
-              "absolute right-1 top-8",
-              secondaryAction.active && "bg-muted",
+              "absolute right-1 top-8 cursor-pointer bg-transparent text-slate-500 hover:bg-transparent hover:text-[#0b5cab]",
+              secondaryAction.active && "bg-transparent text-[#0b5cab]",
             )}
             onClick={() => {
               setIsEditing(true);
@@ -891,7 +920,7 @@ export function MathAssistField({
             contentSource="preview"
             displayMode={previewDisplayMode}
             forceMath={previewForceMath}
-            className="w-full text-foreground"
+            className={cn("w-full text-foreground", contentClassName)}
             activeMathIndex={activeMathIndex}
             onMathSegmentClick={activateMathSegment}
             renderActiveMathSegment={() => (
@@ -912,37 +941,37 @@ export function MathAssistField({
         <CollapsibleContent className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-3">
           <MathInput
             mode="palette"
-              onInsertLatex={insertIntoField}
-              onInsertSystemLine={
-                activeMathIndex !== null || usesRenderedMathEditor
-                  ? handleActiveMathEnter
-                  : undefined
-              }
-              onMoveLeft={() => moveCursor("left")}
-              onMoveRight={() => moveCursor("right")}
-              onClear={clearField}
-              onToggleBold={
-                supportsActiveTextFormatting
-                  ? () => inlineTextEditorRef.current?.toggleBold()
-                  : undefined
-              }
-              onToggleItalic={
-                supportsActiveTextFormatting
-                  ? () => inlineTextEditorRef.current?.toggleItalic()
-                  : undefined
-              }
-              onToggleBulletList={
-                supportsActiveTextFormatting
-                  ? () => inlineTextEditorRef.current?.toggleBulletList()
-                  : undefined
-              }
-              onToggleOrderedList={
-                supportsActiveTextFormatting
-                  ? () => inlineTextEditorRef.current?.toggleOrderedList()
-                  : undefined
-              }
-              className="shadow-none"
-            />
+            onInsertLatex={insertIntoField}
+            onInsertSystemLine={
+              activeMathIndex !== null || usesRenderedMathEditor
+                ? handleActiveMathEnter
+                : undefined
+            }
+            onMoveLeft={() => moveCursor("left")}
+            onMoveRight={() => moveCursor("right")}
+            onClear={clearField}
+            onToggleBold={
+              supportsActiveTextFormatting
+                ? () => inlineTextEditorRef.current?.toggleBold()
+                : undefined
+            }
+            onToggleItalic={
+              supportsActiveTextFormatting
+                ? () => inlineTextEditorRef.current?.toggleItalic()
+                : undefined
+            }
+            onToggleBulletList={
+              supportsActiveTextFormatting
+                ? () => inlineTextEditorRef.current?.toggleBulletList()
+                : undefined
+            }
+            onToggleOrderedList={
+              supportsActiveTextFormatting
+                ? () => inlineTextEditorRef.current?.toggleOrderedList()
+                : undefined
+            }
+            className="shadow-none"
+          />
           <div className="flex flex-wrap justify-end gap-2">
             <Button
               type="button"
@@ -950,19 +979,19 @@ export function MathAssistField({
               onClick={() => {
                 setIsKeyboardOpen(false);
 
-              if (activeTextIndex !== null) {
-                inlineTextEditorRef.current?.focus();
-                return;
-              }
+                if (activeTextIndex !== null) {
+                  inlineTextEditorRef.current?.focus();
+                  return;
+                }
 
-              if (supportsWholeRichTextEditor) {
-                inlineTextEditorRef.current?.focus();
-                return;
-              }
+                if (supportsWholeRichTextEditor) {
+                  inlineTextEditorRef.current?.focus();
+                  return;
+                }
 
-              if (activeMathIndex !== null) {
-                inlineMathEditorRef.current?.focus();
-                return;
+                if (activeMathIndex !== null) {
+                  inlineMathEditorRef.current?.focus();
+                  return;
                 }
 
                 if (usesRenderedMathEditor) {

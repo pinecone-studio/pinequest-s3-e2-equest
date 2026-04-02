@@ -64,32 +64,36 @@ export async function publishExamSaved(payload: {
   title: string;
   updatedAt: string;
 }) {
-  const parts = getAblyKeyParts();
-  if (!parts) {
-    return;
-  }
+  try {
+    const parts = getAblyKeyParts();
+    if (!parts) {
+      return;
+    }
 
-  const channel = "new-math-exams";
-  const res = await fetch(
-    `https://rest.ably.io/channels/${encodeURIComponent(channel)}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: getBasicAuthHeader(parts.key),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([
-        {
-          name: "exam.saved",
-          data: payload,
+    const channel = "new-math-exams";
+    const res = await fetch(
+      `https://rest.ably.io/channels/${encodeURIComponent(channel)}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: getBasicAuthHeader(parts.key),
+          "Content-Type": "application/json",
         },
-      ]),
-    },
-  );
+        body: JSON.stringify([
+          {
+            name: "exam.saved",
+            data: payload,
+          },
+        ]),
+      },
+    );
 
-  // Publish failure shouldn't break save flow.
-  if (!res.ok) {
-    // Intentionally swallow errors; observability can catch it if needed.
+    // Publish failure shouldn't break save flow.
+    if (!res.ok) {
+      return;
+    }
+  } catch {
+    // Network/runtime failure shouldn't break save flow either.
     return;
   }
 }

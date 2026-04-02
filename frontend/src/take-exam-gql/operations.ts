@@ -23,7 +23,11 @@ export type AnswerInput = {
 export type AttemptActivityInput = {
   code: Scalars['String']['input'];
   detail: Scalars['String']['input'];
+  mode: Scalars['String']['input'];
   occurredAt?: InputMaybe<Scalars['String']['input']>;
+  screenshotCapturedAt?: InputMaybe<Scalars['String']['input']>;
+  screenshotStorageKey?: InputMaybe<Scalars['String']['input']>;
+  screenshotUrl?: InputMaybe<Scalars['String']['input']>;
   severity: Scalars['String']['input'];
   title: Scalars['String']['input'];
 };
@@ -71,7 +75,11 @@ export type AttemptMonitoringEvent = {
   code: Scalars['String']['output'];
   detail: Scalars['String']['output'];
   id: Scalars['ID']['output'];
+  mode: Scalars['String']['output'];
   occurredAt: Scalars['String']['output'];
+  screenshotCapturedAt?: Maybe<Scalars['String']['output']>;
+  screenshotStorageKey?: Maybe<Scalars['String']['output']>;
+  screenshotUrl?: Maybe<Scalars['String']['output']>;
   severity: Scalars['String']['output'];
   title: Scalars['String']['output'];
 };

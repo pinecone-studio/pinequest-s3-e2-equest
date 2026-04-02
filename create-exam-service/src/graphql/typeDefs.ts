@@ -247,6 +247,123 @@ export const typeDefs = /* GraphQL */ `
     updatedAt: String!
   }
 
+  enum ExamVariantJobStatus {
+    pending
+    processing
+    completed
+    failed
+  }
+
+  input ExamVariantQuestionInput {
+    order: Int!
+    prompt: String!
+    type: String!
+    options: [String!]
+    correctAnswer: String
+    explanation: String
+  }
+
+  input RequestExamVariantsInput {
+    examId: ID
+    variantCount: Int!
+    questions: [ExamVariantQuestionInput!]!
+  }
+
+  type RequestExamVariantsPayload {
+    success: Boolean!
+    message: String!
+    jobId: ID
+  }
+
+  enum ExamVariantStatus {
+    generated
+    confirmed
+    saved
+  }
+
+  input SaveExamVariantInput {
+    variantId: ID!
+    examId: ID
+    title: String!
+    grade: Int
+    examType: String
+    subject: String
+    durationMinutes: Int
+    questions: [ExamVariantQuestionInput!]!
+  }
+
+  type ConfirmExamVariantPayload {
+    success: Boolean!
+    message: String!
+    variant: ExamVariant
+  }
+
+  type BatchConfirmExamVariantPayload {
+    success: Boolean!
+    message: String!
+    variants: [ExamVariant!]!
+  }
+
+  input ConfirmExamVariantInput {
+    variantId: ID!
+    questions: [ExamVariantQuestionInput!]!
+  }
+
+  type SaveExamVariantPayload {
+    success: Boolean!
+    message: String!
+    examId: ID
+    variant: ExamVariant
+  }
+
+  type BatchSaveExamVariantPayload {
+    success: Boolean!
+    message: String!
+    examIds: [ID!]!
+    variants: [ExamVariant!]!
+  }
+
+  type ExamVariantJob {
+    jobId: ID!
+    examId: ID
+    status: ExamVariantJobStatus!
+    variantCount: Int!
+    variants: [ExamVariant!]!
+    sourceQuestionsJson: String!
+    resultJson: String
+    errorMessage: String
+    requestedBy: String
+    requestedAt: String!
+    startedAt: String
+    completedAt: String
+    updatedAt: String!
+  }
+
+  type ExamVariant {
+    id: ID!
+    jobId: ID!
+    examId: ID
+    variantNumber: Int!
+    title: String!
+    status: ExamVariantStatus!
+    confirmedAt: String
+    savedAt: String
+    savedExamId: ID
+    questions: [ExamVariantQuestion!]!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type ExamVariantQuestion {
+    id: ID!
+    position: Int!
+    type: String!
+    prompt: String!
+    options: [String!]
+    correctAnswer: String
+    explanation: String
+  }
+
   type RequestExamSchedulePayload {
     success: Boolean!
     message: String!
@@ -357,8 +474,13 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Query {
-    listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
+    listNewMathExams(
+      limit: Int = 50
+      offset: Int = 0
+      filters: ListNewMathExamsFilterInput
+    ): [NewMathExamSummary!]!
     getNewMathExam(examId: ID!): NewMathExam
+    getExamVariantJob(jobId: ID!): ExamVariantJob
     getAiExamSchedule(examId: ID!): ExamSchedule
     listTeacherConfirmedExamSchedules(
       teacherId: ID!
@@ -386,6 +508,11 @@ export const typeDefs = /* GraphQL */ `
     generateExamQuestions(input: ExamGenerationInput!): ExamGenerationResult!
     saveExam(input: SaveExamInput!): SaveExamPayload!
     saveNewMathExam(input: SaveNewMathExamInput!): SaveNewMathExamPayload!
+    requestExamVariants(input: RequestExamVariantsInput!): RequestExamVariantsPayload!
+    confirmExamVariant(input: ConfirmExamVariantInput!): ConfirmExamVariantPayload!
+    confirmExamVariants(inputs: [ConfirmExamVariantInput!]!): BatchConfirmExamVariantPayload!
+    saveExamVariant(input: SaveExamVariantInput!): SaveExamVariantPayload!
+    saveExamVariants(inputs: [SaveExamVariantInput!]!): BatchSaveExamVariantPayload!
     # AI-аар шинжлүүлэх
     analyzeQuestion(prompt: String!): QuestionAnalysisResult!
     # AI-аар үүсгэсэн загварыг хадгалах
@@ -409,8 +536,26 @@ export const typeDefs = /* GraphQL */ `
   type NewMathExamSummary {
     examId: ID!
     title: String!
+    grade: Int
+    examType: String
+    subject: String
+    teacherId: String
+    withVariants: Boolean
+    variantCount: Int
+    questionCount: Int!
     durationMinutes: Int
     updatedAt: String!
+  }
+
+  input ListNewMathExamsFilterInput {
+    grade: Int
+    examType: String
+    subject: String
+    teacherId: String
+    durationMinutes: Int
+    withVariants: Boolean
+    questionCount: Int
+    search: String
   }
 
   type NewMathExamGeneratorMeta {

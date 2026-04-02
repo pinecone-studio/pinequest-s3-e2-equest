@@ -9,7 +9,13 @@ export function normalizePreviewMathText(raw: string): string {
     .replace(/\\\$(?=\{)/g, "\\")
     .replace(/\\\\(?=[A-Za-z])/g, "\\")
     .replace(/\$([}\]\)])/g, "$1");
-  return next.trim();
+  const trimmed = next.trim();
+
+  if (!containsExplicitMathDelimiters(trimmed)) {
+    return normalizeBackendMathText(trimmed);
+  }
+
+  return trimmed;
 }
 
 export function normalizeBackendMathText(raw: string): string {
@@ -131,7 +137,10 @@ function normalizeBackendLatexArtifacts(raw: string): string {
   // 3) Remove dangling '$' before closers like "^{7$}" or "\\frac{100}{4$}"
   next = next.replace(/\$([}\]\)])/g, "$1");
 
-  // 4) Strip ALL remaining dollars. Our app stores delimiter-free text in DB, and
+  // 4) Convert common inline spacing commands that should not surface in plain text.
+  next = next.replace(/\\,/g, ", ");
+
+  // 5) Strip ALL remaining dollars. Our app stores delimiter-free text in DB, and
   // incoming backend text frequently contains stray '$' artifacts.
   next = next.replace(/\$/g, "");
 

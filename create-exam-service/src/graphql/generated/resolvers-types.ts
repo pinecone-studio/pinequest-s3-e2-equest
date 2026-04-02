@@ -40,6 +40,33 @@ export type AiQuestionTemplateInput = {
   type: Scalars['String']['input'];
 };
 
+export type BatchConfirmExamVariantPayload = {
+  __typename?: 'BatchConfirmExamVariantPayload';
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+  variants: Array<ExamVariant>;
+};
+
+export type BatchSaveExamVariantPayload = {
+  __typename?: 'BatchSaveExamVariantPayload';
+  examIds: Array<Scalars['ID']['output']>;
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+  variants: Array<ExamVariant>;
+};
+
+export type ConfirmExamVariantInput = {
+  questions: Array<ExamVariantQuestionInput>;
+  variantId: Scalars['ID']['input'];
+};
+
+export type ConfirmExamVariantPayload = {
+  __typename?: 'ConfirmExamVariantPayload';
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+  variant?: Maybe<ExamVariant>;
+};
+
 export type CreateAiExamTemplateInput = {
   durationMinutes: Scalars['Int']['input'];
   grade: Scalars['Int']['input'];
@@ -143,6 +170,72 @@ export enum ExamType {
   Practice = 'PRACTICE'
 }
 
+export type ExamVariant = {
+  __typename?: 'ExamVariant';
+  confirmedAt?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  examId?: Maybe<Scalars['ID']['output']>;
+  id: Scalars['ID']['output'];
+  jobId: Scalars['ID']['output'];
+  questions: Array<ExamVariantQuestion>;
+  savedAt?: Maybe<Scalars['String']['output']>;
+  savedExamId?: Maybe<Scalars['ID']['output']>;
+  status: ExamVariantStatus;
+  title: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+  variantNumber: Scalars['Int']['output'];
+};
+
+export type ExamVariantJob = {
+  __typename?: 'ExamVariantJob';
+  completedAt?: Maybe<Scalars['String']['output']>;
+  errorMessage?: Maybe<Scalars['String']['output']>;
+  examId?: Maybe<Scalars['ID']['output']>;
+  jobId: Scalars['ID']['output'];
+  requestedAt: Scalars['String']['output'];
+  requestedBy?: Maybe<Scalars['String']['output']>;
+  resultJson?: Maybe<Scalars['String']['output']>;
+  sourceQuestionsJson: Scalars['String']['output'];
+  startedAt?: Maybe<Scalars['String']['output']>;
+  status: ExamVariantJobStatus;
+  updatedAt: Scalars['String']['output'];
+  variantCount: Scalars['Int']['output'];
+  variants: Array<ExamVariant>;
+};
+
+export enum ExamVariantJobStatus {
+  Completed = 'completed',
+  Failed = 'failed',
+  Pending = 'pending',
+  Processing = 'processing'
+}
+
+export type ExamVariantQuestion = {
+  __typename?: 'ExamVariantQuestion';
+  correctAnswer?: Maybe<Scalars['String']['output']>;
+  explanation?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  options?: Maybe<Array<Scalars['String']['output']>>;
+  position: Scalars['Int']['output'];
+  prompt: Scalars['String']['output'];
+  type: Scalars['String']['output'];
+};
+
+export type ExamVariantQuestionInput = {
+  correctAnswer?: InputMaybe<Scalars['String']['input']>;
+  explanation?: InputMaybe<Scalars['String']['input']>;
+  options?: InputMaybe<Array<Scalars['String']['input']>>;
+  order: Scalars['Int']['input'];
+  prompt: Scalars['String']['input'];
+  type: Scalars['String']['input'];
+};
+
+export enum ExamVariantStatus {
+  Confirmed = 'confirmed',
+  Generated = 'generated',
+  Saved = 'saved'
+}
+
 export type FormatDistributionInput = {
   fillIn: Scalars['Int']['input'];
   matching: Scalars['Int']['input'];
@@ -190,16 +283,22 @@ export type Mutation = {
   analyzeQuestion: QuestionAnalysisResult;
   /** Багш AI-ийн саналуудаас нэгийг сонгож батална (human-in-the-loop) */
   approveAiExamSchedule: ExamSchedule;
+  confirmExamVariant: ConfirmExamVariantPayload;
+  confirmExamVariants: BatchConfirmExamVariantPayload;
   createAiExamTemplate: AiExamTemplatePayload;
   generateExamQuestions: ExamGenerationResult;
   generateQuestionAnswer: GenerateQuestionAnswerResult;
+  regenerateQuestionAnswer: GenerateQuestionAnswerResult;
   /**
    * Багш AI-ийн санал (variant)-аас татгалзана. Үлдсэн санал байвал suggested хэвээр,
    * бүгд татгалзвал status = rejected болно.
    */
   rejectAiExamScheduleVariant: ExamSchedule;
   requestAiExamSchedule: RequestExamSchedulePayload;
+  requestExamVariants: RequestExamVariantsPayload;
   saveExam: SaveExamPayload;
+  saveExamVariant: SaveExamVariantPayload;
+  saveExamVariants: BatchSaveExamVariantPayload;
   saveNewMathExam: SaveNewMathExamPayload;
 };
 
@@ -212,6 +311,16 @@ export type MutationAnalyzeQuestionArgs = {
 export type MutationApproveAiExamScheduleArgs = {
   examId: Scalars['ID']['input'];
   variantId: Scalars['String']['input'];
+};
+
+
+export type MutationConfirmExamVariantArgs = {
+  input: ConfirmExamVariantInput;
+};
+
+
+export type MutationConfirmExamVariantsArgs = {
+  inputs: Array<ConfirmExamVariantInput>;
 };
 
 
@@ -230,6 +339,11 @@ export type MutationGenerateQuestionAnswerArgs = {
 };
 
 
+export type MutationRegenerateQuestionAnswerArgs = {
+  input: RegenerateQuestionAnswerInput;
+};
+
+
 export type MutationRejectAiExamScheduleVariantArgs = {
   examId: Scalars['ID']['input'];
   reason?: InputMaybe<Scalars['String']['input']>;
@@ -244,8 +358,23 @@ export type MutationRequestAiExamScheduleArgs = {
 };
 
 
+export type MutationRequestExamVariantsArgs = {
+  input: RequestExamVariantsInput;
+};
+
+
 export type MutationSaveExamArgs = {
   input: SaveExamInput;
+};
+
+
+export type MutationSaveExamVariantArgs = {
+  input: SaveExamVariantInput;
+};
+
+
+export type MutationSaveExamVariantsArgs = {
+  inputs: Array<SaveExamVariantInput>;
 };
 
 
@@ -348,14 +477,33 @@ export type NewMathExamSummary = {
   __typename?: 'NewMathExamSummary';
   durationMinutes?: Maybe<Scalars['Int']['output']>;
   examId: Scalars['ID']['output'];
+  examType?: Maybe<Scalars['String']['output']>;
+  grade?: Maybe<Scalars['Int']['output']>;
+  questionCount: Scalars['Int']['output'];
+  subject?: Maybe<Scalars['String']['output']>;
+  teacherId?: Maybe<Scalars['String']['output']>;
   title: Scalars['String']['output'];
   updatedAt: Scalars['String']['output'];
+  variantCount?: Maybe<Scalars['Int']['output']>;
+  withVariants?: Maybe<Scalars['Boolean']['output']>;
+};
+
+export type ListNewMathExamsFilterInput = {
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
+  examType?: InputMaybe<Scalars['String']['input']>;
+  grade?: InputMaybe<Scalars['Int']['input']>;
+  questionCount?: InputMaybe<Scalars['Int']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  subject?: InputMaybe<Scalars['String']['input']>;
+  teacherId?: InputMaybe<Scalars['String']['input']>;
+  withVariants?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type Query = {
   __typename?: 'Query';
   /** AI scheduler: нэг мөрийн төлөв (polling-д ашиглана) */
   getAiExamSchedule?: Maybe<ExamSchedule>;
+  getExamVariantJob?: Maybe<ExamVariantJob>;
   getNewMathExam?: Maybe<NewMathExam>;
   /** ai-scheduler-school-event: өгөгдсөн хугацааны мужид давхцах эвентүүд */
   getSchoolEvents: Array<SchoolEvent>;
@@ -368,11 +516,17 @@ export type Query = {
   /** ai-scheduler-teacher: 9–12-р ангийн Math (MATH_HS) ордог багш нар */
   getTeachersList: Array<Teacher>;
   listNewMathExams: Array<NewMathExamSummary>;
+  listTeacherConfirmedExamSchedules: Array<ExamSchedule>;
 };
 
 
 export type QueryGetAiExamScheduleArgs = {
   examId: Scalars['ID']['input'];
+};
+
+
+export type QueryGetExamVariantJobArgs = {
+  jobId: Scalars['ID']['input'];
 };
 
 
@@ -413,7 +567,16 @@ export type QueryGetTeachersListArgs = {
 
 
 export type QueryListNewMathExamsArgs = {
+  filters?: InputMaybe<ListNewMathExamsFilterInput>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryListTeacherConfirmedExamSchedulesArgs = {
+  endDate: Scalars['String']['input'];
+  startDate: Scalars['String']['input'];
+  teacherId: Scalars['ID']['input'];
 };
 
 export type QuestionAnalysisResult = {
@@ -447,9 +610,32 @@ export enum QuestionFormat {
   Written = 'WRITTEN'
 }
 
+export type RegenerateQuestionAnswerInput = {
+  difficulty?: InputMaybe<Difficulty>;
+  format?: InputMaybe<QuestionFormat>;
+  points?: InputMaybe<Scalars['Int']['input']>;
+  previousCorrectAnswer?: InputMaybe<Scalars['String']['input']>;
+  previousExplanation?: InputMaybe<Scalars['String']['input']>;
+  previousOptions?: InputMaybe<Array<Scalars['String']['input']>>;
+  prompt: Scalars['String']['input'];
+};
+
 export type RequestExamSchedulePayload = {
   __typename?: 'RequestExamSchedulePayload';
   examId?: Maybe<Scalars['ID']['output']>;
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+};
+
+export type RequestExamVariantsInput = {
+  examId?: InputMaybe<Scalars['ID']['input']>;
+  questions: Array<ExamVariantQuestionInput>;
+  variantCount: Scalars['Int']['input'];
+};
+
+export type RequestExamVariantsPayload = {
+  __typename?: 'RequestExamVariantsPayload';
+  jobId?: Maybe<Scalars['ID']['output']>;
   message: Scalars['String']['output'];
   success: Scalars['Boolean']['output'];
 };
@@ -469,6 +655,25 @@ export type SaveExamPayload = {
   examId: Scalars['ID']['output'];
   status: ExamStatus;
   updatedAt: Scalars['String']['output'];
+};
+
+export type SaveExamVariantInput = {
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
+  examId?: InputMaybe<Scalars['ID']['input']>;
+  examType?: InputMaybe<Scalars['String']['input']>;
+  grade?: InputMaybe<Scalars['Int']['input']>;
+  questions: Array<ExamVariantQuestionInput>;
+  subject?: InputMaybe<Scalars['String']['input']>;
+  title: Scalars['String']['input'];
+  variantId: Scalars['ID']['input'];
+};
+
+export type SaveExamVariantPayload = {
+  __typename?: 'SaveExamVariantPayload';
+  examId?: Maybe<Scalars['ID']['output']>;
+  message: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+  variant?: Maybe<ExamVariant>;
 };
 
 export type SaveNewMathExamInput = {
@@ -655,7 +860,11 @@ export type DirectiveResolverFn<TResult = Record<PropertyKey, never>, TParent = 
 export type ResolversTypes = ResolversObject<{
   AiExamTemplatePayload: ResolverTypeWrapper<AiExamTemplatePayload>;
   AiQuestionTemplateInput: AiQuestionTemplateInput;
+  BatchConfirmExamVariantPayload: ResolverTypeWrapper<BatchConfirmExamVariantPayload>;
+  BatchSaveExamVariantPayload: ResolverTypeWrapper<BatchSaveExamVariantPayload>;
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
+  ConfirmExamVariantInput: ConfirmExamVariantInput;
+  ConfirmExamVariantPayload: ResolverTypeWrapper<ConfirmExamVariantPayload>;
   CreateAiExamTemplateInput: CreateAiExamTemplateInput;
   Difficulty: Difficulty;
   DifficultyDistributionInput: DifficultyDistributionInput;
@@ -667,6 +876,12 @@ export type ResolversTypes = ResolversObject<{
   ExamScheduleVariant: ResolverTypeWrapper<ExamScheduleVariant>;
   ExamStatus: ExamStatus;
   ExamType: ExamType;
+  ExamVariant: ResolverTypeWrapper<ExamVariant>;
+  ExamVariantJob: ResolverTypeWrapper<ExamVariantJob>;
+  ExamVariantJobStatus: ExamVariantJobStatus;
+  ExamVariantQuestion: ResolverTypeWrapper<ExamVariantQuestion>;
+  ExamVariantQuestionInput: ExamVariantQuestionInput;
+  ExamVariantStatus: ExamVariantStatus;
   FormatDistributionInput: FormatDistributionInput;
   GenerateQuestionAnswerInput: GenerateQuestionAnswerInput;
   GenerateQuestionAnswerResult: ResolverTypeWrapper<GenerateQuestionAnswerResult>;
@@ -687,9 +902,14 @@ export type ResolversTypes = ResolversObject<{
   QuestionAnalysisResult: ResolverTypeWrapper<QuestionAnalysisResult>;
   QuestionAnalysisSuggestedType: QuestionAnalysisSuggestedType;
   QuestionFormat: QuestionFormat;
+  RegenerateQuestionAnswerInput: RegenerateQuestionAnswerInput;
   RequestExamSchedulePayload: ResolverTypeWrapper<RequestExamSchedulePayload>;
+  RequestExamVariantsInput: RequestExamVariantsInput;
+  RequestExamVariantsPayload: ResolverTypeWrapper<RequestExamVariantsPayload>;
   SaveExamInput: SaveExamInput;
   SaveExamPayload: ResolverTypeWrapper<SaveExamPayload>;
+  SaveExamVariantInput: SaveExamVariantInput;
+  SaveExamVariantPayload: ResolverTypeWrapper<SaveExamVariantPayload>;
   SaveNewMathExamInput: SaveNewMathExamInput;
   SaveNewMathExamPayload: ResolverTypeWrapper<SaveNewMathExamPayload>;
   SchoolEvent: ResolverTypeWrapper<SchoolEvent>;
@@ -704,7 +924,11 @@ export type ResolversTypes = ResolversObject<{
 export type ResolversParentTypes = ResolversObject<{
   AiExamTemplatePayload: AiExamTemplatePayload;
   AiQuestionTemplateInput: AiQuestionTemplateInput;
+  BatchConfirmExamVariantPayload: BatchConfirmExamVariantPayload;
+  BatchSaveExamVariantPayload: BatchSaveExamVariantPayload;
   Boolean: Scalars['Boolean']['output'];
+  ConfirmExamVariantInput: ConfirmExamVariantInput;
+  ConfirmExamVariantPayload: ConfirmExamVariantPayload;
   CreateAiExamTemplateInput: CreateAiExamTemplateInput;
   DifficultyDistributionInput: DifficultyDistributionInput;
   DifficultyPointsInput: DifficultyPointsInput;
@@ -713,6 +937,10 @@ export type ResolversParentTypes = ResolversObject<{
   ExamGenerationResult: ExamGenerationResult;
   ExamSchedule: ExamSchedule;
   ExamScheduleVariant: ExamScheduleVariant;
+  ExamVariant: ExamVariant;
+  ExamVariantJob: ExamVariantJob;
+  ExamVariantQuestion: ExamVariantQuestion;
+  ExamVariantQuestionInput: ExamVariantQuestionInput;
   FormatDistributionInput: FormatDistributionInput;
   GenerateQuestionAnswerInput: GenerateQuestionAnswerInput;
   GenerateQuestionAnswerResult: GenerateQuestionAnswerResult;
@@ -730,9 +958,14 @@ export type ResolversParentTypes = ResolversObject<{
   NewMathExamSummary: NewMathExamSummary;
   Query: Record<PropertyKey, never>;
   QuestionAnalysisResult: QuestionAnalysisResult;
+  RegenerateQuestionAnswerInput: RegenerateQuestionAnswerInput;
   RequestExamSchedulePayload: RequestExamSchedulePayload;
+  RequestExamVariantsInput: RequestExamVariantsInput;
+  RequestExamVariantsPayload: RequestExamVariantsPayload;
   SaveExamInput: SaveExamInput;
   SaveExamPayload: SaveExamPayload;
+  SaveExamVariantInput: SaveExamVariantInput;
+  SaveExamVariantPayload: SaveExamVariantPayload;
   SaveNewMathExamInput: SaveNewMathExamInput;
   SaveNewMathExamPayload: SaveNewMathExamPayload;
   SchoolEvent: SchoolEvent;
@@ -749,6 +982,25 @@ export type AiExamTemplatePayloadResolvers<ContextType = GraphQLContext, ParentT
   templateId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   totalPoints?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+}>;
+
+export type BatchConfirmExamVariantPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['BatchConfirmExamVariantPayload'] = ResolversParentTypes['BatchConfirmExamVariantPayload']> = ResolversObject<{
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  success?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  variants?: Resolver<Array<ResolversTypes['ExamVariant']>, ParentType, ContextType>;
+}>;
+
+export type BatchSaveExamVariantPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['BatchSaveExamVariantPayload'] = ResolversParentTypes['BatchSaveExamVariantPayload']> = ResolversObject<{
+  examIds?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  success?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  variants?: Resolver<Array<ResolversTypes['ExamVariant']>, ParentType, ContextType>;
+}>;
+
+export type ConfirmExamVariantPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['ConfirmExamVariantPayload'] = ResolversParentTypes['ConfirmExamVariantPayload']> = ResolversObject<{
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  success?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  variant?: Resolver<Maybe<ResolversTypes['ExamVariant']>, ParentType, ContextType>;
 }>;
 
 export type ExamGenerationResultResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['ExamGenerationResult'] = ResolversParentTypes['ExamGenerationResult']> = ResolversObject<{
@@ -782,6 +1034,47 @@ export type ExamScheduleVariantResolvers<ContextType = GraphQLContext, ParentTyp
   startTime?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 }>;
 
+export type ExamVariantResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['ExamVariant'] = ResolversParentTypes['ExamVariant']> = ResolversObject<{
+  confirmedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  examId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  jobId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  questions?: Resolver<Array<ResolversTypes['ExamVariantQuestion']>, ParentType, ContextType>;
+  savedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  savedExamId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['ExamVariantStatus'], ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  variantNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+}>;
+
+export type ExamVariantJobResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['ExamVariantJob'] = ResolversParentTypes['ExamVariantJob']> = ResolversObject<{
+  completedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  errorMessage?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  examId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  jobId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  requestedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  requestedBy?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  resultJson?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sourceQuestionsJson?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  startedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['ExamVariantJobStatus'], ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  variantCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  variants?: Resolver<Array<ResolversTypes['ExamVariant']>, ParentType, ContextType>;
+}>;
+
+export type ExamVariantQuestionResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['ExamVariantQuestion'] = ResolversParentTypes['ExamVariantQuestion']> = ResolversObject<{
+  correctAnswer?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  explanation?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  options?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
+  position?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  prompt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  type?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+}>;
+
 export type GenerateQuestionAnswerResultResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['GenerateQuestionAnswerResult'] = ResolversParentTypes['GenerateQuestionAnswerResult']> = ResolversObject<{
   correctAnswer?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   difficulty?: Resolver<ResolversTypes['Difficulty'], ParentType, ContextType>;
@@ -805,12 +1098,18 @@ export type GeneratedQuestionResolvers<ContextType = GraphQLContext, ParentType 
 export type MutationResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = ResolversObject<{
   analyzeQuestion?: Resolver<ResolversTypes['QuestionAnalysisResult'], ParentType, ContextType, RequireFields<MutationAnalyzeQuestionArgs, 'prompt'>>;
   approveAiExamSchedule?: Resolver<ResolversTypes['ExamSchedule'], ParentType, ContextType, RequireFields<MutationApproveAiExamScheduleArgs, 'examId' | 'variantId'>>;
+  confirmExamVariant?: Resolver<ResolversTypes['ConfirmExamVariantPayload'], ParentType, ContextType, RequireFields<MutationConfirmExamVariantArgs, 'input'>>;
+  confirmExamVariants?: Resolver<ResolversTypes['BatchConfirmExamVariantPayload'], ParentType, ContextType, RequireFields<MutationConfirmExamVariantsArgs, 'inputs'>>;
   createAiExamTemplate?: Resolver<ResolversTypes['AiExamTemplatePayload'], ParentType, ContextType, RequireFields<MutationCreateAiExamTemplateArgs, 'input'>>;
   generateExamQuestions?: Resolver<ResolversTypes['ExamGenerationResult'], ParentType, ContextType, RequireFields<MutationGenerateExamQuestionsArgs, 'input'>>;
   generateQuestionAnswer?: Resolver<ResolversTypes['GenerateQuestionAnswerResult'], ParentType, ContextType, RequireFields<MutationGenerateQuestionAnswerArgs, 'input'>>;
+  regenerateQuestionAnswer?: Resolver<ResolversTypes['GenerateQuestionAnswerResult'], ParentType, ContextType, RequireFields<MutationRegenerateQuestionAnswerArgs, 'input'>>;
   rejectAiExamScheduleVariant?: Resolver<ResolversTypes['ExamSchedule'], ParentType, ContextType, RequireFields<MutationRejectAiExamScheduleVariantArgs, 'examId' | 'variantId'>>;
   requestAiExamSchedule?: Resolver<ResolversTypes['RequestExamSchedulePayload'], ParentType, ContextType, RequireFields<MutationRequestAiExamScheduleArgs, 'classId' | 'preferredDate' | 'testId'>>;
+  requestExamVariants?: Resolver<ResolversTypes['RequestExamVariantsPayload'], ParentType, ContextType, RequireFields<MutationRequestExamVariantsArgs, 'input'>>;
   saveExam?: Resolver<ResolversTypes['SaveExamPayload'], ParentType, ContextType, RequireFields<MutationSaveExamArgs, 'input'>>;
+  saveExamVariant?: Resolver<ResolversTypes['SaveExamVariantPayload'], ParentType, ContextType, RequireFields<MutationSaveExamVariantArgs, 'input'>>;
+  saveExamVariants?: Resolver<ResolversTypes['BatchSaveExamVariantPayload'], ParentType, ContextType, RequireFields<MutationSaveExamVariantsArgs, 'inputs'>>;
   saveNewMathExam?: Resolver<ResolversTypes['SaveNewMathExamPayload'], ParentType, ContextType, RequireFields<MutationSaveNewMathExamArgs, 'input'>>;
 }>;
 
@@ -873,6 +1172,7 @@ export type NewMathExamSummaryResolvers<ContextType = GraphQLContext, ParentType
 
 export type QueryResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = ResolversObject<{
   getAiExamSchedule?: Resolver<Maybe<ResolversTypes['ExamSchedule']>, ParentType, ContextType, RequireFields<QueryGetAiExamScheduleArgs, 'examId'>>;
+  getExamVariantJob?: Resolver<Maybe<ResolversTypes['ExamVariantJob']>, ParentType, ContextType, RequireFields<QueryGetExamVariantJobArgs, 'jobId'>>;
   getNewMathExam?: Resolver<Maybe<ResolversTypes['NewMathExam']>, ParentType, ContextType, RequireFields<QueryGetNewMathExamArgs, 'examId'>>;
   getSchoolEvents?: Resolver<Array<ResolversTypes['SchoolEvent']>, ParentType, ContextType, RequireFields<QueryGetSchoolEventsArgs, 'endDate' | 'startDate'>>;
   getStudentMainLessonsList?: Resolver<Array<ResolversTypes['StudentMainLesson']>, ParentType, ContextType, RequireFields<QueryGetStudentMainLessonsListArgs, 'includeDraft' | 'semesterId' | 'studentId'>>;
@@ -880,6 +1180,7 @@ export type QueryResolvers<ContextType = GraphQLContext, ParentType extends Reso
   getTeacherMainLessonsList?: Resolver<Array<ResolversTypes['TeacherMainLesson']>, ParentType, ContextType, RequireFields<QueryGetTeacherMainLessonsListArgs, 'includeDraft' | 'semesterId' | 'teacherId'>>;
   getTeachersList?: Resolver<Array<ResolversTypes['Teacher']>, ParentType, ContextType, RequireFields<QueryGetTeachersListArgs, 'grades'>>;
   listNewMathExams?: Resolver<Array<ResolversTypes['NewMathExamSummary']>, ParentType, ContextType, RequireFields<QueryListNewMathExamsArgs, 'limit'>>;
+  listTeacherConfirmedExamSchedules?: Resolver<Array<ResolversTypes['ExamSchedule']>, ParentType, ContextType, RequireFields<QueryListTeacherConfirmedExamSchedulesArgs, 'endDate' | 'startDate' | 'teacherId'>>;
 }>;
 
 export type QuestionAnalysisResultResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['QuestionAnalysisResult'] = ResolversParentTypes['QuestionAnalysisResult']> = ResolversObject<{
@@ -900,12 +1201,25 @@ export type RequestExamSchedulePayloadResolvers<ContextType = GraphQLContext, Pa
   success?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
 }>;
 
+export type RequestExamVariantsPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['RequestExamVariantsPayload'] = ResolversParentTypes['RequestExamVariantsPayload']> = ResolversObject<{
+  jobId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  success?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+}>;
+
 export type SaveExamPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['SaveExamPayload'] = ResolversParentTypes['SaveExamPayload']> = ResolversObject<{
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   errorLog?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   examId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   status?: Resolver<ResolversTypes['ExamStatus'], ParentType, ContextType>;
   updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+}>;
+
+export type SaveExamVariantPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['SaveExamVariantPayload'] = ResolversParentTypes['SaveExamVariantPayload']> = ResolversObject<{
+  examId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  success?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  variant?: Resolver<Maybe<ResolversTypes['ExamVariant']>, ParentType, ContextType>;
 }>;
 
 export type SaveNewMathExamPayloadResolvers<ContextType = GraphQLContext, ParentType extends ResolversParentTypes['SaveNewMathExamPayload'] = ResolversParentTypes['SaveNewMathExamPayload']> = ResolversObject<{
@@ -998,9 +1312,15 @@ export type TeacherMainLessonResolvers<ContextType = GraphQLContext, ParentType 
 
 export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   AiExamTemplatePayload?: AiExamTemplatePayloadResolvers<ContextType>;
+  BatchConfirmExamVariantPayload?: BatchConfirmExamVariantPayloadResolvers<ContextType>;
+  BatchSaveExamVariantPayload?: BatchSaveExamVariantPayloadResolvers<ContextType>;
+  ConfirmExamVariantPayload?: ConfirmExamVariantPayloadResolvers<ContextType>;
   ExamGenerationResult?: ExamGenerationResultResolvers<ContextType>;
   ExamSchedule?: ExamScheduleResolvers<ContextType>;
   ExamScheduleVariant?: ExamScheduleVariantResolvers<ContextType>;
+  ExamVariant?: ExamVariantResolvers<ContextType>;
+  ExamVariantJob?: ExamVariantJobResolvers<ContextType>;
+  ExamVariantQuestion?: ExamVariantQuestionResolvers<ContextType>;
   GenerateQuestionAnswerResult?: GenerateQuestionAnswerResultResolvers<ContextType>;
   GeneratedQuestion?: GeneratedQuestionResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
@@ -1012,7 +1332,9 @@ export type Resolvers<ContextType = GraphQLContext> = ResolversObject<{
   Query?: QueryResolvers<ContextType>;
   QuestionAnalysisResult?: QuestionAnalysisResultResolvers<ContextType>;
   RequestExamSchedulePayload?: RequestExamSchedulePayloadResolvers<ContextType>;
+  RequestExamVariantsPayload?: RequestExamVariantsPayloadResolvers<ContextType>;
   SaveExamPayload?: SaveExamPayloadResolvers<ContextType>;
+  SaveExamVariantPayload?: SaveExamVariantPayloadResolvers<ContextType>;
   SaveNewMathExamPayload?: SaveNewMathExamPayloadResolvers<ContextType>;
   SchoolEvent?: SchoolEventResolvers<ContextType>;
   Student?: StudentResolvers<ContextType>;

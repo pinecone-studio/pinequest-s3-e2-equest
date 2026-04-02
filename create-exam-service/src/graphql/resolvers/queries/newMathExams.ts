@@ -1,11 +1,24 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, like, sql } from "drizzle-orm";
 import { GraphQLError } from "graphql";
 
 import type { GraphQLContext } from "../../context";
 import { newExamQuestions, newExams } from "../../../db/schema";
 import { MathExamQuestionType } from "../../generated/resolvers-types";
 
-type ListArgs = { limit?: number | null };
+type ListArgs = {
+  filters?: {
+    durationMinutes?: number | null;
+    examType?: string | null;
+    grade?: number | null;
+    questionCount?: number | null;
+    search?: string | null;
+    subject?: string | null;
+    teacherId?: string | null;
+    withVariants?: boolean | null;
+  } | null;
+  limit?: number | null;
+  offset?: number | null;
+};
 type GetArgs = { examId: string };
 
 function gqlQuestionType(t: string): MathExamQuestionType {
@@ -101,19 +114,84 @@ export const newMathExamQueries = {
     const limit = Number.isFinite(limitRaw)
       ? Math.max(1, Math.min(200, Math.floor(limitRaw)))
       : 50;
+    const offsetRaw = typeof args.offset === "number" ? args.offset : 0;
+    const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
 
-    const rows = await ctx.db
+    const conditions = [];
+    if (typeof args.filters?.grade === "number" && Number.isFinite(args.filters.grade)) {
+      conditions.push(eq(newExams.grade, Math.floor(args.filters.grade)));
+    }
+    if (args.filters?.examType?.trim()) {
+      conditions.push(eq(newExams.examType, args.filters.examType.trim()));
+    }
+    if (args.filters?.subject?.trim()) {
+      conditions.push(eq(newExams.sessionSubject, args.filters.subject.trim()));
+    }
+    if (args.filters?.teacherId?.trim()) {
+      conditions.push(eq(newExams.teacherId, args.filters.teacherId.trim()));
+    }
+    if (
+      typeof args.filters?.durationMinutes === "number" &&
+      Number.isFinite(args.filters.durationMinutes)
+    ) {
+      conditions.push(eq(newExams.durationMinutes, Math.floor(args.filters.durationMinutes)));
+    }
+    if (typeof args.filters?.withVariants === "boolean") {
+      conditions.push(eq(newExams.withVariants, args.filters.withVariants ? 1 : 0));
+    }
+    if (
+      typeof args.filters?.questionCount === "number" &&
+      Number.isFinite(args.filters.questionCount)
+    ) {
+      conditions.push(
+        sql`coalesce(${newExams.mcqCount}, 0) + coalesce(${newExams.mathCount}, 0) = ${Math.floor(args.filters.questionCount)}`,
+      );
+    }
+    if (args.filters?.search?.trim()) {
+      const normalizedSearch = `%${args.filters.search.trim().toLowerCase()}%`;
+      conditions.push(
+        sql`(
+          lower(coalesce(${newExams.title}, '')) like ${normalizedSearch}
+          or lower(coalesce(${newExams.sessionSubject}, '')) like ${normalizedSearch}
+          or lower(coalesce(${newExams.examType}, '')) like ${normalizedSearch}
+        )`,
+      );
+    }
+
+    let query = ctx.db
       .select({
         examId: newExams.id,
         title: newExams.title,
+        grade: newExams.grade,
+        examType: newExams.examType,
+        subject: newExams.sessionSubject,
+        teacherId: newExams.teacherId,
+        withVariants: newExams.withVariants,
+        variantCount: newExams.variantCount,
+        mcqCount: newExams.mcqCount,
+        mathCount: newExams.mathCount,
         durationMinutes: newExams.durationMinutes,
         updatedAt: newExams.updatedAt,
       })
       .from(newExams)
-      .orderBy(desc(newExams.updatedAt))
-      .limit(limit);
+      .$dynamic();
 
-    return rows;
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    const rows = await query.orderBy(desc(newExams.updatedAt)).limit(limit).offset(offset);
+
+    return rows.map((row) => ({
+      ...row,
+      questionCount: (row.mcqCount ?? 0) + (row.mathCount ?? 0),
+      withVariants:
+        row.withVariants === 1
+          ? true
+          : row.withVariants === 0
+            ? false
+            : null,
+    }));
   },
 
   getNewMathExam: async (_: unknown, args: GetArgs, ctx: GraphQLContext) => {
