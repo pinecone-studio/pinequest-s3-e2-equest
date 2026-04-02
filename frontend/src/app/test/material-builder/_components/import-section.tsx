@@ -13,7 +13,7 @@ import { importOptions } from "./material-builder-config";
 export type ImportedTextbookCard = {
   createdAt: string;
   errorMessage?: string | null;
-  file: File;
+  file?: File | null;
   fileName: string;
   id: string;
   materialId?: string | null;
@@ -32,6 +32,22 @@ type ImportSectionProps = {
   onOpenImportedTextbook?: (importId: string) => void;
   onTextbookPicked?: (file: File) => void;
 };
+
+function getActionLabel(item: ImportedTextbookCard, isActive: boolean) {
+  if (item.materialStatus === "ready" || item.materialStatus === "ocr_needed") {
+    return isActive ? "Доор нээсэн" : "Доор нээх";
+  }
+
+  if (item.materialStatus === "processing" || item.materialStatus === "uploaded") {
+    return isActive ? "Доор боловсруулж байна" : "Явц харах";
+  }
+
+  if (item.materialStatus === "error") {
+    return isActive ? "Доор алдаа гарсан" : "Доор шалгах";
+  }
+
+  return isActive ? "Доор нээсэн" : "Доор нээх";
+}
 
 export function ImportSection({
   activeImportId = null,
@@ -124,9 +140,7 @@ export function ImportSection({
                   </p>
                   <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#dbe4f3] bg-white px-3 py-1 text-[12px] text-[#215da8]">
                     <FileText className="h-3.5 w-3.5" />
-                    {activeImportId === item.id
-                      ? "Доор боловсруулж байна"
-                      : "Доор нээх"}
+                    {getActionLabel(item, activeImportId === item.id)}
                   </p>
                   <p className="mt-2 text-[12px] text-slate-500">
                     Энэ хэсгийн доор upload, progress, боловсруулалт эхэлнэ.

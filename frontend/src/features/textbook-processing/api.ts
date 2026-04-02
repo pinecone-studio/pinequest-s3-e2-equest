@@ -1,11 +1,9 @@
-import {
-  getConfiguredTextbookR2BucketName,
-  getCreateExamServiceBaseUrl,
-} from "@/lib/create-exam-graphql";
+import { getConfiguredTextbookR2BucketName } from "@/lib/create-exam-graphql";
 import {
   MAX_TEXTBOOK_FILE_SIZE_BYTES,
 } from "./constants";
 import type {
+  TextbookMaterial,
   TextbookMaterialDetail,
   TextbookProcessingPage,
   TextbookStructurePayload,
@@ -44,6 +42,10 @@ type R2TextbookListResponse = {
   items: R2TextbookCandidate[];
 };
 
+type TextbookMaterialLibraryResponse = {
+  items: TextbookMaterial[];
+};
+
 type UploadProgressSnapshot = {
   loaded: number;
   percent: number;
@@ -52,6 +54,7 @@ type UploadProgressSnapshot = {
 
 const TEXTBOOK_R2_PROXY_PATH = "/api/textbook-r2";
 const TEXTBOOK_R2_UPLOAD_PROXY_PATH = "/api/textbook-r2-upload";
+const TEXTBOOK_MATERIALS_PROXY_PATH = "/api/textbook-materials";
 
 function slugifyUploadName(value: string) {
   return String(value || "")
@@ -353,7 +356,7 @@ export async function createTextbookMaterialRecord(input: {
   grade: number;
   subject: MaterialBuilderSubject;
 }) {
-  const response = await fetch(`${getCreateExamServiceBaseUrl()}/api/textbook-materials`, {
+  const response = await fetch(TEXTBOOK_MATERIALS_PROXY_PATH, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -373,7 +376,7 @@ export async function createTextbookMaterialRecord(input: {
     throw new Error(await parseJsonError(response));
   }
 
-  return (await response.json()) as TextbookMaterialDetail;
+  return parseProxyJson<TextbookMaterialDetail & { error?: string }>(response);
 }
 
 export async function getTextbookMaterialById(
@@ -383,7 +386,8 @@ export async function getTextbookMaterialById(
   } = {},
 ) {
   const url = new URL(
-    `${getCreateExamServiceBaseUrl()}/api/textbook-materials/${encodeURIComponent(materialId)}`,
+    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}`,
+    window.location.origin,
   );
   if (options.includeContent) {
     url.searchParams.set("includeContent", "1");
@@ -400,7 +404,50 @@ export async function getTextbookMaterialById(
     throw new Error(await parseJsonError(response));
   }
 
-  return (await response.json()) as TextbookMaterialDetail;
+  return parseProxyJson<TextbookMaterialDetail & { error?: string }>(response);
+}
+
+export async function listTextbookMaterialLibrary(options: {
+  grade?: number | null;
+  limit?: number;
+  statuses?: string[];
+  subject?: MaterialBuilderSubject | string | null;
+} = {}) {
+  const url = new URL(
+    `${TEXTBOOK_MATERIALS_PROXY_PATH}/library`,
+    window.location.origin,
+  );
+
+  if (options.grade != null && Number.isFinite(Number(options.grade))) {
+    url.searchParams.set("grade", String(options.grade));
+  }
+
+  if (options.limit != null && Number.isFinite(Number(options.limit))) {
+    url.searchParams.set("limit", String(options.limit));
+  }
+
+  const subject = String(options.subject || "").trim();
+  if (subject) {
+    url.searchParams.set("subject", subject);
+  }
+
+  for (const status of options.statuses || []) {
+    const normalized = String(status || "").trim();
+    if (!normalized) {
+      continue;
+    }
+    url.searchParams.append("status", normalized);
+  }
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseJsonError(response));
+  }
+
+  return parseProxyJson<TextbookMaterialLibraryResponse & { error?: string }>(response);
 }
 
 export async function getTextbookMaterialByR2(
@@ -410,7 +457,7 @@ export async function getTextbookMaterialByR2(
     includeContent?: boolean;
   } = {},
 ) {
-  const url = new URL(`${getCreateExamServiceBaseUrl()}/api/textbook-materials`);
+  const url = new URL(TEXTBOOK_MATERIALS_PROXY_PATH, window.location.origin);
   url.searchParams.set("bucketName", bucketName);
   url.searchParams.set("key", key);
   if (options.includeContent) {
@@ -428,7 +475,7 @@ export async function getTextbookMaterialByR2(
     throw new Error(await parseJsonError(response));
   }
 
-  return (await response.json()) as TextbookMaterialDetail;
+  return parseProxyJson<TextbookMaterialDetail & { error?: string }>(response);
 }
 
 export async function updateTextbookMaterialStatus(
@@ -436,7 +483,7 @@ export async function updateTextbookMaterialStatus(
   payload: Record<string, unknown>,
 ) {
   const response = await fetch(
-    `${getCreateExamServiceBaseUrl()}/api/textbook-materials/${encodeURIComponent(materialId)}`,
+    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}`,
     {
       method: "PATCH",
       headers: {
@@ -450,7 +497,7 @@ export async function updateTextbookMaterialStatus(
     throw new Error(await parseJsonError(response));
   }
 
-  return (await response.json()) as TextbookMaterialDetail;
+  return parseProxyJson<TextbookMaterialDetail & { error?: string }>(response);
 }
 
 export async function upsertTextbookMaterialPages(
@@ -458,7 +505,7 @@ export async function upsertTextbookMaterialPages(
   payload: Record<string, unknown>,
 ) {
   const response = await fetch(
-    `${getCreateExamServiceBaseUrl()}/api/textbook-materials/${encodeURIComponent(materialId)}/pages`,
+    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/pages`,
     {
       method: "POST",
       headers: {
@@ -472,7 +519,7 @@ export async function upsertTextbookMaterialPages(
     throw new Error(await parseJsonError(response));
   }
 
-  return (await response.json()) as TextbookMaterialDetail;
+  return parseProxyJson<TextbookMaterialDetail & { error?: string }>(response);
 }
 
 export async function replaceTextbookMaterialStructure(
@@ -480,7 +527,7 @@ export async function replaceTextbookMaterialStructure(
   payload: TextbookStructurePayload,
 ) {
   const response = await fetch(
-    `${getCreateExamServiceBaseUrl()}/api/textbook-materials/${encodeURIComponent(materialId)}/structure`,
+    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/structure`,
     {
       method: "POST",
       headers: {
@@ -494,5 +541,5 @@ export async function replaceTextbookMaterialStructure(
     throw new Error(await parseJsonError(response));
   }
 
-  return (await response.json()) as TextbookMaterialDetail;
+  return parseProxyJson<TextbookMaterialDetail & { error?: string }>(response);
 }

@@ -12,6 +12,8 @@ export const textbookChunks = sqliteTable(
     sectionId: text("section_id")
       .notNull()
       .references(() => textbookSections.id, { onDelete: "cascade" }),
+    chapterId: text("chapter_id"),
+    subchapterId: text("subchapter_id"),
     chunkType: text("chunk_type").notNull().default("content"),
     orderIndex: integer("order_index").notNull().default(0),
     pageStart: integer("page_start"),
@@ -27,5 +29,13 @@ export const textbookChunks = sqliteTable(
       table.sectionId,
       table.orderIndex,
     ),
+    materialChapterOrderIdx: uniqueIndex("textbook_chunks_material_chapter_order_idx").on(
+      table.materialId,
+      table.chapterId,
+      table.orderIndex,
+    ),
+    materialSubchapterOrderIdx: uniqueIndex(
+      "textbook_chunks_material_subchapter_order_idx",
+    ).on(table.materialId, table.subchapterId, table.orderIndex),
   }),
 );

@@ -78,6 +78,8 @@ export type StoredTextbookChunk = {
   id: string;
   materialId: string;
   sectionId: string;
+  chapterId: string | null;
+  subchapterId: string | null;
   chunkType: "content" | "exercise" | "summary";
   orderIndex: number;
   pageStart: number | null;
@@ -94,6 +96,11 @@ export type TextbookMaterialDetail = {
   pages: StoredTextbookPage[];
   sections: StoredTextbookSection[];
   chunks: StoredTextbookChunk[];
+};
+
+export type TextbookMaterialStructureDetail = {
+  material: StoredTextbookMaterial;
+  sections: StoredTextbookSection[];
 };
 
 export type CreateTextbookMaterialInput = {
@@ -177,4 +184,15 @@ export type ReplaceTextbookStructureInput = {
     pageNumbers: number[];
     text: string;
   }>;
+};
+
+export type ListTextbookMaterialsInput = {
+  grade?: number | null;
+  subject?: string | null;
+  statuses?: Array<TextbookMaterialStatus | string> | null;
+  limit?: number | null;
+};
+
+export type GetTextbookMaterialSelectionInput = {
+  nodeIds: string[];
 };

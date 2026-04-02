@@ -21,7 +21,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getStageLabel } from "./status";
+import {
+  getMaterialProgressValue,
+  getStageLabel,
+  getUploadWorkflowProgressValue,
+} from "./status";
 import { SectionTree } from "./SectionTree";
 import {
   buildSectionTree,
@@ -32,6 +36,9 @@ import {
   buildTextbookGenerationSourceFromMaterial,
   generateTextbookTestFromMaterial,
 } from "./legacy-generation-adapter";
+import { getTextbookMaterialSelectionByNodeIds } from "./material-selection-api";
+import { cachePersistedTextbookMaterial } from "./persisted-material-cache";
+import { cacheSessionTextbookMaterial } from "./session-material-cache";
 import { useTextbookMaterialProcessing } from "./use-textbook-material-processing";
 import type {
   MaterialBuilderSubject,
@@ -203,9 +210,10 @@ type Props = {
   }) => void;
   onQueuedImportConsumed?: (importId: string) => void;
   queuedImport?: {
-    file: File;
+    file?: File | null;
     fileName: string;
     id: string;
+    materialId?: string | null;
     title: string;
     uploadedAsset?: TextbookUploadedAsset | null;
   } | null;
@@ -241,6 +249,7 @@ export function TextbookProcessingSection({
     uploadedAsset,
     importBook,
     loadFromR2,
+    loadMaterialById,
   } = useTextbookMaterialProcessing({
     enableR2Lookup: !hideImportTools,
     grade,
@@ -293,18 +302,16 @@ export function TextbookProcessingSection({
     : normalizeWorkflowStage(material?.stage || null);
   const progressValue =
     isUploading
-      ? Math.max(uploadProgressPercent, 2)
-      : material && material.progressTotal > 0
-      ? Math.min(100, Math.round((material.progressCurrent / material.progressTotal) * 100))
-      : materialReady
-        ? 100
-        : 0;
+      ? getUploadWorkflowProgressValue(uploadProgressPercent)
+      : getMaterialProgressValue(material);
   const progressMetaLabel = isUploading
     ? `${Math.max(uploadProgressPercent, 0)}%`
     : material?.stage === "processing_pages" && material.progressTotal > 0
       ? `${material.progressCurrent}/${material.progressTotal} хуудас`
       : material?.stage === "detecting_chapters"
         ? "Бүтэц боловсруулж байна"
+        : material?.stage === "uploaded" || material?.status === "uploaded"
+          ? "Хүлээгдэж байна"
         : materialReady
           ? "Бэлэн"
           : materialNeedsOcr
@@ -386,6 +393,31 @@ export function TextbookProcessingSection({
 
     consumedQueuedImportIdRef.current = queuedImport.id;
     onQueuedImportConsumed?.(queuedImport.id);
+    if (queuedImport.materialId) {
+      void (async () => {
+        const materialId = queuedImport.materialId ?? "";
+        if (!materialId) {
+          return;
+        }
+        const loaded = await loadMaterialById(materialId);
+        if (loaded) {
+          return;
+        }
+
+        if (materialId.startsWith("local:") && queuedImport.file) {
+          await importBook(queuedImport.file);
+          return;
+        }
+
+        if (materialId.startsWith("local:")) {
+          toast.error(
+            "Локал материалаа дахин нээхийн тулд энэ session доторх эх PDF файл хэрэгтэй байна.",
+          );
+        }
+      })();
+      return;
+    }
+
     if (
       queuedImport.uploadedAsset &&
       queuedImport.uploadedAsset.bucketName !== "local"
@@ -404,8 +436,10 @@ export function TextbookProcessingSection({
       return;
     }
 
-    void importBook(queuedImport.file);
-  }, [importBook, loadFromR2, onQueuedImportConsumed, queuedImport]);
+    if (queuedImport.file) {
+      void importBook(queuedImport.file);
+    }
+  }, [importBook, loadFromR2, loadMaterialById, onQueuedImportConsumed, queuedImport]);
 
   useEffect(() => {
     if (!activeImportId || !onMaterialStateChange) {
@@ -444,6 +478,19 @@ export function TextbookProcessingSection({
       uploadedAsset,
     });
   }, [activeImportId, material, onMaterialStateChange, uploadedAsset]);
+
+  useEffect(() => {
+    cacheSessionTextbookMaterial({
+      asset: uploadedAsset,
+      detail: materialDetail,
+      importId: activeImportId,
+    });
+    cachePersistedTextbookMaterial({
+      asset: uploadedAsset,
+      detail: materialDetail,
+      importId: activeImportId,
+    });
+  }, [activeImportId, materialDetail, uploadedAsset]);
 
   function clearGeneratedPreview() {
     if (!generatedTest) {
@@ -496,8 +543,34 @@ export function TextbookProcessingSection({
     setIsGenerating(true);
 
     try {
+      let generationDetail = materialDetail;
+      const needsScopedLoad =
+        generationDetail.chunks.length === 0 &&
+        generationDetail.pages.length === 0 &&
+        !material.id.startsWith("local:");
+
+      if (needsScopedLoad) {
+        setLocalStatusMessage("Сонгосон хэсгийн chunk-уудыг ачаалж байна...");
+        const scopedDetail = await getTextbookMaterialSelectionByNodeIds(
+          material.id,
+          selectedNodeIds,
+        );
+
+        if (!scopedDetail || scopedDetail.sections.length === 0) {
+          throw new Error("Сонгосон бүлгийн бүтэц DB-с олдсонгүй.");
+        }
+
+        if (scopedDetail.chunks.length === 0) {
+          throw new Error(
+            "Сонгосон хэсгээс generation хийх chunk олдсонгүй. PDF-г дахин боловсруулж шалгана уу.",
+          );
+        }
+
+        generationDetail = scopedDetail;
+      }
+
       const { result: fallbackTest, selectedSectionTitles } =
-        generateTextbookTestFromMaterial(materialDetail, selectedNodeIds, {
+        generateTextbookTestFromMaterial(generationDetail, selectedNodeIds, {
           fallbackDifficulty: "hard",
           questionCount: Number(questionCount) || 0,
           openQuestionCount: Number(openQuestionCount) || 0,
@@ -513,7 +586,7 @@ export function TextbookProcessingSection({
 
       try {
         const generationSource = buildTextbookGenerationSourceFromMaterial(
-          materialDetail,
+          generationDetail,
           selectedNodeIds,
           {
             questionCount: Number(questionCount) || 0,

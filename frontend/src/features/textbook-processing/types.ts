@@ -87,6 +87,8 @@ export type TextbookChunkRecord = {
   id: string;
   materialId: string;
   sectionId: string;
+  chapterId: string | null;
+  subchapterId: string | null;
   chunkType: "content" | "exercise" | "summary";
   orderIndex: number;
   pageStart: number | null;
@@ -103,6 +105,11 @@ export type TextbookMaterialDetail = {
   pages: TextbookPageRecord[];
   sections: TextbookSectionRecord[];
   chunks: TextbookChunkRecord[];
+};
+
+export type TextbookMaterialStructureDetail = {
+  material: TextbookMaterial;
+  sections: TextbookSectionRecord[];
 };
 
 export type TextbookSectionTreeNode = TextbookSectionRecord & {

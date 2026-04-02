@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "@/db/schema";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import type {
   CreateTextbookMaterialInput,
+  ListTextbookMaterialsInput,
   ReplaceTextbookStructureInput,
   StoredTextbookChunk,
   StoredTextbookMaterial,
@@ -149,6 +150,8 @@ function serializeChunk(row: typeof textbookChunks.$inferSelect): StoredTextbook
     id: row.id,
     materialId: row.materialId,
     sectionId: row.sectionId,
+    chapterId: row.chapterId ?? null,
+    subchapterId: row.subchapterId ?? null,
     chunkType: row.chunkType as StoredTextbookChunk["chunkType"],
     orderIndex: safeNumber(row.orderIndex),
     pageStart: row.pageStart ?? null,
@@ -242,6 +245,58 @@ export async function getTextbookMaterialDetail(
     sections,
     chunks,
   };
+}
+
+function buildMaterialFilters(input: ListTextbookMaterialsInput) {
+  const conditions = [];
+
+  if (input.grade != null && Number.isFinite(Number(input.grade))) {
+    conditions.push(eq(textbookMaterials.grade, safeNumber(input.grade)));
+  }
+
+  const subject = input.subject?.trim();
+  if (subject) {
+    conditions.push(eq(textbookMaterials.subject, subject));
+  }
+
+  const statuses = Array.isArray(input.statuses)
+    ? input.statuses.map((status) => String(status || "").trim()).filter(Boolean)
+    : [];
+  if (statuses.length > 0) {
+    conditions.push(inArray(textbookMaterials.status, statuses));
+  }
+
+  return conditions;
+}
+
+export async function listTextbookMaterials(
+  db: Database,
+  input: ListTextbookMaterialsInput = {},
+) {
+  const filters = buildMaterialFilters(input);
+  const limit = Math.max(1, Math.min(100, safeNumber(input.limit, 24)));
+  const rows =
+    filters.length > 1
+      ? await db
+          .select()
+          .from(textbookMaterials)
+          .where(and(...filters))
+          .orderBy(desc(textbookMaterials.updatedAt), desc(textbookMaterials.createdAt))
+          .limit(limit)
+      : filters.length === 1
+        ? await db
+            .select()
+            .from(textbookMaterials)
+            .where(filters[0]!)
+            .orderBy(desc(textbookMaterials.updatedAt), desc(textbookMaterials.createdAt))
+            .limit(limit)
+        : await db
+            .select()
+            .from(textbookMaterials)
+            .orderBy(desc(textbookMaterials.updatedAt), desc(textbookMaterials.createdAt))
+            .limit(limit);
+
+  return rows.map(serializeMaterial);
 }
 
 export async function createOrReuseTextbookMaterial(
@@ -482,6 +537,40 @@ export async function replaceTextbookMaterialStructure(
   }
 
   const now = nowIso();
+  const sectionById = new Map(
+    (input.sections ?? []).map((section) => [section.id, section] as const),
+  );
+
+  function resolveChunkScope(sectionId: string) {
+    let chapterId: string | null = null;
+    let subchapterId: string | null = null;
+    let currentId: string | null = sectionId;
+
+    while (currentId) {
+      const current:
+        | ReplaceTextbookStructureInput["sections"][number]
+        | null = sectionById.get(currentId) || null;
+      if (!current) {
+        break;
+      }
+
+      if (!chapterId && current.nodeType === "chapter") {
+        chapterId = current.id;
+      }
+
+      if (!subchapterId && current.nodeType === "subchapter") {
+        subchapterId = current.id;
+      }
+
+      currentId = current.parentId?.trim() || null;
+    }
+
+    return {
+      chapterId,
+      subchapterId,
+    };
+  }
+
   await db.delete(textbookChunks).where(eq(textbookChunks.materialId, materialId));
   await db.delete(textbookSections).where(eq(textbookSections.materialId, materialId));
 
@@ -510,10 +599,13 @@ export async function replaceTextbookMaterialStructure(
   }
 
   for (const chunk of input.chunks ?? []) {
+    const scope = resolveChunkScope(chunk.sectionId);
     await db.insert(textbookChunks).values({
       id: chunk.id,
       materialId,
       sectionId: chunk.sectionId,
+      chapterId: scope.chapterId,
+      subchapterId: scope.subchapterId,
       chunkType: chunk.chunkType,
       orderIndex: Math.max(0, safeNumber(chunk.orderIndex)),
       pageStart:

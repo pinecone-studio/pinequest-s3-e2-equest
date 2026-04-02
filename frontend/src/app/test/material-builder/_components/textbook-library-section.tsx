@@ -6,6 +6,7 @@ import type { ImportedTextbookCard } from "./import-section";
 
 type Props = {
   activeId?: string | null;
+  isLoading?: boolean;
   items: ImportedTextbookCard[];
   onSelect?: (importId: string) => void;
 };
@@ -35,11 +36,28 @@ function getCardBadge(item: ImportedTextbookCard) {
 }
 
 function canOpenSections(item: ImportedTextbookCard) {
-  return item.materialStatus === "ready" || item.materialStatus === "ocr_needed";
+  return Boolean(item.materialId || item.uploadedAsset);
+}
+
+function getActionLabel(item: ImportedTextbookCard) {
+  if (item.materialStatus === "ready" || item.materialStatus === "ocr_needed") {
+    return "Бүлэг, дэд бүлэг харах";
+  }
+
+  if (item.materialStatus === "processing" || item.materialStatus === "uploaded") {
+    return "Боловсруулалтыг үргэлжлүүлэх";
+  }
+
+  if (item.materialStatus === "error") {
+    return "Дахин ачаалж шалгах";
+  }
+
+  return "Материалыг нээх";
 }
 
 export function TextbookLibrarySection({
   activeId = null,
+  isLoading = false,
   items,
   onSelect,
 }: Props) {
@@ -54,7 +72,9 @@ export function TextbookLibrarySection({
 
       {visibleItems.length === 0 ? (
         <div className="rounded-[16px] border border-dashed border-[#dbe4f3] bg-[#f8fbff] px-5 py-6 text-[14px] leading-6 text-slate-500">
-          Импорт хэсэг дээр амжилттай оруулсан номууд энд card болж харагдана.
+          {isLoading
+            ? "Хадгалсан сурах бичгүүдийг ачаалж байна..."
+            : "Импорт хийсэн эсвэл өмнө нь боловсруулсан номууд энд харагдана."}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
@@ -105,7 +125,7 @@ export function TextbookLibrarySection({
                     {openable ? (
                       <>
                         <FileText className="h-3.5 w-3.5" />
-                        Бүлэг, дэд бүлэг харах
+                        {getActionLabel(item)}
                       </>
                     ) : (
                       <>

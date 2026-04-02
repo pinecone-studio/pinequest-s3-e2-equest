@@ -1,7 +1,7 @@
 "use client";
 
 import { useApolloClient, useMutation } from "@apollo/client/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   ListNewMathExamsDocument,
@@ -39,6 +39,12 @@ import type {
   TextbookMaterial,
   TextbookUploadedAsset,
 } from "@/features/textbook-processing/types";
+import { buildUploadedAssetFromMaterial } from "@/features/textbook-processing/material-asset";
+import {
+  loadPersistedImportedTextbookCards,
+  persistImportedTextbookCards,
+} from "@/features/textbook-processing/persisted-material-cache";
+import { useTextbookMaterialLibrary } from "@/features/textbook-processing/use-textbook-material-library";
 
 const DEFAULT_GENERAL_INFO: MaterialBuilderGeneralInfo = {
   durationMinutes: 30,
@@ -224,6 +230,65 @@ function hasImportedTextbookCardChanged(
   );
 }
 
+function createLibraryTextbookCard(material: TextbookMaterial): ImportedTextbookCard {
+  return {
+    createdAt: material.createdAt,
+    errorMessage: material.errorMessage ?? null,
+    file: null,
+    fileName: material.fileName,
+    id: material.id,
+    materialId: material.id,
+    materialStage: material.stage,
+    materialStatus: material.status,
+    pageCount: material.pageCount,
+    sectionCount: material.sectionCount,
+    subchapterCount: material.subchapterCount,
+    title:
+      material.title?.trim() || material.fileName.replace(/\.pdf$/i, "") || material.fileName,
+    uploadedAsset: buildUploadedAssetFromMaterial(material),
+  };
+}
+
+function importedTextbookMatchesMaterial(
+  item: ImportedTextbookCard,
+  material: TextbookMaterial,
+) {
+  return (
+    item.materialId === material.id ||
+    (item.uploadedAsset?.bucketName === material.bucketName &&
+      item.uploadedAsset?.key === material.r2Key)
+  );
+}
+
+function mergeTextbookLibraryItems(
+  importedTextbooks: ImportedTextbookCard[],
+  materials: TextbookMaterial[],
+) {
+  const matchedSessionIds = new Set<string>();
+  const persistedItems = materials.map((material) => {
+    const matchingSessionItem =
+      importedTextbooks.find((item) => importedTextbookMatchesMaterial(item, material)) || null;
+
+    if (!matchingSessionItem) {
+      return createLibraryTextbookCard(material);
+    }
+
+    matchedSessionIds.add(matchingSessionItem.id);
+    return syncImportedTextbookCard(matchingSessionItem, {
+      material,
+      uploadedAsset: buildUploadedAssetFromMaterial(material),
+    });
+  });
+  const sessionOnlyItems = importedTextbooks.filter(
+    (item) => !matchedSessionIds.has(item.id),
+  );
+
+  return [...sessionOnlyItems, ...persistedItems].sort(
+    (left, right) =>
+      Date.parse(right.createdAt || "") - Date.parse(left.createdAt || ""),
+  );
+}
+
 export default function MaterialBuilderPageContent() {
   const apolloClient = useApolloClient();
   const [saveNewMathExamMutation] = useMutation(SaveNewMathExamDocument);
@@ -249,17 +314,57 @@ export default function MaterialBuilderPageContent() {
   );
   const [savedExamId, setSavedExamId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [hasHydratedImportedTextbooks, setHasHydratedImportedTextbooks] = useState(false);
+  const {
+    isLoading: isLoadingTextbookLibrary,
+    items: persistedTextbookMaterials,
+  } = useTextbookMaterialLibrary({
+    grade: generalInfo.grade,
+    subject: generalInfo.subject,
+  });
 
   const activeImportedTextbook =
     importedTextbooks.find((item) => item.id === activeImportedTextbookId) || null;
+  const textbookLibraryItems = useMemo(
+    () => mergeTextbookLibraryItems(importedTextbooks, persistedTextbookMaterials),
+    [importedTextbooks, persistedTextbookMaterials],
+  );
   const selectedTextbookLibrary =
-    importedTextbooks.find((item) => item.id === selectedTextbookLibraryId) || null;
+    textbookLibraryItems.find((item) => item.id === selectedTextbookLibraryId) || null;
   const queuedImportedTextbook =
-    importedTextbooks.find((item) => item.id === queuedImportedTextbookId) || null;
+    importedTextbooks.find((item) => item.id === queuedImportedTextbookId) ||
+    textbookLibraryItems.find((item) => item.id === queuedImportedTextbookId) ||
+    null;
 
   useEffect(() => {
     setSavedExamId(null);
   }, [textbookGeneratedState?.generatedTest]);
+
+  useEffect(() => {
+    const restored = loadPersistedImportedTextbookCards().map((item) => ({
+      ...item,
+      file: null,
+    }));
+
+    if (restored.length > 0) {
+      setImportedTextbooks((current) => {
+        if (current.length > 0) {
+          return current;
+        }
+        return restored;
+      });
+    }
+
+    setHasHydratedImportedTextbooks(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedImportedTextbooks) {
+      return;
+    }
+
+    persistImportedTextbookCards(importedTextbooks);
+  }, [hasHydratedImportedTextbooks, importedTextbooks]);
 
   async function handleSave() {
     if (source !== "textbook" && source !== "import") {
@@ -370,12 +475,12 @@ export default function MaterialBuilderPageContent() {
   }
 
   function handleTextbookLibrarySelect(importId: string) {
-    const selected = importedTextbooks.find((item) => item.id === importId);
+    const selected = textbookLibraryItems.find((item) => item.id === importId);
     if (!selected) {
       return;
     }
 
-    if (selected.materialStatus !== "ready" && selected.materialStatus !== "ocr_needed") {
+    if (!selected.materialId && !selected.uploadedAsset) {
       toast.message("Энэ ном боловсруулж дуусаагүй байна. Импорт хэсгээс явцыг нь харна уу.");
       return;
     }
@@ -424,7 +529,8 @@ export default function MaterialBuilderPageContent() {
           <div className="space-y-5">
             <TextbookLibrarySection
               activeId={selectedTextbookLibraryId}
-              items={importedTextbooks}
+              isLoading={isLoadingTextbookLibrary}
+              items={textbookLibraryItems}
               onSelect={handleTextbookLibrarySelect}
             />
             {selectedTextbookLibrary ? (

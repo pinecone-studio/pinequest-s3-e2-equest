@@ -8,6 +8,7 @@ import {
   fetchR2TextbookCandidates,
   getExpectedR2FileName,
   hasConfiguredTextbookPresignUpload,
+  getTextbookMaterialById,
   parseTextbookPdfByServer,
   getTextbookMaterialByR2,
   replaceTextbookMaterialStructure,
@@ -18,10 +19,15 @@ import {
   upsertTextbookMaterialPages,
   validateTextbookPdfFile,
 } from "./api";
+import { buildUploadedAssetFromMaterial } from "./material-asset";
+import { getTextbookMaterialStructureById } from "./material-selection-api";
+import { getCachedPersistedTextbookMaterial } from "./persisted-material-cache";
+import { getCachedSessionTextbookMaterial } from "./session-material-cache";
 import { buildProgressMessage } from "./status";
 import { getInitialExpandedChapterIds } from "./selectors";
 import type {
   TextbookMaterialDetail,
+  TextbookMaterialStructureDetail,
   TextbookProcessingChunk,
   TextbookProcessingPage,
   TextbookProcessingSection,
@@ -134,11 +140,24 @@ function toStoredChunkRecord(
   materialId: string,
   chunk: TextbookProcessingChunk,
   now: string,
+  scopeBySectionId: Map<
+    string,
+    {
+      chapterId: string | null;
+      subchapterId: string | null;
+    }
+  >,
 ) {
+  const scope = scopeBySectionId.get(chunk.sectionId) || {
+    chapterId: null,
+    subchapterId: null,
+  };
   return {
     id: chunk.id,
     materialId,
     sectionId: chunk.sectionId,
+    chapterId: scope.chapterId,
+    subchapterId: scope.subchapterId,
     chunkType: chunk.chunkType,
     orderIndex: chunk.orderIndex,
     pageStart: chunk.pageStart,
@@ -156,6 +175,52 @@ function finalizeLocalMaterialDetail(
   payload: TextbookStructurePayload,
 ): TextbookMaterialDetail {
   const now = new Date().toISOString();
+  const sectionById = new Map(
+    payload.sections.map((section) => [section.id, section] as const),
+  );
+  const scopeBySectionId = new Map<
+    string,
+    {
+      chapterId: string | null;
+      subchapterId: string | null;
+    }
+  >();
+
+  const resolveScope = (sectionId: string) => {
+    if (scopeBySectionId.has(sectionId)) {
+      return scopeBySectionId.get(sectionId)!;
+    }
+
+    let chapterId: string | null = null;
+    let subchapterId: string | null = null;
+    let currentId: string | null = sectionId;
+
+    while (currentId) {
+      const current: TextbookProcessingSection | null =
+        sectionById.get(currentId) || null;
+      if (!current) {
+        break;
+      }
+
+      if (!chapterId && current.nodeType === "chapter") {
+        chapterId = current.id;
+      }
+
+      if (!subchapterId && current.nodeType === "subchapter") {
+        subchapterId = current.id;
+      }
+
+      currentId = current.parentId;
+    }
+
+    const scope = {
+      chapterId,
+      subchapterId,
+    };
+    scopeBySectionId.set(sectionId, scope);
+    return scope;
+  };
+
   const chapterCount = payload.sections.filter((item) => item.nodeType === "chapter").length;
   const sectionCount = payload.sections.filter((item) => item.nodeType === "section").length;
   const subchapterCount =
@@ -186,9 +251,21 @@ function finalizeLocalMaterialDetail(
     sections: payload.sections.map((section) =>
       toStoredSectionRecord(detail.material.id, section, now),
     ),
-    chunks: payload.chunks.map((chunk) =>
-      toStoredChunkRecord(detail.material.id, chunk, now),
-    ),
+    chunks: payload.chunks.map((chunk) => {
+      resolveScope(chunk.sectionId);
+      return toStoredChunkRecord(detail.material.id, chunk, now, scopeBySectionId);
+    }),
+  };
+}
+
+function createDetailFromStructure(
+  structure: TextbookMaterialStructureDetail,
+): TextbookMaterialDetail {
+  return {
+    material: structure.material,
+    pages: [],
+    sections: structure.sections,
+    chunks: [],
   };
 }
 
@@ -757,7 +834,7 @@ export function useTextbookMaterialProcessing({
     });
   }
 
-  async function hydrateReadyMaterial(
+  async function hydrateStoredMaterial(
     detail: TextbookMaterialDetail | null,
     asset: TextbookUploadedAsset | null,
   ) {
@@ -770,6 +847,120 @@ export function useTextbookMaterialProcessing({
     setExpandedChapterIds(getInitialExpandedChapterIds(detail));
     setTransientStatusMessage(detail.material.statusMessage || "");
     return true;
+  }
+
+  async function loadMaterialById(materialId: string) {
+    const normalizedMaterialId = String(materialId || "").trim();
+    if (!normalizedMaterialId) {
+      return false;
+    }
+
+    const cached = getCachedSessionTextbookMaterial({
+      materialId: normalizedMaterialId,
+    });
+    if (cached?.detail) {
+      await hydrateStoredMaterial(cached.detail, cached.asset);
+      return true;
+    }
+
+    const persisted = getCachedPersistedTextbookMaterial({
+      materialId: normalizedMaterialId,
+    });
+    if (persisted?.detail) {
+      await hydrateStoredMaterial(persisted.detail, persisted.asset);
+      return true;
+    }
+
+    if (normalizedMaterialId.startsWith("local:")) {
+      setTransientStatusMessage("");
+      return false;
+    }
+
+    setTransientStatusMessage("Сурах бичгийн хадгалсан бүтцийг ачаалж байна...");
+
+    try {
+      const structuredDetail = await getTextbookMaterialStructureById(
+        normalizedMaterialId,
+      );
+      const detail =
+        structuredDetail ? createDetailFromStructure(structuredDetail) : null;
+
+      if (!detail) {
+        const fullDetail = await getTextbookMaterialById(normalizedMaterialId, {
+          includeContent: true,
+        });
+
+        if (!fullDetail) {
+          setTransientStatusMessage("");
+          toast.error("Сурах бичгийн материал олдсонгүй.");
+          return false;
+        }
+
+        const fullAsset = buildUploadedAssetFromMaterial(fullDetail.material);
+        const hasStoredContent =
+          fullDetail.sections.length > 0 || fullDetail.pages.length > 0;
+
+        if (hasStoredContent) {
+          await hydrateStoredMaterial(fullDetail, fullAsset);
+          if (
+            fullDetail.material.status === "ready" ||
+            fullDetail.material.status === "ocr_needed"
+          ) {
+            return true;
+          }
+        } else {
+          setMaterialDetail(fullDetail);
+          setUploadedAsset(fullAsset);
+        }
+
+        if (fullAsset.bucketName === "local") {
+          return hasStoredContent;
+        }
+
+        const file = await downloadR2Textbook({
+          bucketName: fullAsset.bucketName,
+          fileName: fullAsset.fileName,
+          key: fullAsset.key,
+          lastModified: fullAsset.uploadedAt,
+          matchScore: 100,
+          size: fullAsset.size,
+        });
+        await runWorkerProcessing(file, fullAsset, fullDetail.material.id);
+        return true;
+      }
+
+      const asset = buildUploadedAssetFromMaterial(detail.material);
+      await hydrateStoredMaterial(detail, asset);
+      if (
+        detail.material.status === "ready" ||
+        detail.material.status === "ocr_needed"
+      ) {
+        return true;
+      }
+
+      if (asset.bucketName === "local") {
+        return detail.sections.length > 0;
+      }
+
+      const file = await downloadR2Textbook({
+        bucketName: asset.bucketName,
+        fileName: asset.fileName,
+        key: asset.key,
+        lastModified: asset.uploadedAt,
+        matchScore: 100,
+        size: asset.size,
+      });
+      await runWorkerProcessing(file, asset, detail.material.id);
+      return true;
+    } catch (error) {
+      setTransientStatusMessage("");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Сурах бичгийн материалыг ачаалж чадсангүй.",
+      );
+      return false;
+    }
   }
 
   async function importBook(file: File) {
@@ -923,9 +1114,7 @@ export function useTextbookMaterialProcessing({
     );
 
     try {
-      const existing = await getTextbookMaterialByR2(candidate.bucketName, candidate.key, {
-        includeContent: true,
-      });
+      const existing = await getTextbookMaterialByR2(candidate.bucketName, candidate.key);
 
       const asset: TextbookUploadedAsset = {
         bucketName: candidate.bucketName,
@@ -936,9 +1125,12 @@ export function useTextbookMaterialProcessing({
         uploadedAt: candidate.lastModified || new Date().toISOString(),
       };
 
-      if (existing?.material.status === "ready" && existing.sections.length > 0) {
-        await hydrateReadyMaterial(existing, asset);
-        return true;
+      if (existing?.material.status === "ready" || existing?.material.status === "ocr_needed") {
+        const structuredDetail = await getTextbookMaterialStructureById(existing.material.id);
+        if (structuredDetail?.sections.length) {
+          await hydrateStoredMaterial(createDetailFromStructure(structuredDetail), asset);
+          return true;
+        }
       }
 
       const file = await downloadR2Textbook(candidate);
@@ -1109,5 +1301,6 @@ export function useTextbookMaterialProcessing({
     uploadedAsset,
     importBook,
     loadFromR2,
+    loadMaterialById,
   };
 }
