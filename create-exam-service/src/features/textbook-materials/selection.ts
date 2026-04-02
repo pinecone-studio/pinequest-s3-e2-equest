@@ -130,10 +130,12 @@ function collectSectionSelection(
 ) {
   const { byId, childrenByParent } = buildSectionMaps(sections);
   const subtreeIds = new Set<string>();
+  const includedSectionIds = new Set<string>();
   const effectiveChunkSectionIds = new Set<string>();
 
   const visit = (section: StoredTextbookSection) => {
     subtreeIds.add(section.id);
+    includedSectionIds.add(section.id);
 
     if (section.nodeType === "chapter") {
       for (const child of childrenByParent.get(section.id) || []) {
@@ -155,6 +157,20 @@ function collectSectionSelection(
     }
   };
 
+  const includeAncestors = (section: StoredTextbookSection) => {
+    let currentId = section.parentId;
+
+    while (currentId) {
+      const current: StoredTextbookSection | null = byId.get(currentId) || null;
+      if (!current) {
+        break;
+      }
+
+      includedSectionIds.add(current.id);
+      currentId = current.parentId;
+    }
+  };
+
   const normalizedNodeIds = Array.from(
     new Set(
       (input.nodeIds || [])
@@ -168,12 +184,14 @@ function collectSectionSelection(
     if (!section) {
       continue;
     }
+
+    includeAncestors(section);
     visit(section);
   }
 
   return {
     effectiveChunkSectionIds: Array.from(effectiveChunkSectionIds),
-    subtreeIds,
+    includedSectionIds,
   };
 }
 
@@ -213,12 +231,12 @@ export async function getTextbookMaterialSelection(
     return null;
   }
 
-  const { effectiveChunkSectionIds, subtreeIds } = collectSectionSelection(
+  const { effectiveChunkSectionIds, includedSectionIds } = collectSectionSelection(
     structure.sections,
     input,
   );
 
-  if (subtreeIds.size === 0) {
+  if (includedSectionIds.size === 0) {
     return {
       material: structure.material,
       pages: [],
@@ -246,7 +264,7 @@ export async function getTextbookMaterialSelection(
   return {
     material: structure.material,
     pages: [],
-    sections: structure.sections.filter((section) => subtreeIds.has(section.id)),
+    sections: structure.sections.filter((section) => includedSectionIds.has(section.id)),
     chunks,
   };
 }

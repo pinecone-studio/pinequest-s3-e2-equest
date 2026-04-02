@@ -67,6 +67,8 @@ export function TextbookQuestionCard({
   focusValue = "recall",
   formatValue = "single-choice",
   onRegenerate,
+  renderAnswer,
+  renderExplanation,
 }: {
   answerMode?: "single-choice" | "written";
   answerText?: string;
@@ -78,6 +80,8 @@ export function TextbookQuestionCard({
   focusValue?: "recall" | "concept" | "practice" | "proof";
   formatValue?: "single-choice" | "multiple-choice" | "written";
   onRegenerate?: () => void;
+  renderAnswer?: (answer: string) => ReactNode;
+  renderExplanation?: (explanation: string) => ReactNode;
 }) {
   const selectedAnswer = answerText || answers[0] || "";
 
@@ -146,7 +150,7 @@ export function TextbookQuestionCard({
         <p className="mb-3 text-[14px] font-medium text-slate-800">Хариулт</p>
         {answerMode === "written" ? (
           <div className="min-h-[56px] rounded-[10px] border border-[#e2e8f0] bg-[#eef3ff] px-4 py-4 text-[14px] text-slate-800">
-            {selectedAnswer}
+            {renderAnswer ? renderAnswer(selectedAnswer) : selectedAnswer}
           </div>
         ) : (
           <RadioGroup value={selectedAnswer} className="gap-3">
@@ -159,7 +163,9 @@ export function TextbookQuestionCard({
                   value={answer}
                   className="border-[#cdd8ea] text-[#0b5cab] data-checked:border-[#0b5cab] data-checked:bg-[#0b5cab]"
                 />
-                <span>{answer}</span>
+                <span className="min-w-0 flex-1">
+                  {renderAnswer ? renderAnswer(answer) : answer}
+                </span>
               </label>
             ))}
           </RadioGroup>
@@ -171,7 +177,15 @@ export function TextbookQuestionCard({
           <p className="mb-3 text-[14px] font-medium text-slate-800">
             Зөв хариултын тайлбар
           </p>
-          <Textarea value={explanation} readOnly className={explanationClassName} />
+          {renderExplanation ? (
+            <div
+              className={`${explanationClassName} min-h-[88px] whitespace-pre-wrap`}
+            >
+              {renderExplanation(explanation)}
+            </div>
+          ) : (
+            <Textarea value={explanation} readOnly className={explanationClassName} />
+          )}
         </div>
       ) : null}
 

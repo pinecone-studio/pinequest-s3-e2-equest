@@ -1,3 +1,4 @@
+import { getCreateExamServiceBaseUrl } from "@/lib/create-exam-graphql";
 import { getConfiguredTextbookR2BucketName } from "@/lib/create-exam-graphql";
 import {
   MAX_TEXTBOOK_FILE_SIZE_BYTES,
@@ -52,9 +53,12 @@ type UploadProgressSnapshot = {
   total: number;
 };
 
-const TEXTBOOK_R2_PROXY_PATH = "/api/textbook-r2";
-const TEXTBOOK_R2_UPLOAD_PROXY_PATH = "/api/textbook-r2-upload";
-const TEXTBOOK_MATERIALS_PROXY_PATH = "/api/textbook-materials";
+const TEXTBOOK_R2_API_PATH = "/api/r2";
+const TEXTBOOK_MATERIALS_API_PATH = "/api/textbook-materials";
+
+function buildCreateExamServiceUrl(path: string) {
+  return new URL(path, getCreateExamServiceBaseUrl()).toString();
+}
 
 function slugifyUploadName(value: string) {
   return String(value || "")
@@ -168,7 +172,7 @@ export async function fetchR2TextbookCandidates(
   grade: number,
   subject: MaterialBuilderSubject,
 ): Promise<R2TextbookListResponse> {
-  const url = new URL(TEXTBOOK_R2_PROXY_PATH, window.location.origin);
+  const url = new URL(buildCreateExamServiceUrl(TEXTBOOK_R2_API_PATH));
   const configuredBucketName = getConfiguredTextbookR2BucketName();
   url.searchParams.set("mode", "list");
   url.searchParams.set("grade", String(grade));
@@ -189,7 +193,7 @@ export async function fetchR2TextbookCandidates(
 }
 
 export async function downloadR2Textbook(candidate: R2TextbookCandidate) {
-  const url = new URL(TEXTBOOK_R2_PROXY_PATH, window.location.origin);
+  const url = new URL(buildCreateExamServiceUrl(TEXTBOOK_R2_API_PATH));
   const configuredBucketName = getConfiguredTextbookR2BucketName();
   url.searchParams.set("mode", "file");
   url.searchParams.set("key", candidate.key);
@@ -249,9 +253,7 @@ export async function uploadTextbookPdfToR2(
   formData.append("file", file);
   formData.append("key", objectKey);
 
-  const uploadUrl = hasConfiguredTextbookPresignUpload()
-    ? TEXTBOOK_R2_UPLOAD_PROXY_PATH
-    : TEXTBOOK_R2_PROXY_PATH;
+  const uploadUrl = buildCreateExamServiceUrl(TEXTBOOK_R2_API_PATH);
   const uploadPayload =
     typeof XMLHttpRequest !== "undefined"
       ? await new Promise<R2PresignResponse>((resolve, reject) => {
@@ -356,7 +358,7 @@ export async function createTextbookMaterialRecord(input: {
   grade: number;
   subject: MaterialBuilderSubject;
 }) {
-  const response = await fetch(TEXTBOOK_MATERIALS_PROXY_PATH, {
+  const response = await fetch(buildCreateExamServiceUrl(TEXTBOOK_MATERIALS_API_PATH), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -386,8 +388,9 @@ export async function getTextbookMaterialById(
   } = {},
 ) {
   const url = new URL(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}`,
-    window.location.origin,
+    buildCreateExamServiceUrl(
+      `${TEXTBOOK_MATERIALS_API_PATH}/${encodeURIComponent(materialId)}`,
+    ),
   );
   if (options.includeContent) {
     url.searchParams.set("includeContent", "1");
@@ -414,8 +417,7 @@ export async function listTextbookMaterialLibrary(options: {
   subject?: MaterialBuilderSubject | string | null;
 } = {}) {
   const url = new URL(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/library`,
-    window.location.origin,
+    buildCreateExamServiceUrl(`${TEXTBOOK_MATERIALS_API_PATH}/library`),
   );
 
   if (options.grade != null && Number.isFinite(Number(options.grade))) {
@@ -457,7 +459,7 @@ export async function getTextbookMaterialByR2(
     includeContent?: boolean;
   } = {},
 ) {
-  const url = new URL(TEXTBOOK_MATERIALS_PROXY_PATH, window.location.origin);
+  const url = new URL(buildCreateExamServiceUrl(TEXTBOOK_MATERIALS_API_PATH));
   url.searchParams.set("bucketName", bucketName);
   url.searchParams.set("key", key);
   if (options.includeContent) {
@@ -483,7 +485,9 @@ export async function updateTextbookMaterialStatus(
   payload: Record<string, unknown>,
 ) {
   const response = await fetch(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}`,
+    buildCreateExamServiceUrl(
+      `${TEXTBOOK_MATERIALS_API_PATH}/${encodeURIComponent(materialId)}`,
+    ),
     {
       method: "PATCH",
       headers: {
@@ -505,7 +509,9 @@ export async function upsertTextbookMaterialPages(
   payload: Record<string, unknown>,
 ) {
   const response = await fetch(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/pages`,
+    buildCreateExamServiceUrl(
+      `${TEXTBOOK_MATERIALS_API_PATH}/${encodeURIComponent(materialId)}/pages`,
+    ),
     {
       method: "POST",
       headers: {
@@ -527,7 +533,9 @@ export async function replaceTextbookMaterialStructure(
   payload: TextbookStructurePayload,
 ) {
   const response = await fetch(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/structure`,
+    buildCreateExamServiceUrl(
+      `${TEXTBOOK_MATERIALS_API_PATH}/${encodeURIComponent(materialId)}/structure`,
+    ),
     {
       method: "POST",
       headers: {

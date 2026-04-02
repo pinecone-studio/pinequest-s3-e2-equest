@@ -20,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import {
   getMaterialProgressValue,
   getStageLabel,
@@ -37,8 +36,14 @@ import {
   generateTextbookTestFromMaterial,
 } from "./legacy-generation-adapter";
 import { getTextbookMaterialSelectionByNodeIds } from "./material-selection-api";
+import { sanitizeGeneratedTextbookTest } from "./generated-test-quality";
+import { cleanTextbookGenerationSource } from "./generation-source-cleaner";
+import { summarizeGenerationWarnings } from "./generation-warning-summary";
+import { ensureGeneratedTestShape } from "./mock-test-fallback";
 import { cachePersistedTextbookMaterial } from "./persisted-material-cache";
 import { cacheSessionTextbookMaterial } from "./session-material-cache";
+import { TextbookMathText } from "./textbook-math-text";
+import { TextbookSourcePagePreview } from "./TextbookSourcePagePreview";
 import { useTextbookMaterialProcessing } from "./use-textbook-material-processing";
 import type {
   MaterialBuilderSubject,
@@ -59,10 +64,10 @@ import {
   TextbookQuestionCard,
   TextbookStatField,
 } from "@/app/test/material-builder/_components/material-builder-ui";
-import { textareaClassName } from "@/app/test/material-builder/_components/material-builder-config";
 
 type TextbookGenerateApiResponse = {
   error?: string;
+  provider?: "gemini" | "local" | "ollama";
   test?: GeneratedTextbookTest;
 };
 
@@ -76,6 +81,42 @@ export type TextbookGeneratedState = {
   uploadedAsset: TextbookUploadedAsset;
 };
 
+function buildAiFallbackTest(input: {
+  difficultyCounts: {
+    easy: number;
+    medium: number;
+    hard: number;
+  };
+  openQuestionCount: number;
+  questionCount: number;
+  sourcePages: number[];
+  sourceProblemCount: number;
+  totalScore: number;
+  warning?: string;
+}): GeneratedTextbookTest {
+  return {
+    difficultyCountsApplied: {
+      easy: Math.max(0, Math.trunc(input.difficultyCounts.easy || 0)),
+      medium: Math.max(0, Math.trunc(input.difficultyCounts.medium || 0)),
+      hard: Math.max(0, Math.trunc(input.difficultyCounts.hard || 0)),
+    },
+    exerciseProblemCount: Math.max(0, Math.trunc(input.sourceProblemCount || 0)),
+    openQuestionCountGenerated: Math.max(0, Math.trunc(input.openQuestionCount || 0)),
+    openQuestions: [],
+    questionCountGenerated: Math.max(0, Math.trunc(input.questionCount || 0)),
+    questions: [],
+    sourcePages: Array.from(
+      new Set(
+        (input.sourcePages || [])
+          .map((pageNumber) => Math.trunc(Number(pageNumber)))
+          .filter((pageNumber) => Number.isFinite(pageNumber) && pageNumber >= 1),
+      ),
+    ),
+    totalScore: Math.max(0, Math.trunc(input.totalScore || 0)),
+    warnings: input.warning ? [input.warning] : [],
+  };
+}
+
 function getChoiceText(question: GeneratedTextbookQuestion) {
   return (
     question.choices.find((choice) =>
@@ -88,6 +129,35 @@ function compactTextbookPageContent(page: { content: string; pageNumber: number 
   return String(page.content || "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function scaleTotalScoreByCount(input: {
+  requestedOpenQuestionCount: number;
+  requestedQuestionCount: number;
+  requestedTotalScore: number;
+  targetOpenQuestionCount: number;
+  targetQuestionCount: number;
+}) {
+  const requestedTotalItems = Math.max(
+    0,
+    Math.trunc(Number(input.requestedQuestionCount) || 0) +
+      Math.trunc(Number(input.requestedOpenQuestionCount) || 0),
+  );
+  const targetTotalItems = Math.max(
+    0,
+    Math.trunc(Number(input.targetQuestionCount) || 0) +
+      Math.trunc(Number(input.targetOpenQuestionCount) || 0),
+  );
+  const requestedTotalScore = Math.max(0, Math.trunc(Number(input.requestedTotalScore) || 0));
+
+  if (requestedTotalItems <= 0 || targetTotalItems <= 0 || requestedTotalScore <= 0) {
+    return requestedTotalScore;
+  }
+
+  return Math.max(
+    targetTotalItems,
+    Math.round((requestedTotalScore * targetTotalItems) / requestedTotalItems),
+  );
 }
 
 async function requestAiEnhancedTextbookTest({
@@ -121,7 +191,7 @@ async function requestAiEnhancedTextbookTest({
     );
   }
 
-  return payload.test;
+  return payload;
 }
 
 function filterTreeBySearch(
@@ -361,6 +431,10 @@ export function TextbookProcessingSection({
       uploadedAsset,
     };
   }, [generatedTest, material, selection, uploadedAsset]);
+  const warningSummary = useMemo(
+    () => summarizeGenerationWarnings(generatedTest?.warnings || []),
+    [generatedTest?.warnings],
+  );
 
   useEffect(() => {
     onGeneratedStateChange?.(generatedState);
@@ -569,38 +643,103 @@ export function TextbookProcessingSection({
         generationDetail = scopedDetail;
       }
 
-      const { result: fallbackTest, selectedSectionTitles } =
-        generateTextbookTestFromMaterial(generationDetail, selectedNodeIds, {
-          fallbackDifficulty: "hard",
-          questionCount: Number(questionCount) || 0,
-          openQuestionCount: Number(openQuestionCount) || 0,
-          totalScore: Number(totalScore) || 0,
-          difficultyCounts: {
-            easy: Number(difficultyCounts.easy) || 0,
-            medium: Number(difficultyCounts.medium) || 0,
-            hard: Number(difficultyCounts.hard) || 0,
-          },
-        });
+      const requestedDifficultyCounts = {
+        easy: Number(difficultyCounts.easy) || 0,
+        medium: Number(difficultyCounts.medium) || 0,
+        hard: Number(difficultyCounts.hard) || 0,
+      };
+      const requestedQuestionCount = Number(questionCount) || 0;
+      const requestedOpenQuestionCount = Number(openQuestionCount) || 0;
+      const requestedTotalScore = Number(totalScore) || 0;
+      const generationSource = buildTextbookGenerationSourceFromMaterial(
+        generationDetail,
+        selectedNodeIds,
+        {
+          questionCount: requestedQuestionCount,
+        },
+      );
+      const cleanedGenerationSource = cleanTextbookGenerationSource({
+        requestedOpenQuestionCount,
+        requestedQuestionCount,
+        sourceProblems: generationSource.sourceProblems,
+        visiblePages: generationSource.visiblePages,
+      });
+      const effectiveQuestionCount = cleanedGenerationSource.preferredQuestionCount;
+      const effectiveOpenQuestionCount = cleanedGenerationSource.preferredOpenQuestionCount;
+      const effectiveTotalScore = scaleTotalScoreByCount({
+        requestedOpenQuestionCount,
+        requestedQuestionCount,
+        requestedTotalScore,
+        targetOpenQuestionCount: effectiveOpenQuestionCount,
+        targetQuestionCount: effectiveQuestionCount,
+      });
 
-      let result = fallbackTest;
+      if (requestedQuestionCount > 0 && effectiveQuestionCount <= 0) {
+        throw new Error(
+          "Сонгосон бүлэг/дэд бүлгээс ойлгомжтой асуулт гаргах хангалттай source олдсонгүй.",
+        );
+      }
+
+      let localGenerationError: Error | null = null;
+      let selectedSectionTitles = generationSource.selectedSectionTitles;
+      let fallbackTest: GeneratedTextbookTest;
 
       try {
-        const generationSource = buildTextbookGenerationSourceFromMaterial(
+        const generated = generateTextbookTestFromMaterial(
           generationDetail,
           selectedNodeIds,
           {
-            questionCount: Number(questionCount) || 0,
+            fallbackDifficulty: "hard",
+            questionCount: effectiveQuestionCount,
+            openQuestionCount: effectiveOpenQuestionCount,
+            totalScore: effectiveTotalScore,
+            difficultyCounts: requestedDifficultyCounts,
           },
         );
-        result = await requestAiEnhancedTextbookTest({
-          fallbackTest,
+        fallbackTest = sanitizeGeneratedTextbookTest({
+          generationSource: cleanedGenerationSource,
+          test: generated.result,
+        });
+        selectedSectionTitles = generated.selectedSectionTitles;
+      } catch (error) {
+        localGenerationError =
+          error instanceof Error
+            ? error
+            : new Error("Тест үүсгэх үед алдаа гарлаа.");
+        fallbackTest = sanitizeGeneratedTextbookTest({
+          generationSource: cleanedGenerationSource,
+          test: buildAiFallbackTest({
+          difficultyCounts: requestedDifficultyCounts,
+          openQuestionCount: effectiveOpenQuestionCount,
+          questionCount: effectiveQuestionCount,
+          sourcePages: cleanedGenerationSource.visiblePages.map((page) => page.pageNumber),
+          sourceProblemCount: cleanedGenerationSource.sourceProblems.length,
+          totalScore: effectiveTotalScore,
+          warning: localGenerationError.message,
+          }),
+        });
+      }
+
+      let result = fallbackTest;
+      let aiProvider: "gemini" | "local" | "ollama" = "local";
+      const aiFallbackTest = {
+        ...fallbackTest,
+        openQuestionCountGenerated: effectiveOpenQuestionCount,
+        questionCountGenerated: effectiveQuestionCount,
+      };
+
+      try {
+        const aiResponse = await requestAiEnhancedTextbookTest({
+          fallbackTest: aiFallbackTest,
           selectedSectionTitles,
-          sourceProblems: generationSource.sourceProblems,
-          visiblePages: generationSource.visiblePages.map((page) => ({
+          sourceProblems: cleanedGenerationSource.sourceProblems,
+          visiblePages: cleanedGenerationSource.visiblePages.map((page) => ({
             pageNumber: page.pageNumber,
             content: compactTextbookPageContent(page).slice(0, 4000),
           })),
         });
+        result = aiResponse.test || fallbackTest;
+        aiProvider = aiResponse.provider || "local";
       } catch (error) {
         const message =
           error instanceof Error
@@ -610,8 +749,32 @@ export function TextbookProcessingSection({
           ...fallbackTest,
           warnings: [...fallbackTest.warnings, message],
         };
-        toast.warning(
-          "AI route холбогдсонгүй. Local fallback тестийг ашиглалаа.",
+        toast.warning("AI route холбогдсонгүй. Fallback тестийг ашиглалаа.");
+      }
+
+      result = sanitizeGeneratedTextbookTest({
+        generationSource: cleanedGenerationSource,
+        test: result,
+      });
+      if (aiProvider === "local") {
+        result = ensureGeneratedTestShape({
+          requestedOpenQuestionCount: effectiveOpenQuestionCount,
+          requestedQuestionCount: effectiveQuestionCount,
+          requestedTotalScore: effectiveTotalScore,
+          sourceProblems: cleanedGenerationSource.sourceProblems,
+          test: result,
+          visiblePages: cleanedGenerationSource.visiblePages,
+        });
+        result = sanitizeGeneratedTextbookTest({
+          generationSource: cleanedGenerationSource,
+          test: result,
+        });
+      }
+
+      if (effectiveQuestionCount > 0 && result.questionCountGenerated <= 0) {
+        throw (
+          localGenerationError ||
+          new Error("Сонгосон хэсгээс тестийн асуулт үүсгэж чадсангүй.")
         );
       }
 
@@ -1034,11 +1197,11 @@ export function TextbookProcessingSection({
             </div>
           ) : null}
 
-          {generatedTest?.warnings.length ? (
+          {warningSummary.length ? (
             <div className="rounded-[18px] border border-[#fde8c8] bg-[#fff9ef] px-5 py-4 text-[14px] text-[#8a5a13]">
               <p className="font-semibold text-[#7a4d0a]">Санамж</p>
               <div className="mt-2 space-y-2">
-                {generatedTest.warnings.map((warning, index) => (
+                {warningSummary.map((warning, index) => (
                   <p key={`${warning}-${index}`}>{warning}</p>
                 ))}
               </div>
@@ -1101,18 +1264,41 @@ export function TextbookProcessingSection({
                   answers={question.choices}
                   countValue={String(index + 1)}
                   difficultyValue={question.difficulty}
+                  explanation={question.explanation}
                   focusValue="practice"
                   formatValue="single-choice"
+                  renderAnswer={(answer) => <TextbookMathText content={answer} />}
+                  renderExplanation={(explanation) => (
+                    <TextbookMathText content={explanation} />
+                  )}
                   content={
                     <div className="space-y-3">
-                      <Textarea
-                        value={question.bookProblem || question.question}
-                        readOnly
-                        className={textareaClassName}
+                      <div className="rounded-[14px] border border-[#dbe4f3] bg-[#f8fbff] px-4 py-3">
+                        <TextbookMathText
+                          content={question.question || question.bookProblem}
+                          className="text-[15px] font-medium leading-7 text-slate-900"
+                        />
+                      </div>
+                      {question.bookProblem &&
+                      question.bookProblem.trim() !== question.question.trim() ? (
+                        <div className="rounded-[12px] border border-[#e2e8f0] bg-white px-4 py-3">
+                          <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.08em] text-slate-500">
+                            Эх бодлого
+                          </p>
+                          <TextbookMathText
+                            content={question.bookProblem}
+                            className="text-[13px] leading-6 text-slate-700"
+                          />
+                        </div>
+                      ) : null}
+                      <TextbookSourcePagePreview
+                        asset={uploadedAsset}
+                        file={selectedFile}
+                        pageNumbers={question.sourcePages}
                       />
                       <div className="flex flex-wrap gap-2 text-[12px] text-slate-500">
                         <span className="rounded-full border border-[#dbe4f3] bg-white px-3 py-1">
-                          Номын бодлого
+                          Тестийн асуулт
                         </span>
                         {question.sourcePages.length > 0 ? (
                           <span className="rounded-full border border-[#dbe4f3] bg-white px-3 py-1">
@@ -1135,12 +1321,31 @@ export function TextbookProcessingSection({
                   difficultyValue={task.difficulty}
                   focusValue="proof"
                   formatValue="written"
+                  renderAnswer={(answer) => <TextbookMathText content={answer} />}
                   content={
                     <div className="space-y-3">
-                      <Textarea
-                        value={task.prompt}
-                        readOnly
-                        className={textareaClassName}
+                      <div className="rounded-[14px] border border-[#dbe4f3] bg-[#f8fbff] px-4 py-3">
+                        <TextbookMathText
+                          content={task.prompt}
+                          className="text-[15px] font-medium leading-7 text-slate-900"
+                        />
+                      </div>
+                      {task.sourceExcerpt &&
+                      task.sourceExcerpt.trim() !== task.prompt.trim() ? (
+                        <div className="rounded-[12px] border border-[#e2e8f0] bg-white px-4 py-3">
+                          <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.08em] text-slate-500">
+                            Эх хэсэг
+                          </p>
+                          <TextbookMathText
+                            content={task.sourceExcerpt}
+                            className="text-[13px] leading-6 text-slate-700"
+                          />
+                        </div>
+                      ) : null}
+                      <TextbookSourcePagePreview
+                        asset={uploadedAsset}
+                        file={selectedFile}
+                        pageNumbers={task.sourcePages}
                       />
                       <div className="flex flex-wrap gap-2 text-[12px] text-slate-500">
                         <span className="rounded-full border border-[#dbe4f3] bg-white px-3 py-1">

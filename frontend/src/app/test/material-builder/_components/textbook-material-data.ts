@@ -1,4 +1,13 @@
 import { loadPdfJs } from "@/lib/pdfjs";
+import {
+  looksReadableMathWordProblem,
+  normalizeReadableProblemText,
+  trySolveReadableMathProblem,
+} from "@/features/textbook-processing/readable-problem-patterns";
+import {
+  isAmbiguousTextbookInstruction,
+  normalizeStudentFacingMathText,
+} from "@/features/textbook-processing/student-facing-problem";
 
 export type TextbookDifficulty = "easy" | "medium" | "hard";
 
@@ -133,6 +142,43 @@ type GenerateTextbookTestOptions = {
 };
 
 const SOLVE_QUESTION_TEXT = "Энэ бодлогыг бодоод зөв хариуг сонго.";
+const CLOZE_BLANK = "_____";
+const CLOZE_STOP_WORDS = new Set([
+  "аль",
+  "ба",
+  "бай",
+  "байна",
+  "байх",
+  "бол",
+  "болно",
+  "бодолт",
+  "бод",
+  "бүлэг",
+  "гэсэн",
+  "гэж",
+  "даалгавар",
+  "дараах",
+  "дээрх",
+  "доорх",
+  "жишээ",
+  "зөв",
+  "мөн",
+  "ол",
+  "олоорой",
+  "олно",
+  "сонго",
+  "сэдэв",
+  "тэнцүү",
+  "тул",
+  "утга",
+  "утгыг",
+  "хариу",
+  "хийнэ",
+  "шийд",
+  "шийдье",
+  "энэ",
+  "өөр",
+]);
 const SUPERSCRIPT_DIGIT_MAP: Record<string, string> = {
   "⁰": "0",
   "¹": "1",
@@ -650,15 +696,17 @@ function assignDifficultyToQuestions(
 }
 
 function normalizeExerciseLine(value: string) {
-  return String(value || "")
+  return normalizeReadableProblemText(
+    String(value || "")
     .replace(/\u00A0/g, " ")
     .replace(/[‐‑‒–—]/g, "-")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim(),
+  );
 }
 
 function cleanExerciseProblemText(value: string) {
-  const text = normalizeExerciseLine(value)
+  const text = normalizeStudentFacingMathText(normalizeExerciseLine(value))
     .replace(/\beos\b/giu, "cos")
     .replace(/\bv(?=\d)/giu, "√");
   if (!text) {
@@ -719,6 +767,51 @@ function splitCompoundExerciseLine(value: string) {
   return chunks.length ? chunks : [text];
 }
 
+function looksContinuationExerciseLine(value: string) {
+  const text = normalizeExerciseLine(value);
+  if (!text) {
+    return false;
+  }
+
+  if (/^(?:\d{1,3}[).]|[\p{L}]\))/u.test(text)) {
+    return false;
+  }
+  if (/^([IVX]+|[A-ZА-Я])\s*БҮЛЭГ/iu.test(text)) {
+    return false;
+  }
+  if (/(дасгал|даалгавар|exercise|бодолт|жишээ)/iu.test(text)) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildExerciseLineCandidates(lines: string[], startIndex: number) {
+  const baseLine = normalizeExerciseLine(lines[startIndex] || "");
+  if (!baseLine) {
+    return [];
+  }
+
+  const out = [baseLine];
+  let combined = baseLine;
+
+  for (let offset = 1; offset <= 2; offset += 1) {
+    const nextLine = normalizeExerciseLine(lines[startIndex + offset] || "");
+    if (!nextLine || !looksContinuationExerciseLine(nextLine)) {
+      break;
+    }
+
+    combined = normalizeExerciseLine(`${combined} ${nextLine}`);
+    if (combined && combined.length <= 280) {
+      out.push(combined);
+    }
+  }
+
+  return out.filter(
+    (value, index, items) => items.findIndex((item) => item === value) === index,
+  );
+}
+
 function hasEquationLikePattern(value: string) {
   const text = String(value || "").trim();
   if (!text) {
@@ -755,6 +848,9 @@ function looksExerciseProblemCandidate(
 ) {
   const text = cleanExerciseProblemText(line);
   if (!text || text.length < 4 || text.length > 260) {
+    return false;
+  }
+  if (isAmbiguousTextbookInstruction(text)) {
     return false;
   }
   if (/^([IVX]+|[A-ZА-Я])\s*БҮЛЭГ/iu.test(text)) {
@@ -843,8 +939,13 @@ function isStrictExerciseProblem(value: string) {
 function isCleanExerciseProblem(value: string) {
   const text = normalizeExerciseLine(value);
   const body = stripExerciseLabel(text);
-  if (!body || body.length < 2 || body.length > 72) {
+  if (isAmbiguousTextbookInstruction(text)) {
     return false;
+  }
+  if (!body || body.length < 2 || body.length > 72) {
+    if (!(looksReadableMathWordProblem(text) && body.length <= 180)) {
+      return false;
+    }
   }
   if (/([A-Za-zА-Яа-яЁёӨөҮүҢңӘә])\1{4,}/u.test(body) || /^[<>≤≥]/.test(body)) {
     return false;
@@ -872,12 +973,16 @@ function isCleanExerciseProblem(value: string) {
   ]);
 
   if (symbolCount === 0) {
-    return false;
+    if (!looksReadableMathWordProblem(text)) {
+      return false;
+    }
   }
   if (cyrCount >= 6 && symbolCount < 2 && digitCount < 2) {
-    return false;
+    if (!looksReadableMathWordProblem(text)) {
+      return false;
+    }
   }
-  if (/[А-Яа-яЁёӨөҮүҢңӘә]{2,}/u.test(body)) {
+  if (/[А-Яа-яЁёӨөҮүҢңӘә]{2,}/u.test(body) && !looksReadableMathWordProblem(text)) {
     return false;
   }
   return !latinWords.some((word) => !allowedLatin.has(word.toLowerCase()));
@@ -903,6 +1008,7 @@ function scoreExerciseProblemQuality(value: string) {
   if (/[xXхХ]\s*(?:\^|\*\*)\s*[2-9]/.test(body) || /[²³⁴⁵⁶⁷⁸⁹]/.test(body)) {
     score += 6;
   }
+  if (looksReadableMathWordProblem(text)) score += 14;
   if (/\/.*/.test(body)) score += 2;
   if (/[<>≤≥]/.test(body)) score += 2;
   if (body.length >= 18) score += 2;
@@ -935,31 +1041,35 @@ function extractExerciseProblemsFromPages(
       .map((line) => normalizeExerciseLine(line))
       .filter(Boolean);
 
-    for (const line of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
       if (/(дасгал|даалгавар|бүлгийн\s+нэмэлт\s+даалгавар|exercise)/iu.test(line)) {
         inExerciseBlock = true;
         continue;
       }
 
-      for (const chunk of splitCompoundExerciseLine(line)) {
-        const cleanedChunk = cleanExerciseProblemText(chunk);
-        if (!looksExerciseProblemCandidate(cleanedChunk, { inExerciseBlock })) {
-          continue;
-        }
+      const lineCandidates = buildExerciseLineCandidates(lines, lineIndex);
+      for (const candidateLine of lineCandidates) {
+        for (const chunk of splitCompoundExerciseLine(candidateLine)) {
+          const cleanedChunk = cleanExerciseProblemText(chunk);
+          if (!looksExerciseProblemCandidate(cleanedChunk, { inExerciseBlock })) {
+            continue;
+          }
 
-        const key = cleanedChunk.toLowerCase().replace(/\s+/g, " ").trim();
-        if (!key || seen.has(key)) {
-          continue;
-        }
+          const key = cleanedChunk.toLowerCase().replace(/\s+/g, " ").trim();
+          if (!key || seen.has(key)) {
+            continue;
+          }
 
-        seen.add(key);
-        out.push({
-          pageNumber: page.pageNumber,
-          text: cleanedChunk,
-        });
+          seen.add(key);
+          out.push({
+            pageNumber: page.pageNumber,
+            text: cleanedChunk,
+          });
 
-        if (out.length >= limit) {
-          return out;
+          if (out.length >= limit) {
+            return out;
+          }
         }
       }
     }
@@ -988,30 +1098,32 @@ function collectLooseMathProblemsFromPages(
       .map((line) => cleanExerciseProblemText(line))
       .filter(Boolean);
 
-    for (const line of lines) {
-      if (line.length < 3 || line.length > 100) {
-        continue;
-      }
-      if (!/[0-9|=<>≤≥√+\-*/^]/.test(line)) {
-        continue;
-      }
-      if (/(жишээ|бодолт|дүгнэлт|тодорхойлолт|зураг)/iu.test(line)) {
-        continue;
-      }
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      for (const line of buildExerciseLineCandidates(lines, lineIndex)) {
+        if (line.length < 3 || line.length > 140) {
+          continue;
+        }
+        if (!/[0-9|=<>≤≥√+\-*/^]/.test(line) && !looksReadableMathWordProblem(line)) {
+          continue;
+        }
+        if (/(жишээ|бодолт|дүгнэлт|тодорхойлолт|зураг)/iu.test(line)) {
+          continue;
+        }
 
-      const key = line.toLowerCase().replace(/\s+/g, " ").trim();
-      if (!key || seen.has(key)) {
-        continue;
-      }
+        const key = line.toLowerCase().replace(/\s+/g, " ").trim();
+        if (!key || seen.has(key)) {
+          continue;
+        }
 
-      seen.add(key);
-      out.push({
-        pageNumber: page.pageNumber,
-        text: line,
-      });
+        seen.add(key);
+        out.push({
+          pageNumber: page.pageNumber,
+          text: line,
+        });
 
-      if (out.length >= limit) {
-        return out;
+        if (out.length >= limit) {
+          return out;
+        }
       }
     }
   }
@@ -1425,6 +1537,31 @@ function verifyQuestionAnswerAccuracy(question: GeneratedTextbookQuestion) {
 
   const choiceBodies = choices.map((choice) => normalizeChoiceBody(choice));
   const body = stripExerciseLabel(sourceProblem);
+  const readableSolved = trySolveReadableMathProblem(sourceProblem);
+
+  if (readableSolved) {
+    let matchingIndex = -1;
+
+    for (let index = 0; index < choiceBodies.length; index += 1) {
+      const choiceValue = parseNumericChoiceValue(choiceBodies[index]);
+      if (!Number.isFinite(choiceValue)) {
+        continue;
+      }
+      if (mathValuesEqual(Number(choiceValue), readableSolved.answer, 1e-5)) {
+        if (matchingIndex >= 0) {
+          return null;
+        }
+        matchingIndex = index;
+      }
+    }
+
+    if (matchingIndex >= 0) {
+      return {
+        ...question,
+        correctAnswer: ["A", "B", "C", "D"][matchingIndex] || "A",
+      };
+    }
+  }
 
   if (/[xXхХ]/.test(body) && (body.match(/=/g) || []).length === 1 && !/[<>≤≥]/.test(body)) {
     const [left, right] = body.split("=");
@@ -1593,14 +1730,82 @@ function buildEquationChoiceQuestionsFromExercises(
   return out.slice(0, needed);
 }
 
+function buildPatternSolvedQuestionsFromExerciseProblems(
+  exerciseProblems: ExerciseProblem[],
+  needed: number,
+) {
+  const count = Math.max(0, Math.trunc(Number(needed) || 0));
+  if (count <= 0) {
+    return [];
+  }
+
+  const labels = ["A", "B", "C", "D"];
+  const out: GeneratedTextbookQuestion[] = [];
+  const seen = new Set<string>();
+
+  for (const item of exerciseProblems) {
+    if (out.length >= count) {
+      break;
+    }
+
+    const sourceProblem = normalizeExerciseLine(item.text);
+    const dedupeKey = normalizeProblemKey(sourceProblem);
+    if (!sourceProblem || !dedupeKey || seen.has(dedupeKey)) {
+      continue;
+    }
+
+    const solvedPattern = trySolveReadableMathProblem(sourceProblem);
+    if (!solvedPattern) {
+      continue;
+    }
+
+    const correctValue = formatNumberForChoice(solvedPattern.answer);
+    const wrongValues = buildWrongNumericChoices(solvedPattern.answer);
+    if (!correctValue || wrongValues.length < 3) {
+      continue;
+    }
+
+    const rawChoices = [correctValue, ...wrongValues.slice(0, 3)];
+    for (let index = rawChoices.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [rawChoices[index], rawChoices[swapIndex]] = [rawChoices[swapIndex], rawChoices[index]];
+    }
+
+    const correctIndex = rawChoices.indexOf(correctValue);
+    out.push({
+      id: `mcq-pattern-${out.length + 1}`,
+      kind: "mcq",
+      question: solvedPattern.prompt,
+      choices: rawChoices.map((choice, index) => `${labels[index]}. ${choice}`),
+      correctAnswer: labels[correctIndex >= 0 ? correctIndex : 0] || "A",
+      difficulty: "medium",
+      explanation: solvedPattern.explanation,
+      points: 1,
+      sourcePages: Number.isFinite(item.pageNumber) ? [item.pageNumber] : [],
+      bookProblem: sourceProblem,
+    });
+    seen.add(dedupeKey);
+  }
+
+  return out.slice(0, count);
+}
+
 function buildSolvedQuestionsFromExerciseProblems(
   exerciseProblems: ExerciseProblem[],
   needed: number,
 ) {
-  const equationQuestions = buildEquationChoiceQuestionsFromExercises(exerciseProblems, needed);
-  const remainingNeeded = Math.max(0, needed - equationQuestions.length);
+  const patternQuestions = buildPatternSolvedQuestionsFromExerciseProblems(
+    exerciseProblems,
+    needed,
+  );
+  const equationQuestions = buildEquationChoiceQuestionsFromExercises(
+    exerciseProblems,
+    Math.max(0, needed - patternQuestions.length),
+  );
+  const seededQuestions = [...patternQuestions, ...equationQuestions];
+  const remainingNeeded = Math.max(0, needed - seededQuestions.length);
   if (remainingNeeded === 0) {
-    return equationQuestions.slice(0, needed);
+    return seededQuestions.slice(0, needed);
   }
 
   const labels = ["A", "B", "C", "D"];
@@ -1734,7 +1939,7 @@ function buildSolvedQuestionsFromExerciseProblems(
     });
   }
 
-  return [...equationQuestions, ...out].slice(0, needed);
+  return [...seededQuestions, ...out].slice(0, needed);
 }
 
 function buildLocalQuestionsFromExerciseProblems(
@@ -1891,6 +2096,235 @@ function buildRepeatedSolvedQuestions(
   }
 
   return out;
+}
+
+function normalizeClozeTokenKey(value: string) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[.,]/g, ".");
+}
+
+function extractClozeTokens(problemText: string) {
+  const sourceProblem = stripExerciseLabel(normalizeExerciseLine(problemText));
+  if (!sourceProblem) {
+    return [];
+  }
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (candidate: string) => {
+    const value = String(candidate || "").trim();
+    const key = normalizeClozeTokenKey(value);
+    if (!value || !key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    out.push(value);
+  };
+
+  for (const token of sourceProblem.match(/[+\-]?\d+(?:[.,]\d+)?/g) || []) {
+    push(token);
+  }
+
+  for (const token of sourceProblem.match(/\b[xyzabXYZABхХуУ]\b/gu) || []) {
+    push(token);
+  }
+
+  for (const token of sourceProblem.match(/[\p{L}]{4,18}/gu) || []) {
+    const key = token.toLowerCase();
+    if (CLOZE_STOP_WORDS.has(key)) {
+      continue;
+    }
+    push(token);
+  }
+
+  return out.slice(0, 6);
+}
+
+function replaceFirstTokenWithBlank(sourceText: string, token: string) {
+  const source = String(sourceText || "").trim();
+  const value = String(token || "").trim();
+  if (!source || !value) {
+    return "";
+  }
+
+  const escapedToken = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const expression = /^[\p{L}]+$/u.test(value)
+    ? new RegExp(`\\b${escapedToken}\\b`, "u")
+    : new RegExp(escapedToken, "u");
+
+  return source.replace(expression, CLOZE_BLANK).trim();
+}
+
+function collectWordDistractorPool(exerciseProblems: ExerciseProblem[]) {
+  const pool: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of exerciseProblems) {
+    const sourceProblem = stripExerciseLabel(normalizeExerciseLine(item.text));
+    if (!sourceProblem) {
+      continue;
+    }
+
+    for (const token of sourceProblem.match(/[\p{L}]{4,18}/gu) || []) {
+      const key = normalizeClozeTokenKey(token);
+      if (!key || CLOZE_STOP_WORDS.has(key) || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      pool.push(token);
+    }
+  }
+
+  return pool;
+}
+
+function buildWordDistractors(correctToken: string, pool: string[]) {
+  const normalizedCorrect = normalizeClozeTokenKey(correctToken);
+  const out: string[] = [];
+  const seen = new Set([normalizedCorrect]);
+
+  const isVariableToken = /^[xyzabхХуУ]$/u.test(String(correctToken || "").trim());
+  const push = (candidate: string) => {
+    const value = String(candidate || "").trim();
+    const key = normalizeClozeTokenKey(value);
+    if (!value || !key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    out.push(value);
+  };
+
+  if (isVariableToken) {
+    for (const candidate of ["x", "y", "z", "a", "b", "х", "у"]) {
+      push(candidate);
+      if (out.length >= 3) {
+        return out.slice(0, 3);
+      }
+    }
+  }
+
+  const correctLength = String(correctToken || "").trim().length;
+  for (const candidate of pool) {
+    if (Math.abs(candidate.length - correctLength) > 5) {
+      continue;
+    }
+    push(candidate);
+    if (out.length >= 3) {
+      return out.slice(0, 3);
+    }
+  }
+
+  for (const candidate of [
+    "магадлал",
+    "функц",
+    "вектор",
+    "өнцөг",
+    "талбай",
+    "периметр",
+    "координат",
+    "параллель",
+  ]) {
+    push(candidate);
+    if (out.length >= 3) {
+      break;
+    }
+  }
+
+  return out.slice(0, 3);
+}
+
+function buildClozeQuestionsFromExerciseProblems(
+  exerciseProblems: ExerciseProblem[],
+  needed: number,
+) {
+  const count = Math.max(0, Math.trunc(Number(needed) || 0));
+  if (count <= 0) {
+    return [];
+  }
+
+  const labels = ["A", "B", "C", "D"];
+  const out: GeneratedTextbookQuestion[] = [];
+  const seenProblems = new Set<string>();
+  const wordPool = collectWordDistractorPool(exerciseProblems);
+
+  for (const item of exerciseProblems) {
+    if (out.length >= count) {
+      break;
+    }
+
+    const sourceProblem = normalizeExerciseLine(item.text);
+    const problemBody = stripExerciseLabel(sourceProblem);
+    const problemKey = normalizeProblemKey(sourceProblem);
+    if (!sourceProblem || !problemBody || !problemKey || seenProblems.has(problemKey)) {
+      continue;
+    }
+
+    for (const correctToken of extractClozeTokens(sourceProblem)) {
+      const blankedBody = replaceFirstTokenWithBlank(problemBody, correctToken);
+      if (
+        !blankedBody ||
+        blankedBody === problemBody ||
+        !blankedBody.includes(CLOZE_BLANK)
+      ) {
+        continue;
+      }
+
+      const numericValue = Number(correctToken.replace(",", "."));
+      const distractors =
+        /^[-+]?\d+(?:[.,]\d+)?$/.test(correctToken) && Number.isFinite(numericValue)
+          ? buildWrongNumericChoices(numericValue)
+          : buildWordDistractors(correctToken, wordPool);
+      const choiceBodies = [correctToken, ...distractors]
+        .map((candidate) => String(candidate || "").trim())
+        .filter(Boolean)
+        .filter(
+          (candidate, index, items) =>
+            items.findIndex((itemValue) =>
+              normalizeClozeTokenKey(itemValue) === normalizeClozeTokenKey(candidate),
+            ) === index,
+        )
+        .slice(0, 4);
+
+      if (choiceBodies.length < 4) {
+        continue;
+      }
+
+      for (let index = choiceBodies.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [choiceBodies[index], choiceBodies[swapIndex]] = [
+          choiceBodies[swapIndex],
+          choiceBodies[index],
+        ];
+      }
+
+      const correctIndex = choiceBodies.findIndex(
+        (candidate) =>
+          normalizeClozeTokenKey(candidate) === normalizeClozeTokenKey(correctToken),
+      );
+      if (correctIndex < 0) {
+        continue;
+      }
+
+      out.push({
+        id: `mcq-cloze-${out.length + 1}`,
+        kind: "mcq",
+        question: `Сурах бичгийн бодлогын хоосон зайг зөв нөхөж бөглөнө үү.\n${blankedBody}`,
+        choices: choiceBodies.map((choice, index) => `${labels[index]}. ${choice}`),
+        correctAnswer: labels[correctIndex] || "A",
+        difficulty: "medium",
+        explanation: `Эх бодлогод ${correctToken} гэж өгөгдсөн.`,
+        points: 1,
+        sourcePages: Number.isFinite(item.pageNumber) ? [item.pageNumber] : [],
+        bookProblem: sourceProblem,
+      });
+      seenProblems.add(problemKey);
+      break;
+    }
+  }
+
+  return out.slice(0, count);
 }
 
 function buildOpenTaskAnswer(problemText: string) {
@@ -2370,6 +2804,22 @@ export function generateTextbookTest(
     if (repeatedTopUp.length > 0) {
       warnings.push(
         `Тестийн тоог гүйцээхийн тулд ${repeatedTopUp.length} асуултыг давтан fallback-р нөхлөө.`,
+      );
+    }
+  }
+
+  if (questions.length < questionCount) {
+    const clozeTopUp = buildClozeQuestionsFromExerciseProblems(
+      selectedExerciseProblems,
+      questionCount - questions.length,
+    );
+    questions = dedupeQuestionsByProblem([...questions, ...clozeTopUp], questionCount).slice(
+      0,
+      questionCount,
+    );
+    if (clozeTopUp.length > 0) {
+      warnings.push(
+        `Solve-based fallback хүрэлцээгүй тул ${clozeTopUp.length} хоосон зай нөхөх асуулт нэмлээ.`,
       );
     }
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useApolloClient, useMutation } from "@apollo/client/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ListNewMathExamsDocument,
@@ -118,8 +118,8 @@ function buildTextbookSaveInput(
     return {
       type: MathExamQuestionType.Mcq,
       prompt:
-        question.bookProblem.trim() ||
         question.question.trim() ||
+        question.bookProblem.trim() ||
         "Сонголтот асуулт",
       points: normalizePoints(question.points),
       options,
@@ -315,9 +315,11 @@ export default function MaterialBuilderPageContent() {
   const [savedExamId, setSavedExamId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hasHydratedImportedTextbooks, setHasHydratedImportedTextbooks] = useState(false);
+  const textbookLibraryRefreshKeyRef = useRef(new Map<string, string>());
   const {
     isLoading: isLoadingTextbookLibrary,
     items: persistedTextbookMaterials,
+    refresh: refreshTextbookLibrary,
   } = useTextbookMaterialLibrary({
     grade: generalInfo.grade,
     subject: generalInfo.subject,
@@ -472,6 +474,22 @@ export default function MaterialBuilderPageContent() {
 
       return hasChanges ? updated : current;
     });
+
+    const materialId = String(next.material?.id || "").trim();
+    const materialStatus = String(next.material?.status || "").trim();
+    const refreshableStatuses = new Set(["ready", "ocr_needed", "error"]);
+    const refreshKey = `${materialId}:${materialStatus}`;
+
+    if (!materialId || !refreshableStatuses.has(materialStatus)) {
+      return;
+    }
+
+    if (textbookLibraryRefreshKeyRef.current.get(next.importId) === refreshKey) {
+      return;
+    }
+
+    textbookLibraryRefreshKeyRef.current.set(next.importId, refreshKey);
+    void refreshTextbookLibrary();
   }
 
   function handleTextbookLibrarySelect(importId: string) {

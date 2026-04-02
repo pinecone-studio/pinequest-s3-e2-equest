@@ -9,6 +9,7 @@ import {
   type ParsedTextbookSectionPage,
   type TextbookSourceProblem,
 } from "@/app/test/material-builder/_components/textbook-material-data";
+import { cleanTextbookPageContent } from "./generation-source-cleaner";
 import { directPageNumbersFromMetadata, splitParagraphs } from "./normalizer";
 import { resolveGenerateSelection } from "./selectors";
 import type {
@@ -63,12 +64,13 @@ function dedupeTexts(values: string[]) {
 }
 
 function buildSectionPage(content: string, pageNumber: number): ParsedTextbookSectionPage {
+  const cleanedContent = cleanTextbookPageContent(content);
   return {
-    content,
+    content: cleanedContent,
     examples: [],
     formulas: [],
     pageNumber,
-    paragraphs: splitParagraphs(content),
+    paragraphs: splitParagraphs(cleanedContent),
   };
 }
 
@@ -112,7 +114,9 @@ function buildSectionPageBuckets(
       const fallbackText = String(
         pageMap.get(pageNumber)?.normalizedText || pageMap.get(pageNumber)?.rawText || "",
       ).trim();
-      const content = chunkTexts.length > 0 ? chunkTexts.join("\n\n") : fallbackText;
+      const content = cleanTextbookPageContent(
+        chunkTexts.length > 0 ? chunkTexts.join("\n\n") : fallbackText,
+      );
 
       return content ? buildSectionPage(content, pageNumber) : null;
     })
@@ -208,7 +212,7 @@ function buildSelectedLegacyBook(
           pageNumber,
           {
             pageNumber,
-            text,
+            text: cleanTextbookPageContent(text, 900),
           } satisfies ParsedTextbookPage,
         ] as const;
       }),

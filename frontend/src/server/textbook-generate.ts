@@ -3,6 +3,9 @@ import {
   DEFAULT_OLLAMA_MODEL,
 } from "../lib/ollama";
 import { parseGeminiJson } from "../lib/parse-gemini-json";
+import { buildSourceRefinementPrompt, type AiRefinedSourcePayload } from "../features/textbook-processing/ai-source-refinement";
+import { cleanTextbookGenerationSource } from "../features/textbook-processing/generation-source-cleaner";
+import { toStudentFacingProblemPrompt } from "../features/textbook-processing/student-facing-problem";
 import type {
   GeneratedTextbookOpenTask,
   GeneratedTextbookQuestion,
@@ -69,6 +72,14 @@ type AiProviderResult = {
   error?: string;
   model?: string;
   payload: AiTextbookPayload | null;
+  provider: "gemini" | "local" | "ollama";
+  warnings: string[];
+};
+
+type AiJsonProviderResult<T> = {
+  error?: string;
+  model?: string;
+  payload: T | null;
   provider: "gemini" | "local" | "ollama";
   warnings: string[];
 };
@@ -204,6 +215,37 @@ function buildSourceCandidates(fallbackTest: GeneratedTextbookTest) {
   return out;
 }
 
+function dedupeSourceCandidates(items: SourceCandidate[]) {
+  const out: SourceCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    const text = toStudentFacingProblemPrompt(item.text) || normalizeSpace(item.text);
+    if (!text) {
+      continue;
+    }
+
+    const sourcePages = Array.from(
+      new Set(
+        (item.sourcePages || [])
+          .map((pageNumber) => Math.trunc(Number(pageNumber)))
+          .filter((pageNumber) => Number.isFinite(pageNumber) && pageNumber >= 1),
+      ),
+    ).sort((left, right) => left - right);
+    const key = `${normalizeKey(text)}|${sourcePages.join(",")}`;
+    if (!normalizeKey(text) || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push({
+      sourcePages,
+      text,
+    });
+  }
+
+  return out;
+}
+
 function scoreSourceCandidate(query: string, candidate: SourceCandidate) {
   const normalizedQuery = normalizeSpace(query);
   const normalizedCandidate = normalizeSpace(candidate.text);
@@ -304,17 +346,31 @@ ${sectionLines || "- Сонгосон сэдэв байхгүй"}
 
 Дүрэм:
 - Зөвхөн доорх "Номын бодлогууд" болон "Хуудасны эх" хэсгээс асуулт гарга.
+- Raw OCR эсвэл эвдэрхий source текстийг шууд copy-paste хийж асуулт бүү болго. Эхлээд цэвэрлэж, ойлгомжтой болгож бич.
 - Сонголтот асуулт бүр нэг бодлого дээр суурилсан байна.
 - Нэг асуултанд яг нэг source problem ашигла. Хоёр өөр бодлогыг нийлүүлж болохгүй.
+- prompt талбар нь сурагчид шууд уншигдах, байгалийн Монгол хэлтэй байна.
+- prompt нь богино, тодорхой, нэг утгатай байна.
+- Хэрэв source дотор илүү урт тайлбар байвал зөвхөн бодоход хэрэгтэй хэсгийг л үлдээгээрэй.
+- "Сонгосон хэсэг", "эх хэсэг", "дараах мөрөөс" гэх мэт meta хэллэг prompt-д бүү ашигла.
+- Хэрэв source problem өөрөө бэлэн бодлогын өгүүлбэр байвал аль болох тэр хэлбэрийг нь хадгалж цэвэрлээд ашигла.
+- "x - ийн" гэх мэт эвдэрсэн spacing байвал "x-ийн" болгож зас.
+- "x2+1x-2=0" шиг мөр байвал "x^2 + x - 2 = 0" гэж засаж, "Дараах тэгшитгэлийг бод. x-ийн утгыг ол:" маягийн prompt болго.
+- Математикийн илэрхийллүүдийг KaTeX/LaTeX-compatible байдлаар бичиж болно. Жишээ нь \\sqrt{...}, \\frac{...}{...}, x^2, 45^\\circ.
 - bookProblem талбарт тухайн номын бодлогын агуулгыг ойр, танигдахуйц байдлаар өг.
 - sourceExcerpt талбарт номын эхээс богино ишлэл өг.
 - sourcePages талбарт аль page-ээс авснаа массив хэлбэрээр өг.
 - Сонголтот асуулт бүр options массивтай, яг 4 сонголттой байна.
 - correctOption нь 0-ээс эхэлсэн зөв индекс байна.
 - Задгай даалгавар бүр answer болон responseGuide-тай байна.
+- options нь цэвэр, богино, яг хариултын хувилбарууд байна. "A." "B." гэсэн prefix бүү нэм.
+- Сонголтууд хоорондоо давхцахгүй, нэг нь нөгөөгөө багтаахгүй, будлиангүй байна.
+- explanation болон responseGuide нь багш, сурагч хүн уншаад ойлгохоор товч, тодорхой байна.
 - Хэрэв хангалттай шинэ хувилбар хийж чадахгүй бол одоо байгаа бодлогын хэлбэрийг хадгалсан, цэвэр хувилбар буцаа.
+- Чанар муутай 10 асуултаас илүү, ойлгомжтой 4-6 асуулт буцаах нь дээр. Хэрэв source нь ойлгомжгүй бол requested count-оос цөөн буцааж болно.
 - Энгийн тооны шууд үйлдэл, нэг алхамтай амархан асуултаас зайлсхий.
 - Хувьсагчтай тэгшитгэл, язгуур, модультай, олон алхамтай бодлогуудыг түрүүлж сонго.
+- "Дадлага ажил", "Дүрс 1", "нэрлэвэл", "олон өнцөгт биш" зэрэг incomplete instruction мөрүүдээс асуулт бүү хий.
 - Source-д байхгүй demo маягийн бодлого бүү зохиож өг.
 ${preferHardProblems ? "- Энэ generation дээр hard түвшний бодлогуудыг давамгай сонго." : ""}
 
@@ -353,7 +409,7 @@ ${pagePreview || "Хуудасны эх олдсонгүй."}
 `.trim();
 }
 
-async function requestGeminiPayload(
+async function requestGeminiPayload<T>(
   prompt: string,
   env: TextbookGenerateEnv,
 ) {
@@ -415,11 +471,11 @@ async function requestGeminiPayload(
 
   return {
     model,
-    payload: parseGeminiJson<AiTextbookPayload>(text),
+    payload: parseGeminiJson<T>(text),
   };
 }
 
-async function requestOllamaPayload(
+async function requestOllamaPayload<T>(
   prompt: string,
   env: TextbookGenerateEnv,
 ) {
@@ -451,55 +507,62 @@ async function requestOllamaPayload(
 
   return {
     model: result.model,
-    payload: parseGeminiJson<AiTextbookPayload>(result.content),
+    payload: parseGeminiJson<T>(result.content),
   };
 }
 
-async function requestAiPayload(
+async function requestAiJsonPayload<T>(
   prompt: string,
   env: TextbookGenerateEnv,
-): Promise<AiProviderResult> {
+  options: {
+    localWarning: string;
+    preferOllama?: boolean;
+  },
+): Promise<AiJsonProviderResult<T>> {
   const warnings: string[] = [];
+  const providerOrder = options.preferOllama
+    ? (["ollama", "gemini"] as const)
+    : (["gemini", "ollama"] as const);
 
-  if (env.GEMINI_API_KEY?.trim()) {
-    try {
-      const result = await requestGeminiPayload(prompt, env);
-      return {
-        model: result.model,
-        payload: result.payload,
-        provider: "gemini",
-        warnings,
-      };
-    } catch (error) {
-      warnings.push(
-        `Gemini ашиглаж чадсангүй: ${
-          error instanceof Error ? error.message : "Тодорхойгүй алдаа"
-        }`,
-      );
+  for (const provider of providerOrder) {
+    if (provider === "gemini" && env.GEMINI_API_KEY?.trim()) {
+      try {
+        const result = await requestGeminiPayload<T>(prompt, env);
+        return {
+          model: result.model,
+          payload: result.payload,
+          provider: "gemini",
+          warnings,
+        };
+      } catch (error) {
+        warnings.push(
+          `Gemini ашиглаж чадсангүй: ${
+            error instanceof Error ? error.message : "Тодорхойгүй алдаа"
+          }`,
+        );
+      }
+    }
+
+    if (provider === "ollama" && env.OLLAMA_BASE_URL?.trim()) {
+      try {
+        const result = await requestOllamaPayload<T>(prompt, env);
+        return {
+          model: result.model,
+          payload: result.payload,
+          provider: "ollama",
+          warnings,
+        };
+      } catch (error) {
+        warnings.push(
+          `Ollama ашиглаж чадсангүй: ${
+            error instanceof Error ? error.message : "Тодорхойгүй алдаа"
+          }`,
+        );
+      }
     }
   }
 
-  if (env.OLLAMA_BASE_URL?.trim()) {
-    try {
-      const result = await requestOllamaPayload(prompt, env);
-      return {
-        model: result.model,
-        payload: result.payload,
-        provider: "ollama",
-        warnings,
-      };
-    } catch (error) {
-      warnings.push(
-        `Ollama ашиглаж чадсангүй: ${
-          error instanceof Error ? error.message : "Тодорхойгүй алдаа"
-        }`,
-      );
-    }
-  }
-
-  warnings.push(
-    "AI provider олдсонгүй эсвэл ажиллахгүй байна. Local fallback тестийг ашиглалаа.",
-  );
+  warnings.push(options.localWarning);
 
   return {
     error: warnings[warnings.length - 1],
@@ -507,6 +570,17 @@ async function requestAiPayload(
     provider: "local",
     warnings,
   };
+}
+
+async function requestAiPayload(
+  prompt: string,
+  env: TextbookGenerateEnv,
+): Promise<AiProviderResult> {
+  return requestAiJsonPayload<AiTextbookPayload>(prompt, env, {
+    localWarning:
+      "AI provider олдсонгүй эсвэл ажиллахгүй байна. Local fallback тестийг ашиглалаа.",
+    preferOllama: true,
+  });
 }
 
 function parseSourcePages(value: unknown, fallback: number[]) {
@@ -582,9 +656,16 @@ function mapAiMcqQuestion(
   return {
     id: randomId(),
     kind: "mcq" as const,
-    question: normalizeSpace(item.prompt || fallbackQuestion?.question || SOLVE_QUESTION_TEXT),
+    question:
+      toStudentFacingProblemPrompt(
+        String(item.prompt || fallbackQuestion?.question || SOLVE_QUESTION_TEXT),
+      ) ||
+      normalizeSpace(item.prompt || fallbackQuestion?.question || SOLVE_QUESTION_TEXT),
     bookProblem:
-      normalizeSpace(item.bookProblem || item.sourceExcerpt || "")
+      toStudentFacingProblemPrompt(
+        String(item.bookProblem || item.sourceExcerpt || ""),
+      )
+      || normalizeSpace(item.bookProblem || item.sourceExcerpt || "")
       || matchedSource?.candidate.text
       || fallbackQuestion?.bookProblem
       || normalizeSpace(item.prompt || ""),
@@ -605,7 +686,9 @@ function mapAiOpenTask(
   candidates: SourceCandidate[],
   fallbackTask: GeneratedTextbookOpenTask | undefined,
 ) {
-  const prompt = normalizeSpace(item.prompt || "");
+  const prompt =
+    toStudentFacingProblemPrompt(String(item.prompt || "")) ||
+    normalizeSpace(item.prompt || "");
   if (!prompt) {
     return null;
   }
@@ -675,6 +758,46 @@ function dedupeOpenTasks(items: GeneratedTextbookOpenTask[]) {
   return out;
 }
 
+function mapAiRefinedSourceCandidates(
+  payload: AiRefinedSourcePayload | null,
+  fallbackCandidates: SourceCandidate[],
+  desiredCount: number,
+) {
+  const mapped = (payload?.problems || [])
+    .map((item) => {
+      const prompt = toStudentFacingProblemPrompt(
+        String(item.prompt || item.sourceExcerpt || "").trim(),
+      );
+      if (!prompt) {
+        return null;
+      }
+
+      const matchedSource = findBestSourceCandidate(
+        String(item.sourceExcerpt || item.prompt || "").trim(),
+        fallbackCandidates,
+      );
+      if (!matchedSource && fallbackCandidates.length > 0) {
+        return null;
+      }
+
+      return {
+        sourcePages: parseSourcePages(
+          item.sourcePages,
+          matchedSource?.candidate.sourcePages || [],
+        ),
+        text: prompt,
+      } satisfies SourceCandidate;
+    })
+    .filter(isDefined);
+
+  return dedupeSourceCandidates(
+    (mapped.length > 0 ? mapped : fallbackCandidates).slice(
+      0,
+      Math.max(1, desiredCount),
+    ),
+  );
+}
+
 export async function handleTextbookGeneratePost(
   request: Request,
   env: TextbookGenerateEnv,
@@ -703,22 +826,31 @@ export async function handleTextbookGeneratePost(
     const selectedSectionTitles = Array.isArray(body.selectedSectionTitles)
       ? body.selectedSectionTitles.map((item) => normalizeSpace(String(item || ""))).filter(Boolean)
       : [];
-    const sourceProblems = (Array.isArray(body.sourceProblems)
+    const rawSourceProblems = (Array.isArray(body.sourceProblems)
       ? body.sourceProblems
       : [])
       .map((item) => ({
-        sourcePages: [
-          Math.max(1, Math.trunc(Number(item?.pageNumber || 0))),
-        ].filter((pageNumber) => Number.isFinite(pageNumber) && pageNumber >= 1),
+        pageNumber: Math.max(1, Math.trunc(Number(item?.pageNumber || 0))),
         text: normalizeSpace(String(item?.text || "")),
       }))
       .filter((item) => item.text);
-    const visiblePages = (Array.isArray(body.visiblePages) ? body.visiblePages : [])
+    const rawVisiblePages = (Array.isArray(body.visiblePages) ? body.visiblePages : [])
       .map((page) => ({
         content: normalizeSpace(String(page?.content || "")),
         pageNumber: Math.max(1, Math.trunc(Number(page?.pageNumber || 0))),
       }))
       .filter((page) => page.content);
+    const cleanedGenerationSource = cleanTextbookGenerationSource({
+      requestedOpenQuestionCount: fallbackTest.openQuestionCountGenerated,
+      requestedQuestionCount: fallbackTest.questionCountGenerated,
+      sourceProblems: rawSourceProblems,
+      visiblePages: rawVisiblePages,
+    });
+    const sourceProblems = cleanedGenerationSource.sourceProblems.map((item) => ({
+      sourcePages: [item.pageNumber],
+      text: item.text,
+    }));
+    const visiblePages = cleanedGenerationSource.visiblePages;
 
     if (
       fallbackTest.questionCountGenerated <= 0 &&
@@ -727,16 +859,37 @@ export async function handleTextbookGeneratePost(
       return Response.json({ test: fallbackTest });
     }
 
+    const fallbackSourceCandidates = dedupeSourceCandidates(
+      sourceProblems.length ? sourceProblems : buildSourceCandidates(fallbackTest),
+    );
+    const sourceRefinementPrompt = buildSourceRefinementPrompt({
+      desiredCount: Math.max(fallbackTest.questionCountGenerated * 2, 8),
+      selectedSectionTitles,
+      sourceProblems: fallbackSourceCandidates,
+      visiblePages,
+    });
+    const sourceRefinementResult =
+      await requestAiJsonPayload<AiRefinedSourcePayload>(
+        sourceRefinementPrompt,
+        env,
+        {
+          localWarning:
+            "AI-аар source problem цэвэрлэж чадсангүй. Heuristic cleaner-ийг ашиглалаа.",
+          preferOllama: true,
+        },
+      );
+    const sourceCandidates = mapAiRefinedSourceCandidates(
+      sourceRefinementResult.payload,
+      fallbackSourceCandidates,
+      Math.max(fallbackTest.questionCountGenerated * 2, 8),
+    );
     const prompt = buildPrompt(
       fallbackTest,
-      sourceProblems.length ? sourceProblems : buildSourceCandidates(fallbackTest),
+      sourceCandidates,
       selectedSectionTitles,
       visiblePages,
     );
     const aiResult = await requestAiPayload(prompt, env);
-    const sourceCandidates = sourceProblems.length
-      ? sourceProblems
-      : buildSourceCandidates(fallbackTest);
 
     const aiMcqQuestions = dedupeMcqQuestions(
       (aiResult.payload?.mcqQuestions || [])
@@ -790,9 +943,17 @@ export async function handleTextbookGeneratePost(
       });
 
     const warnings = uniqueWarnings([
+      ...cleanedGenerationSource.warnings,
       ...fallbackTest.warnings,
+      ...(Array.isArray(sourceRefinementResult.payload?.warnings)
+        ? sourceRefinementResult.payload.warnings
+        : []),
+      ...sourceRefinementResult.warnings,
       ...(Array.isArray(aiResult.payload?.warnings) ? aiResult.payload.warnings : []),
       ...aiResult.warnings,
+      sourceRefinementResult.provider === "local"
+        ? ""
+        : `${sourceRefinementResult.provider === "ollama" ? "Ollama" : "Gemini"} source problem-уудыг эхлээд цэвэрлэж шүүв.`,
       aiResult.provider === "local"
         ? "AI route ажиллахгүй үед local fallback тестийг хэвээр үлдээлээ."
         : `${aiResult.provider === "gemini" ? "Gemini" : "Ollama"} ашиглаж сонгосон сэдвээс тест боловсруулав.`,
