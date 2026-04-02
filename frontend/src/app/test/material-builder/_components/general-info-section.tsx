@@ -139,8 +139,10 @@ export function GeneralInfoSection({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="progress">Явцын</SelectItem>
-              <SelectItem value="midterm">Дунд шалгалт</SelectItem>
-              <SelectItem value="final">Эцсийн шалгалт</SelectItem>
+              <SelectItem value="quarter">Улирлын</SelectItem>
+              <SelectItem value="state">Улсын шалгалт</SelectItem>
+              <SelectItem value="benchmark">Жишиг шалгалт</SelectItem>
+              <SelectItem value="unit">Бүлэг сэдвийн шалгалт</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -183,9 +185,14 @@ export function GeneralInfoSection({
               <SelectValue placeholder="Хугацаа сонгох" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="10">10 мин</SelectItem>
               <SelectItem value="20">20 мин</SelectItem>
               <SelectItem value="30">30 мин</SelectItem>
               <SelectItem value="40">40 мин</SelectItem>
+              <SelectItem value="60">60 мин</SelectItem>
+              <SelectItem value="80">80 мин</SelectItem>
+              <SelectItem value="90">90 мин</SelectItem>
+              <SelectItem value="100">100 мин</SelectItem>
             </SelectContent>
           </Select>
         </div>

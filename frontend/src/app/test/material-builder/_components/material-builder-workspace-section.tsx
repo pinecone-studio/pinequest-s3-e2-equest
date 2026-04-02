@@ -1,13 +1,14 @@
 "use client";
 
-import { useMutation } from "@apollo/client/react";
+import { useApolloClient, useMutation, useQuery } from "@apollo/client/react";
 import type { ReactNode } from "react";
-import { useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   BookOpen,
   ChevronDown,
   ChevronUp,
   Database,
+  Eye,
   FileUp,
   FileText,
   GripVertical,
@@ -26,6 +27,13 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { MathAssistField } from "@/components/exam/math-exam-assist-field";
 import MathPreviewText from "@/components/math-preview-text";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,13 +48,14 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   GenerateQuestionAnswerDocument,
+  GetNewMathExamDocument,
+  ListNewMathExamsDocument,
   RegenerateQuestionAnswerDocument,
 } from "@/gql/create-exam-documents";
 import { Difficulty, QuestionFormat } from "@/gql/graphql";
 import { cn } from "@/lib/utils";
 import {
   explanationClassName,
-  sharedLibraryMaterials,
   sourceOptions,
   type MaterialSourceId,
 } from "./material-builder-config";
@@ -57,6 +66,12 @@ import {
 } from "./material-builder-demo-questions";
 
 type Props = {
+  generalInfo: {
+    durationMinutes: string;
+    examType: string;
+    grade: string;
+    subject: string;
+  };
   selectedSharedMaterialId: string;
   onSelectMaterialId: (id: string) => void;
   source: MaterialSourceId;
@@ -109,6 +124,70 @@ const workspaceSourceOptions = sourceOptions.filter(
   ): option is (typeof sourceOptions)[number] & { id: WorkspaceSourceId } =>
     option.id !== "textbook",
 );
+
+type SharedLibraryExamQuestion = {
+  answerLatex?: string | null;
+  correctOption?: number | null;
+  id: string;
+  options?: string[] | null;
+  points?: number | null;
+  prompt: string;
+  responseGuide?: string | null;
+  type: "Math" | "Mcq" | string;
+};
+
+type SharedLibraryExam = {
+  createdAt?: string | null;
+  examId: string;
+  questions: SharedLibraryExamQuestion[];
+  sessionMeta?: {
+    durationMinutes?: number | null;
+    examType?: string | null;
+    grade?: number | null;
+    subject?: string | null;
+    teacherId?: string | null;
+    variantCount?: number | null;
+    withVariants?: boolean | null;
+  } | null;
+  title: string;
+  totalPoints?: number | null;
+  updatedAt?: string | null;
+};
+
+type SharedLibraryExamSummary = {
+  durationMinutes?: number | null;
+  examId: string;
+  examType?: string | null;
+  grade?: number | null;
+  questionCount: number;
+  subject?: string | null;
+  teacherId?: string | null;
+  title: string;
+  updatedAt?: string | null;
+  variantCount?: number | null;
+  withVariants?: boolean | null;
+};
+
+function mapLibraryExamToPreviewQuestions(exam: SharedLibraryExam): PreviewQuestion[] {
+  return exam.questions.map((question, index) => {
+    const answers =
+      question.type === "Math"
+        ? [question.answerLatex?.trim() || ""]
+        : (question.options ?? []).map((option) => String(option));
+
+    return {
+      id: `library-${exam.examId}-${question.id}-${index + 1}`,
+      index: index + 1,
+      question: question.prompt,
+      questionType: question.type === "Math" ? "written" : "single-choice",
+      answers,
+      correct: question.correctOption ?? 0,
+      points: question.points ?? 1,
+      source: exam.title,
+      explanation: question.responseGuide ?? undefined,
+    } satisfies PreviewQuestion;
+  });
+}
 
 function WorkspaceTabs({
   source,
@@ -948,117 +1027,483 @@ function TextbookPanel() {
 }
 
 function SharedLibraryPanel({
+  generalInfo,
+  onAppendExamQuestions,
   selectedSharedMaterialId,
   onSelectMaterialId,
 }: {
+  generalInfo: {
+    durationMinutes: string;
+    examType: string;
+    grade: string;
+    subject: string;
+  };
+  onAppendExamQuestions: (questions: PreviewQuestion[]) => void;
   selectedSharedMaterialId: string;
   onSelectMaterialId: (id: string) => void;
 }) {
-  const material = useMemo(
+  const client = useApolloClient();
+  const { data, loading } = useQuery(ListNewMathExamsDocument, {
+    variables: {
+      limit: 100,
+      filters: {
+        examType: generalInfo.examType || null,
+        grade: generalInfo.grade ? Number(generalInfo.grade) : null,
+        subject: generalInfo.subject || null,
+      },
+    },
+  });
+  const [libraryExamDetailLoading, setLibraryExamDetailLoading] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
+  const [durationFilter, setDurationFilter] = useState("all");
+  const [teacherFilter, setTeacherFilter] = useState("all");
+  const [variantFilter, setVariantFilter] = useState("all");
+  const [questionCountFilter, setQuestionCountFilter] = useState("all");
+  const [previewExamId, setPreviewExamId] = useState<string | null>(null);
+  const [editingExamQuestionId, setEditingExamQuestionId] = useState<string | null>(null);
+  const [editingExam, setEditingExam] = useState<SharedLibraryExam | null>(null);
+
+  const libraryExamSummaries = useMemo(
     () =>
-      sharedLibraryMaterials.find(
-        (item) => item.id === selectedSharedMaterialId,
-      ) ?? sharedLibraryMaterials[0],
-    [selectedSharedMaterialId],
+      (
+        (data as { listNewMathExams?: SharedLibraryExamSummary[] | null } | undefined)
+          ?.listNewMathExams ?? []
+      ).filter((exam) => {
+        const searchTarget = `${exam.title} ${exam.subject ?? ""} ${
+          exam.examType ?? ""
+        }`.toLowerCase();
+
+        if (
+          searchValue.trim() &&
+          !searchTarget.includes(searchValue.trim().toLowerCase())
+        ) {
+          return false;
+        }
+
+        if (
+          durationFilter !== "all" &&
+          String(exam.durationMinutes ?? "") !== durationFilter
+        ) {
+          return false;
+        }
+
+        if (
+          teacherFilter !== "all" &&
+          (exam.teacherId ?? "unknown") !== teacherFilter
+        ) {
+          return false;
+        }
+
+        if (variantFilter !== "all") {
+          const hasVariants = Boolean(exam.withVariants);
+          if (variantFilter === "with" && !hasVariants) return false;
+          if (variantFilter === "without" && hasVariants) return false;
+        }
+
+        if (
+          questionCountFilter !== "all" &&
+          String(exam.questionCount) !== questionCountFilter
+        ) {
+          return false;
+        }
+
+        return true;
+      }),
+    [
+      durationFilter,
+      questionCountFilter,
+      searchValue,
+      teacherFilter,
+      variantFilter,
+      data,
+    ],
   );
+
+  const teacherOptions = useMemo(() => {
+    const values = Array.from(
+      new Set(libraryExamSummaries.map((exam) => exam.teacherId ?? "unknown")),
+    );
+    return values.filter(Boolean);
+  }, [libraryExamSummaries]);
+
+  const durationOptions = useMemo(() => {
+    const values: number[] = Array.from(
+      new Set(
+        libraryExamSummaries
+          .map((exam) => exam.durationMinutes)
+          .filter((value): value is number => typeof value === "number"),
+      ),
+    );
+    return values.sort((a, b) => a - b);
+  }, [libraryExamSummaries]);
+
+  const questionCountOptions = useMemo(() => {
+    const values: number[] = Array.from(
+      new Set(libraryExamSummaries.map((exam) => exam.questionCount)),
+    );
+    return values.sort((a, b) => a - b);
+  }, [libraryExamSummaries]);
+
+  async function openExamPreview(exam: SharedLibraryExamSummary) {
+    onSelectMaterialId(exam.examId);
+    setLibraryExamDetailLoading(true);
+    try {
+      const result = await client.query({
+        query: GetNewMathExamDocument,
+        variables: { examId: exam.examId },
+        fetchPolicy: "no-cache",
+      });
+      const fullExam = (
+        result.data as { getNewMathExam?: SharedLibraryExam | null } | undefined
+      )?.getNewMathExam;
+      if (!fullExam) {
+        toast.error("Шалгалтын дэлгэрэнгүй мэдээлэл олдсонгүй.");
+        return;
+      }
+      setPreviewExamId(exam.examId);
+      setEditingExamQuestionId(null);
+      setEditingExam(structuredClone(fullExam));
+    } finally {
+      setLibraryExamDetailLoading(false);
+    }
+  }
+
+  function updateEditingExamQuestion(
+    questionId: string,
+    updater: (question: SharedLibraryExamQuestion) => SharedLibraryExamQuestion,
+  ) {
+    setEditingExam((prev) =>
+      prev
+        ? {
+            ...prev,
+            questions: prev.questions.map((question) =>
+              question.id === questionId ? updater(question) : question,
+            ),
+          }
+        : prev,
+    );
+  }
+
+  function deleteEditingExamQuestion(questionId: string) {
+    setEditingExam((prev) =>
+      prev
+        ? {
+            ...prev,
+            questions: prev.questions.filter((question) => question.id !== questionId),
+          }
+        : prev,
+    );
+    setEditingExamQuestionId((current) => (current === questionId ? null : current));
+  }
+
+  function appendSelectedExam() {
+    if (!editingExam) return;
+    onAppendExamQuestions(mapLibraryExamToPreviewQuestions(editingExam));
+    setPreviewExamId(null);
+    setEditingExamQuestionId(null);
+    setEditingExam(null);
+    toast.success("Сонгосон шалгалтын материал нэмэгдлээ.");
+  }
 
   return (
     <div className="space-y-4">
       <div className="relative">
         <Input
-          placeholder="Асуулт хайх..."
+          value={searchValue}
+          onChange={(event) => setSearchValue(event.target.value)}
+          placeholder="Шалгалтын материал хайх..."
           className="rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] pl-10"
         />
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        {["Бүгд", "Бүгд", "Бүгд"].map((label, index) => (
-          <Select key={`${label}-${index}`} defaultValue="all">
-            <SelectTrigger className="cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
-              <SelectValue placeholder={label} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{label}</SelectItem>
-            </SelectContent>
-          </Select>
-        ))}
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <Select value={durationFilter} onValueChange={setDurationFilter}>
+          <SelectTrigger className="cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+            <SelectValue placeholder="Хугацаа" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Бүх хугацаа</SelectItem>
+            {durationOptions.map((value) => (
+              <SelectItem key={`duration-${value}`} value={String(value)}>
+                {value} мин
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={teacherFilter} onValueChange={setTeacherFilter}>
+          <SelectTrigger className="cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+            <SelectValue placeholder="Багш" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Бүх багш</SelectItem>
+            {teacherOptions.map((value) => (
+              <SelectItem key={`teacher-${value}`} value={value}>
+                {value === "unknown" ? "Тодорхойгүй" : value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={variantFilter} onValueChange={setVariantFilter}>
+          <SelectTrigger className="cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+            <SelectValue placeholder="Хувилбар" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Бүгд</SelectItem>
+            <SelectItem value="with">Хувилбартай</SelectItem>
+            <SelectItem value="without">Хувилбаргүй</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={questionCountFilter} onValueChange={setQuestionCountFilter}>
+          <SelectTrigger className="cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+            <SelectValue placeholder="Асуултын тоо" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Бүгд</SelectItem>
+            {questionCountOptions.map((value) => (
+              <SelectItem key={`count-${value}`} value={String(value)}>
+                {value} асуулт
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="rounded-[16px] border border-[#dbe4f3] bg-white p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[15px] font-semibold text-slate-900">
-              {material.title}
-            </p>
-            <p className="text-[12px] text-slate-500">
-              {material.subject} · {material.updatedAt}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onSelectMaterialId(material.id)}
-            className="text-[12px] font-medium text-[#0b5cab]"
-          >
-            Бүгдийг сонгох
-          </button>
+      {loading ? (
+        <div className="rounded-[16px] border border-[#dbe4f3] bg-white p-6 text-center text-[14px] text-slate-500">
+          Материалуудыг ачаалж байна...
         </div>
-
-        <div className="space-y-3">
-          {material.contents.slice(0, 2).map((content) => (
-            <div
-              key={content.id}
-              className="rounded-[14px] border border-[#e3e9f4] bg-[#f9fbff] p-3"
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {libraryExamSummaries.map((exam) => (
+            <button
+              key={exam.examId}
+              type="button"
+              onClick={() => openExamPreview(exam)}
+              className="rounded-[16px] border border-[#dbe4f3] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#b8ccef] hover:bg-[#fbfdff] hover:shadow-[0_10px_22px_rgba(148,163,184,0.14)]"
             >
-              <div className="flex items-center gap-2">
-                <Checkbox checked />
-                <div className="text-[14px] font-medium text-slate-900">
-                  <MathPreviewText
-                    content={content.previewPrompt}
-                    contentSource="preview"
-                    className="text-[14px] leading-relaxed text-slate-900"
-                  />
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[15px] font-semibold text-slate-900">
+                    {exam.title}
+                  </p>
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    {exam.subject || "Хичээлгүй"} ·{" "}
+                    {exam.updatedAt?.slice(0, 10) || "Огноо байхгүй"}
+                  </p>
                 </div>
+                <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">
+                  {exam.questionCount}
+                </Badge>
               </div>
-              <div className="mt-3 space-y-2">
-                {content.previewAnswers.slice(0, 3).map((answer, index) => (
-                  <div
-                    key={`${answer}-${index}`}
-                    className={cn(
-                      "rounded-[10px] border px-3 py-2 text-[13px]",
-                      index === 0
-                        ? "border-[#9cd9c0] bg-[#dff6ee] text-[#127c54]"
-                        : "border-[#e3e9f4] bg-white text-slate-700",
-                    )}
-                  >
-                    <div className="flex items-start gap-1.5">
-                      <span>{String.fromCharCode(65 + index)}.</span>
-                      <MathPreviewText
-                        content={answer}
-                        contentSource="preview"
-                        className="min-w-0 text-[13px] leading-relaxed"
-                      />
-                    </div>
-                  </div>
-                ))}
+              <div className="mb-3 flex flex-wrap gap-2 text-[12px] text-slate-500">
+                <span>{exam.grade ?? "-"}-р анги</span>
+                <span>·</span>
+                <span>{exam.examType ?? "Төрөлгүй"}</span>
+                <span>·</span>
+                <span>{exam.durationMinutes ?? "-"} мин</span>
               </div>
-            </div>
+              <div className="rounded-[12px] border border-[#e3e9f4] bg-[#f9fbff] p-3 text-[13px] text-slate-500">
+                Preview нээж дэлгэрэнгүй харна
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <span className="text-[12px] text-slate-500">
+                  {exam.withVariants ? "Хувилбартай" : "Хувилбаргүй"}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#0b5cab]">
+                  <Eye className="h-3.5 w-3.5" />
+                  Preview
+                </span>
+              </div>
+            </button>
           ))}
         </div>
+      )}
 
-        <div className="mt-4 flex items-center justify-between rounded-[14px] bg-[#eef4ff] px-4 py-3">
-          <div>
-            <p className="text-[14px] font-semibold text-slate-900">
-              2 асуулт сонгогдсон
-            </p>
-            <p className="text-[12px] text-slate-500">Тест рүү нэмэхэд бэлэн</p>
+      <Dialog
+        open={Boolean(previewExamId && editingExam)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewExamId(null);
+            setEditingExamQuestionId(null);
+            setEditingExam(null);
+          }
+        }}
+      >
+        <DialogContent className="flex h-[min(90vh,52rem)] w-[min(100vw-1.5rem,72rem)]! max-w-none! flex-col gap-0 overflow-hidden rounded-[24px] border border-[#dfe7f3] bg-white p-0">
+          <DialogHeader className="px-5 py-4">
+            <DialogTitle className="text-[18px] font-semibold text-slate-900">
+              {editingExam?.title ?? "Шалгалтын материал"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            {libraryExamDetailLoading ? (
+              <div className="py-10 text-center text-[14px] text-slate-500">
+                Preview ачаалж байна...
+              </div>
+            ) : null}
+            <div className="mb-4 flex flex-wrap gap-2">
+              <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">
+                {editingExam?.sessionMeta?.examType ?? "Төрөлгүй"}
+              </Badge>
+              <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">
+                {editingExam?.questions.length ?? 0} асуулт
+              </Badge>
+              <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">
+                {editingExam?.sessionMeta?.durationMinutes ?? "-"} мин
+              </Badge>
+            </div>
+            <div className="space-y-4">
+              {editingExam?.questions.map((question, questionIndex) => {
+                const isEditing = editingExamQuestionId === question.id;
+                return (
+                  <div
+                    key={question.id}
+                    className="rounded-[16px] border border-[#dbe4f3] bg-[#fcfdff] p-4"
+                  >
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="text-[14px] font-semibold text-slate-900">
+                        Асуулт {questionIndex + 1}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditingExamQuestionId((current) =>
+                              current === question.id ? null : question.id,
+                            )
+                          }
+                          className="cursor-pointer text-slate-400 transition hover:text-slate-700"
+                          aria-label="Засах"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteEditingExamQuestion(question.id)}
+                          className="cursor-pointer text-rose-400 transition hover:text-rose-600"
+                          aria-label="Устгах"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                    {isEditing ? (
+                      <div className="space-y-3">
+                        <MathAssistField
+                          multiline
+                          value={question.prompt}
+                          onChange={(nextValue) =>
+                            updateEditingExamQuestion(question.id, (current) => ({
+                              ...current,
+                              prompt: nextValue,
+                            }))
+                          }
+                          className="min-h-[120px]! rounded-[14px]! border-[#d7e3f5]! bg-white!"
+                          contentClassName="text-[14px] leading-6 text-slate-900 [&_.katex]:text-inherit"
+                        />
+                        {(question.options ?? []).map((option, optionIndex) => (
+                          <MathAssistField
+                            key={`${question.id}-${optionIndex}`}
+                            value={option}
+                            onChange={(nextValue) =>
+                              updateEditingExamQuestion(question.id, (current) => {
+                                const nextOptions = [...(current.options ?? [])];
+                                nextOptions[optionIndex] = nextValue;
+                                return { ...current, options: nextOptions };
+                              })
+                            }
+                            className="rounded-[12px]! border-[#d7e3f5]! bg-white!"
+                            contentClassName="text-[14px] leading-6 text-slate-900 [&_.katex]:text-inherit"
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="rounded-[14px] bg-[#f5f8fc] p-3">
+                          <MathPreviewText
+                            content={question.prompt}
+                            contentSource="backend"
+                            className="text-[14px] leading-relaxed text-slate-700"
+                          />
+                        </div>
+                        {(question.options ?? []).length > 0 ? (
+                          <div className="grid gap-3">
+                            {(question.options ?? []).map((option, optionIndex) => (
+                              <div
+                                key={`${question.id}-preview-${optionIndex}`}
+                                className={cn(
+                                  "grid grid-cols-[24px_minmax(0,1fr)] items-center gap-3 rounded-[12px] border px-3 py-2",
+                                  optionIndex === (question.correctOption ?? 0)
+                                    ? "border-[#9cd9c0] bg-[#eefaf4]"
+                                    : "border-[#d7e3f5] bg-white",
+                                )}
+                              >
+                                <div
+                                  className={cn(
+                                    "flex h-6 w-6 items-center justify-center rounded-full border",
+                                    optionIndex === (question.correctOption ?? 0)
+                                      ? "border-[#0b5cab] bg-[#e8f1ff]"
+                                      : "border-[#cbd9ee] bg-white",
+                                  )}
+                                >
+                                  <span
+                                    className={cn(
+                                      "h-2.5 w-2.5 rounded-full",
+                                      optionIndex === (question.correctOption ?? 0)
+                                        ? "bg-[#0b5cab]"
+                                        : "bg-transparent",
+                                    )}
+                                  />
+                                </div>
+                                <MathPreviewText
+                                  content={option}
+                                  contentSource="backend"
+                                  className="text-[14px] leading-relaxed text-slate-700"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-[14px] border border-[#a8ddd0] bg-[#d8f2ea] px-4 py-3 text-[14px] text-[#167e61]">
+                            <MathPreviewText
+                              content={question.answerLatex ?? ""}
+                              contentSource="backend"
+                              className="text-[14px] leading-relaxed"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <Button className="rounded-[10px] bg-[#0b5cab] text-white hover:bg-[#0a4f96]">
-            <Plus className="h-4 w-4" />
-            Нэмэх
-          </Button>
-        </div>
-      </div>
+          <DialogFooter className="mx-0 mb-0 rounded-b-[24px] border-t-0 bg-white px-5 py-4 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setPreviewExamId(null);
+                setEditingExamQuestionId(null);
+                setEditingExam(null);
+              }}
+              className="rounded-[12px] border-[#d7e3f5] bg-white px-5 hover:bg-slate-50"
+            >
+              Хаах
+            </Button>
+            <Button
+              type="button"
+              onClick={appendSelectedExam}
+              disabled={!editingExam?.questions.length}
+              className="rounded-[12px] bg-[#0b5cab] px-5 hover:bg-[#0a4f96]"
+            >
+              Шалгалтын асуултууд руу нэмэх
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1070,6 +1515,15 @@ function getQuestionSourceBadge(source: string) {
       label: "Гараар оруулсан",
       className:
         "rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50",
+    };
+  }
+
+  if (!/\.(pdf|doc|docx|xls|xlsx)$/i.test(source)) {
+    return {
+      icon: Database,
+      label: source,
+      className:
+        "rounded-full border border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-100",
     };
   }
 
@@ -1296,6 +1750,7 @@ function PreviewQuestionCard({
 }
 
 export function MaterialBuilderWorkspaceSection({
+  generalInfo,
   selectedSharedMaterialId,
   onSelectMaterialId,
   source,
@@ -1453,6 +1908,18 @@ export function MaterialBuilderWorkspaceSection({
             {activeSource === "import" ? <FilePanel /> : null}
             {activeSource === "shared-library" ? (
               <SharedLibraryPanel
+                generalInfo={generalInfo}
+                onAppendExamQuestions={(questions) => {
+                  onPreviewQuestionsChange(
+                    reindexQuestions([
+                      ...questions.map((question, index) => ({
+                        ...question,
+                        id: `shared-${Date.now()}-${index + 1}`,
+                      })),
+                      ...previewQuestions,
+                    ]),
+                  );
+                }}
                 selectedSharedMaterialId={selectedSharedMaterialId}
                 onSelectMaterialId={onSelectMaterialId}
               />

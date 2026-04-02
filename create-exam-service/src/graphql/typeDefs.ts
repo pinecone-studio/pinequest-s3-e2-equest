@@ -474,7 +474,7 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Query {
-    listNewMathExams(limit: Int = 50): [NewMathExamSummary!]!
+    listNewMathExams(limit: Int = 50, filters: ListNewMathExamsFilterInput): [NewMathExamSummary!]!
     getNewMathExam(examId: ID!): NewMathExam
     getExamVariantJob(jobId: ID!): ExamVariantJob
     getAiExamSchedule(examId: ID!): ExamSchedule
@@ -532,8 +532,21 @@ export const typeDefs = /* GraphQL */ `
   type NewMathExamSummary {
     examId: ID!
     title: String!
+    grade: Int
+    examType: String
+    subject: String
+    teacherId: String
+    withVariants: Boolean
+    variantCount: Int
+    questionCount: Int!
     durationMinutes: Int
     updatedAt: String!
+  }
+
+  input ListNewMathExamsFilterInput {
+    grade: Int
+    examType: String
+    subject: String
   }
 
   type NewMathExamGeneratorMeta {

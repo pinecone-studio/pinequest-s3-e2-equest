@@ -873,6 +873,7 @@ export default function MaterialBuilderPageContent() {
           onReset={handleGeneralInfoReset}
         />
         <MaterialBuilderWorkspaceSection
+          generalInfo={generalInfo}
           source={source}
           onSourceChange={setSource}
           selectedSharedMaterialId={selectedSharedMaterialId}

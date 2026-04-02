@@ -155,10 +155,17 @@ export const GetExamVariantJobDocument = gql(`
 `);
 
 export const ListNewMathExamsDocument = gql(`
-	query ListNewMathExams($limit: Int = 50) {
-		listNewMathExams(limit: $limit) {
+	query ListNewMathExams($limit: Int = 50, $filters: ListNewMathExamsFilterInput) {
+		listNewMathExams(limit: $limit, filters: $filters) {
 			examId
 			title
+			grade
+			examType
+			subject
+			teacherId
+			withVariants
+			variantCount
+			questionCount
 			durationMinutes
 			updatedAt
 		}

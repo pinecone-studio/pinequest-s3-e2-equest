@@ -1,11 +1,18 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { GraphQLError } from "graphql";
 
 import type { GraphQLContext } from "../../context";
 import { newExamQuestions, newExams } from "../../../db/schema";
 import { MathExamQuestionType } from "../../generated/resolvers-types";
 
-type ListArgs = { limit?: number | null };
+type ListArgs = {
+  filters?: {
+    examType?: string | null;
+    grade?: number | null;
+    subject?: string | null;
+  } | null;
+  limit?: number | null;
+};
 type GetArgs = { examId: string };
 
 function gqlQuestionType(t: string): MathExamQuestionType {
@@ -102,18 +109,51 @@ export const newMathExamQueries = {
       ? Math.max(1, Math.min(200, Math.floor(limitRaw)))
       : 50;
 
-    const rows = await ctx.db
+    const conditions = [];
+    if (typeof args.filters?.grade === "number" && Number.isFinite(args.filters.grade)) {
+      conditions.push(eq(newExams.grade, Math.floor(args.filters.grade)));
+    }
+    if (args.filters?.examType?.trim()) {
+      conditions.push(eq(newExams.examType, args.filters.examType.trim()));
+    }
+    if (args.filters?.subject?.trim()) {
+      conditions.push(eq(newExams.sessionSubject, args.filters.subject.trim()));
+    }
+
+    let query = ctx.db
       .select({
         examId: newExams.id,
         title: newExams.title,
+        grade: newExams.grade,
+        examType: newExams.examType,
+        subject: newExams.sessionSubject,
+        teacherId: newExams.teacherId,
+        withVariants: newExams.withVariants,
+        variantCount: newExams.variantCount,
+        mcqCount: newExams.mcqCount,
+        mathCount: newExams.mathCount,
         durationMinutes: newExams.durationMinutes,
         updatedAt: newExams.updatedAt,
       })
       .from(newExams)
-      .orderBy(desc(newExams.updatedAt))
-      .limit(limit);
+      .$dynamic();
 
-    return rows;
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    const rows = await query.orderBy(desc(newExams.updatedAt)).limit(limit);
+
+    return rows.map((row) => ({
+      ...row,
+      questionCount: (row.mcqCount ?? 0) + (row.mathCount ?? 0),
+      withVariants:
+        row.withVariants === 1
+          ? true
+          : row.withVariants === 0
+            ? false
+            : null,
+    }));
   },
 
   getNewMathExam: async (_: unknown, args: GetArgs, ctx: GraphQLContext) => {
