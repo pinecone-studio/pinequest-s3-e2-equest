@@ -1623,7 +1623,7 @@ export function AiTeacherPersonalScheduler({
                 </Link>
                 <Link
                   href="/ai-scheduler?view=student"
-                  title="Сурагчийн хуанли"
+                  title="хуанли"
                   aria-label="Сурагчийн хуанли руу очих"
                   className="flex size-11 cursor-pointer items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/10 hover:text-blue-200"
                 >
@@ -1707,52 +1707,55 @@ export function AiTeacherPersonalScheduler({
               >
                 <div className="px-3 py-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Эвент ({CALENDAR_LAYERS.filter((x) => x.id !== "conflict").length})
+                    Эвент (
+                    {CALENDAR_LAYERS.filter((x) => x.id !== "conflict").length})
                   </p>
                 </div>
-                {CALENDAR_LAYERS.filter((x) => x.id !== "conflict").map((layer) => {
-                  const on = layerOn[layer.id];
-                  const constraintKind = CALENDAR_LAYER_CONSTRAINT[layer.id];
-                  return (
-                    <button
-                      key={layer.id}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => toggleLayer(layer.id)}
-                      className={cn(
-                        "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                        on
-                          ? "bg-blue-50/80 text-zinc-900 dark:bg-blue-950/50 dark:text-zinc-100"
-                          : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/60",
-                      )}
-                    >
-                      <span
+                {CALENDAR_LAYERS.filter((x) => x.id !== "conflict").map(
+                  (layer) => {
+                    const on = layerOn[layer.id];
+                    const constraintKind = CALENDAR_LAYER_CONSTRAINT[layer.id];
+                    return (
+                      <button
+                        key={layer.id}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => toggleLayer(layer.id)}
                         className={cn(
-                          "shrink-0 rounded-md border p-1 transition-colors",
+                          "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
                           on
-                            ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
-                            : "border-zinc-300 bg-white text-transparent dark:border-zinc-700 dark:bg-zinc-950",
+                            ? "bg-blue-50/80 text-zinc-900 dark:bg-blue-950/50 dark:text-zinc-100"
+                            : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/60",
                         )}
-                        aria-hidden
                       >
-                        <Check className="size-3.5" strokeWidth={3} />
-                      </span>
-                      <span
-                        className={cn(
-                          "size-2.5 shrink-0 rounded-sm",
-                          layer.swatch,
-                          layer.style,
-                          !on && "opacity-35",
-                        )}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">
-                          {layer.label}
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-md border p-1 transition-colors",
+                            on
+                              ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
+                              : "border-zinc-300 bg-white text-transparent dark:border-zinc-700 dark:bg-zinc-950",
+                          )}
+                          aria-hidden
+                        >
+                          <Check className="size-3.5" strokeWidth={3} />
                         </span>
-                      </span>
-                    </button>
-                  );
-                })}
+                        <span
+                          className={cn(
+                            "size-2.5 shrink-0 rounded-sm",
+                            layer.swatch,
+                            layer.style,
+                            !on && "opacity-35",
+                          )}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">
+                            {layer.label}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  },
+                )}
               </div>
             </div>
           </aside>

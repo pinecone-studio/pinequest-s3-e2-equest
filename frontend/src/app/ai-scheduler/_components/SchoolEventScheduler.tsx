@@ -841,11 +841,12 @@ export function SchoolEventScheduler({
                       className="relative shrink-0 text-right"
                       style={{ minHeight: GRID_BODY_MIN_H }}
                     >
-                      {TIME_SLOT_LABELS.map((row) => (
+                      {TIME_SLOT_LABELS.map((row, idx) => (
                         <div
                           key={row.key}
                           className={cn(
-                            "flex items-start justify-end border-t pr-1 pt-0.5 text-[10px] tabular-nums first:border-t-0 first:pt-0 sm:pr-1.5",
+                            "flex items-start justify-end border-t pr-1 pt-0.5 text-[10px] tabular-nums sm:pr-1.5",
+                            idx === 0 && "border-t-0 pt-0",
                             row.isHourMark
                               ? "border-zinc-200 font-medium text-zinc-500 dark:border-zinc-700 dark:text-zinc-400 sm:text-[11px]"
                               : "border-zinc-100 text-[9px] text-zinc-400/85 dark:border-zinc-800 dark:text-zinc-500/90",
