@@ -746,7 +746,7 @@ export function AiStudentPersonalScheduler({
           >
             <div
               className={cn(
-                "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4",
+                "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4 bg-[#F1F4FA]",
                 shellMode
                   ? "min-w-[min(100vw,272px)]"
                   : "min-w-[min(100vw-68px,272px)]",

@@ -1433,7 +1433,7 @@ export function AiTeacherPersonalScheduler({
 
       <div className="relative z-10 flex min-h-screen flex-col">
         {/* Дээд мөр */}
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5 rounded-2xl">
           <div className="flex min-w-0 items-center gap-3">
             {shellMode ? (
               <>
@@ -1598,7 +1598,7 @@ export function AiTeacherPersonalScheduler({
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-[#F1F4FA]">
           {!shellMode ? (
             <nav
               className="flex w-[68px] shrink-0 flex-col border-r border-zinc-600/25 bg-[#3a3a42] text-zinc-200"
@@ -1679,34 +1679,27 @@ export function AiTeacherPersonalScheduler({
               "shrink-0 overflow-hidden border-zinc-200/90 bg-white/50 transition-[width] duration-200 ease-out xl:bg-white/40 dark:border-zinc-700/90 dark:bg-zinc-950/60 xl:dark:bg-zinc-950/50",
               calendarSidebarOpen
                 ? shellMode
-                  ? "w-full max-w-[min(100vw,280px)] border-r sm:max-w-[272px]"
-                  : "w-full max-w-[min(100vw-68px,280px)] border-r sm:max-w-[272px]"
+                  ? "w-full max-w-[min(100vw,280px)]  sm:max-w-[272px]"
+                  : "w-full max-w-[min(100vw-68px,280px)]  sm:max-w-[272px]"
                 : "w-0 border-r-0",
             )}
           >
             <div
               className={cn(
-                "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4",
+                "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4 bg-[#F1F4FA]",
                 shellMode
                   ? "min-w-[min(100vw,272px)]"
                   : "min-w-[min(100vw-68px,272px)]",
               )}
             >
-              <div className={cn(panelLight, "p-3")}>
-                <div className="mb-2 space-y-0.5 px-1">
-                  <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                    Календарь
-                  </p>
-                </div>
-                <div className="flex justify-center">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={setDate}
-                    locale={mn}
-                    className="w-fit"
-                  />
-                </div>
+              <div className="flex justify-center rounded-xl bg-white p-2 dark:bg-zinc-900">
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  onSelect={setDate}
+                  locale={mn}
+                  className="w-fit"
+                />
               </div>
 
               <div
@@ -1779,7 +1772,7 @@ export function AiTeacherPersonalScheduler({
             {/* Төв: цагийн багана + 7 хоногийн тор */}
             <main
               ref={calendarMainRef}
-              className="min-h-[480px] min-w-0 flex-1 overflow-auto border-zinc-200/90 p-3 sm:p-4 xl:rounded-l-3xl xl:border-r xl:bg-zinc-50/30 dark:border-zinc-700/90 dark:xl:bg-zinc-950/40"
+              className="min-h-[480px] min-w-0 flex-1 overflow-auto p-3 sm:p-4 xl:rounded-l-3xl bg-[#F1F4FA]"
             >
               <div
                 className={cn(
@@ -2274,7 +2267,7 @@ export function AiTeacherPersonalScheduler({
             </main>
 
             {/* Баруун: AI панел */}
-            <aside className="flex w-full shrink-0 flex-col border-zinc-200/90 bg-white shadow-[inset_1px_0_0_0_rgba(228,228,231,0.6)] dark:border-zinc-700/90 dark:bg-zinc-950 dark:shadow-[inset_1px_0_0_0_rgba(39,39,42,0.8)] xl:w-[320px] xl:border-l">
+            <aside className="flex w-full shrink-0 m-4 p-4 flex-col  bg-[#F1F4FA]  dark:bg-zinc-950 dark:shadow-[inset_1px_0_0_0_rgba(39,39,42,0.8)] xl:w-[320px] rounded-2xl">
               <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/90">
                 <div className="flex items-center gap-1 text-sky-600 dark:text-sky-400">
                   <Sparkles className="size-4" strokeWidth={2} aria-hidden />
