@@ -496,8 +496,7 @@ function buildMockWeakQuestions(
       totalCount: students.length,
     };
   })
-    .sort((left, right) => right.errorRate - left.errorRate)
-    .slice(0, 5);
+    .sort((left, right) => right.errorRate - left.errorRate);
 }
 
 function buildMockAnalytics(students: ReportStudentRow[]): ExamAnalytics {

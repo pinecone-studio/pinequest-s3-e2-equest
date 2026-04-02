@@ -313,8 +313,9 @@ const buildProgress = (attempt: Record<string, any>, questionCount: number) => {
 const fetchGraphqlPayload = async <TData>(
   query: string,
   variables: Record<string, unknown>,
+  graphqlUrl?: string,
 ) => {
-  const response = await fetch(getTakeExamGraphqlUrl(), {
+  const response = await fetch(graphqlUrl ?? getTakeExamGraphqlUrl(), {
     body: JSON.stringify({ query, variables }),
     cache: "no-store",
     headers: {
@@ -348,10 +349,12 @@ const fetchGraphqlPayload = async <TData>(
 export const fetchTakeExamDashboard = async (
   limit: number,
   testId?: string | null,
+  graphqlUrl?: string,
 ): Promise<DashboardApiPayload> => {
   let { payload, response } = await fetchGraphqlPayload<any>(
     testId ? DASHBOARD_WITH_MATERIAL_QUERY : DASHBOARD_QUERY,
     testId ? { limit, testId } : { limit },
+    graphqlUrl,
   );
 
   if (
@@ -360,7 +363,11 @@ export const fetchTakeExamDashboard = async (
     payload &&
     hasMissingFieldError(payload, "testMaterial")
   ) {
-    const fallback = await fetchGraphqlPayload<any>(DASHBOARD_QUERY, { limit });
+    const fallback = await fetchGraphqlPayload<any>(
+      DASHBOARD_QUERY,
+      { limit },
+      graphqlUrl,
+    );
     response = fallback.response;
     payload = fallback.payload?.data
       ? {

@@ -739,8 +739,7 @@ function combineWeakQuestions(reports: ExamReportData[]): WeakQuestion[] {
       }
 
       return right.missedCount - left.missedCount;
-    })
-    .slice(0, 5);
+    });
 }
 
 function combineScoreTrendData(reports: ExamReportData[]): ReportScoreTrendData {
