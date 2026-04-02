@@ -464,6 +464,7 @@ export function TakeExam({
   return (
     <div
       ref={containerRef}
+      data-proctoring-capture-root
       className="min-h-screen bg-[#f7f7f8] text-slate-900"
     >
       <main className="mx-auto w-full max-w-[1440px] px-3 py-4 sm:px-6 sm:py-8 lg:px-10 lg:py-10">

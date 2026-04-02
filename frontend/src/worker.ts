@@ -7,6 +7,7 @@ import {
 } from "./lib/ollama";
 import { handleGeminiExamPost } from "./server/gemini-exam";
 import { handleGeminiExtractPost } from "./server/gemini-extract";
+import { handleTextbookGeneratePost } from "./server/textbook-generate";
 
 type AssetBinding = {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -2103,6 +2104,10 @@ async function routeApiRequest(request: Request, env: Env) {
 
   if (pathname === "/api/gemini-extract" && request.method === "POST") {
     return handleGeminiExtractPost(request, env);
+  }
+
+  if (pathname === "/api/textbook-generate" && request.method === "POST") {
+    return handleTextbookGeneratePost(request, env);
   }
 
   if (pathname === "/api/take-exam-dashboard" && request.method === "GET") {

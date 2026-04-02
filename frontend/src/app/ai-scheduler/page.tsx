@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 function HubFallback() {
 	return (
-		<div className="min-h-screen bg-[#f4f5f7]" aria-busy="true" aria-label="Ачааллаж байна" />
+		<div className="min-h-screen bg-[#F1F4FA]" aria-busy="true" aria-label="Ачааллаж байна" />
 	);
 }
 
