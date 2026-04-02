@@ -33,6 +33,7 @@ export type ProctoringEvidenceUploadResult = {
 const DEFAULT_PRESIGN_PATH = "/api/proctoring-screenshots/presign";
 const DEFAULT_IMAGE_TYPE = "image/jpeg";
 const DEFAULT_CAPTURE_TIMEOUT_MS = 4_000;
+const MAX_CAPTURE_EDGE_PX = 1600;
 const EVIDENCE_EVENT_CODES = new Set([
   "devtools-suspected",
   "fullscreen-exit",
@@ -45,6 +46,64 @@ const EVIDENCE_EVENT_CODES = new Set([
   "tab_hidden",
   "window_blur",
 ]);
+const HTML2CANVAS_THEME_VARS = {
+  light: {
+    "--accent": "#f5f5f5",
+    "--accent-foreground": "#111827",
+    "--background": "#ffffff",
+    "--border": "#e5e7eb",
+    "--card": "#ffffff",
+    "--card-foreground": "#111827",
+    "--destructive": "#dc2626",
+    "--foreground": "#111827",
+    "--input": "#e5e7eb",
+    "--muted": "#f3f4f6",
+    "--muted-foreground": "#6b7280",
+    "--popover": "#ffffff",
+    "--popover-foreground": "#111827",
+    "--primary": "#111827",
+    "--primary-foreground": "#f9fafb",
+    "--ring": "#9ca3af",
+    "--secondary": "#f3f4f6",
+    "--secondary-foreground": "#111827",
+    "--sidebar": "#fafafa",
+    "--sidebar-accent": "#f3f4f6",
+    "--sidebar-accent-foreground": "#111827",
+    "--sidebar-border": "#e5e7eb",
+    "--sidebar-foreground": "#111827",
+    "--sidebar-primary": "#111827",
+    "--sidebar-primary-foreground": "#f9fafb",
+    "--sidebar-ring": "#9ca3af",
+  },
+  dark: {
+    "--accent": "#374151",
+    "--accent-foreground": "#f9fafb",
+    "--background": "#111827",
+    "--border": "rgba(255, 255, 255, 0.12)",
+    "--card": "#1f2937",
+    "--card-foreground": "#f9fafb",
+    "--destructive": "#ef4444",
+    "--foreground": "#f9fafb",
+    "--input": "rgba(255, 255, 255, 0.16)",
+    "--muted": "#374151",
+    "--muted-foreground": "#d1d5db",
+    "--popover": "#1f2937",
+    "--popover-foreground": "#f9fafb",
+    "--primary": "#e5e7eb",
+    "--primary-foreground": "#111827",
+    "--ring": "#9ca3af",
+    "--secondary": "#374151",
+    "--secondary-foreground": "#f9fafb",
+    "--sidebar": "#1f2937",
+    "--sidebar-accent": "#374151",
+    "--sidebar-accent-foreground": "#f9fafb",
+    "--sidebar-border": "rgba(255, 255, 255, 0.12)",
+    "--sidebar-foreground": "#f9fafb",
+    "--sidebar-primary": "#7c3aed",
+    "--sidebar-primary-foreground": "#f9fafb",
+    "--sidebar-ring": "#9ca3af",
+  },
+} as const;
 
 const trimText = (value: string, maxLength: number) => {
   const normalized = String(value || "").replace(/\s+/g, " ").trim();
@@ -83,6 +142,16 @@ const getCaptureRoot = () =>
   document.querySelector<HTMLElement>("[data-proctoring-capture-root]") ??
   document.body;
 
+const getScaledDimensions = (width: number, height: number) => {
+  const longestEdge = Math.max(width, height, 1);
+  const scale = Math.min(1, MAX_CAPTURE_EDGE_PX / longestEdge);
+
+  return {
+    height: Math.max(1, Math.round(height * scale)),
+    width: Math.max(1, Math.round(width * scale)),
+  };
+};
+
 const blobFromCanvas = (canvas: HTMLCanvasElement, type = DEFAULT_IMAGE_TYPE) =>
   new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
@@ -98,6 +167,54 @@ const blobFromCanvas = (canvas: HTMLCanvasElement, type = DEFAULT_IMAGE_TYPE) =>
       0.78,
     );
   });
+
+const isUnsupportedHtml2CanvasColorLog = (value: unknown) => {
+  if (typeof value === "string") {
+    return value.includes(
+      'Attempting to parse an unsupported color function "lab"',
+    );
+  }
+
+  if (value instanceof Error) {
+    return value.message.includes(
+      'Attempting to parse an unsupported color function "lab"',
+    );
+  }
+
+  return false;
+};
+
+const withFilteredHtml2CanvasLogs = async <T>(
+  action: () => Promise<T>,
+): Promise<T> => {
+  const originalConsoleError = console.error;
+  const originalConsoleWarn = console.warn;
+  const shouldSuppress = (args: unknown[]) =>
+    args.some((value) => isUnsupportedHtml2CanvasColorLog(value));
+
+  console.error = (...args: unknown[]) => {
+    if (shouldSuppress(args)) {
+      return;
+    }
+
+    originalConsoleError(...args);
+  };
+
+  console.warn = (...args: unknown[]) => {
+    if (shouldSuppress(args)) {
+      return;
+    }
+
+    originalConsoleWarn(...args);
+  };
+
+  try {
+    return await action();
+  } finally {
+    console.error = originalConsoleError;
+    console.warn = originalConsoleWarn;
+  }
+};
 
 const renderFallbackEvidenceBlob = async ({
   attemptId,
@@ -151,24 +268,51 @@ const renderFallbackEvidenceBlob = async ({
 };
 
 const renderDomEvidenceBlob = async (input: ProctoringEvidenceUploadInput) => {
-  const { toJpeg } = await import("html-to-image");
+  const { default: html2canvas } = await import("html2canvas");
   const root = getCaptureRoot();
+  const isDarkMode =
+    document.documentElement.classList.contains("dark") ||
+    document.body.classList.contains("dark");
   const width = Math.min(window.innerWidth, 1440);
   const height = Math.min(window.innerHeight, 2200);
-  const dataUrl = await toJpeg(root, {
-    backgroundColor: "#f8fafc",
-    cacheBust: true,
-    canvasWidth: width,
-    canvasHeight: height,
-    pixelRatio: 1,
-    quality: 0.78,
-    style: {
-      transform: `translate(${-window.scrollX}px, ${-window.scrollY}px)`,
-      transformOrigin: "top left",
-    },
-  });
-  const response = await fetch(dataUrl);
-  const blob = await response.blob();
+  const canvas = await withFilteredHtml2CanvasLogs(() =>
+    html2canvas(root, {
+      backgroundColor: "#f8fafc",
+      height,
+      logging: false,
+      onclone: (clonedDocument) => {
+        const palette = isDarkMode
+          ? HTML2CANVAS_THEME_VARS.dark
+          : HTML2CANVAS_THEME_VARS.light;
+
+        for (const [name, value] of Object.entries(palette)) {
+          clonedDocument.documentElement.style.setProperty(name, value);
+          clonedDocument.body.style.setProperty(name, value);
+        }
+      },
+      scale: 1,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      useCORS: true,
+      width,
+      windowHeight: window.innerHeight,
+      windowWidth: window.innerWidth,
+      x: window.scrollX,
+      y: window.scrollY,
+    }),
+  );
+  const scaledDimensions = getScaledDimensions(canvas.width, canvas.height);
+  const finalCanvas = document.createElement("canvas");
+  finalCanvas.width = scaledDimensions.width;
+  finalCanvas.height = scaledDimensions.height;
+  const context = finalCanvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("Monitoring snapshot canvas context үүсгэж чадсангүй.");
+  }
+
+  context.drawImage(canvas, 0, 0, scaledDimensions.width, scaledDimensions.height);
+  const blob = await blobFromCanvas(finalCanvas);
 
   if (blob.size > 0) {
     return blob;

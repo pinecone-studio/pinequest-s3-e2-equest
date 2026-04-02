@@ -3,11 +3,15 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   AlertCircle,
+  Calculator,
   Clock3,
+  Delete,
   Flag,
   Keyboard,
   LayoutGrid,
   Loader2,
+  Minus,
+  Plus,
   Send,
   Sparkles,
 } from "lucide-react";
@@ -15,6 +19,12 @@ import { generateMathExpressionRequest } from "@/app/_pagecomponents/student-pag
 import MathInput from "@/components/math-input";
 import { MathText } from "@/components/math-text";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
@@ -53,6 +63,47 @@ type ExamActionButtonsProps = {
   onSubmit: (finalize: boolean) => void;
 };
 
+type CalculatorAngleMode = "deg" | "rad";
+type CalculatorFunctionName =
+  | "abs"
+  | "acos"
+  | "asin"
+  | "atan"
+  | "cos"
+  | "exp"
+  | "ln"
+  | "log"
+  | "sin"
+  | "sqrt"
+  | "tan";
+type CalculatorConstantName = "ans" | "e" | "pi";
+type CalculatorOperator =
+  | "!"
+  | "%"
+  | "*"
+  | "+"
+  | "-"
+  | "/"
+  | "^"
+  | "u+"
+  | "u-";
+type CalculatorToken =
+  | { type: "comma" }
+  | { type: "constant"; value: CalculatorConstantName }
+  | { type: "function"; value: CalculatorFunctionName }
+  | { type: "number"; value: number }
+  | { type: "operator"; value: CalculatorOperator }
+  | { type: "paren"; value: "(" | ")" };
+type CalculatorButtonConfig = {
+  ariaLabel?: string;
+  label: string;
+  tone: "action" | "accent" | "number";
+  value: string;
+};
+type CalculatorLauncherProps = {
+  onOpen: () => void;
+};
+
 type MobileFloatingControlsProps = {
   activeQuestionId: string | null;
   answers: Record<string, string | null>;
@@ -62,44 +113,585 @@ type MobileFloatingControlsProps = {
   timeLeftLabel: string;
 };
 
-type MathAnswerRenderedLinesProps = {
-  text?: string | null;
-};
+const CALCULATOR_FUNCTION_NAMES = new Set<CalculatorFunctionName>([
+  "abs",
+  "acos",
+  "asin",
+  "atan",
+  "cos",
+  "exp",
+  "ln",
+  "log",
+  "sin",
+  "sqrt",
+  "tan",
+]);
 
-function MathAnswerRenderedLines({ text }: MathAnswerRenderedLinesProps) {
-  const value = text?.replace(/\r\n/g, "\n") ?? "";
+const SCIENTIFIC_CALCULATOR_BUTTONS: CalculatorButtonConfig[][] = [
+  [
+    { label: "sin", tone: "accent", value: "sin(" },
+    { label: "cos", tone: "accent", value: "cos(" },
+    { label: "tan", tone: "accent", value: "tan(" },
+    { label: "sqrt", tone: "accent", value: "sqrt(" },
+    { label: "^", tone: "accent", value: "^" },
+  ],
+  [
+    { label: "asin", tone: "accent", value: "asin(" },
+    { label: "acos", tone: "accent", value: "acos(" },
+    { label: "atan", tone: "accent", value: "atan(" },
+    { label: "ln", tone: "accent", value: "ln(" },
+    { label: "log", tone: "accent", value: "log(" },
+  ],
+  [
+    { label: "abs", tone: "accent", value: "abs(" },
+    { label: "exp", tone: "accent", value: "exp(" },
+    { label: "pi", tone: "accent", value: "pi" },
+    { label: "e", tone: "accent", value: "e" },
+    { label: "Ans", tone: "accent", value: "ans" },
+  ],
+  [
+    { label: "(", tone: "number", value: "(" },
+    { label: ")", tone: "number", value: ")" },
+    { label: "n!", tone: "accent", value: "!" },
+    {
+      ariaLabel: "Сүүлийн тэмдэгт устгах",
+      label: "⌫",
+      tone: "action",
+      value: "__backspace__",
+    },
+    { label: "C", tone: "action", value: "__clear__" },
+  ],
+  [
+    { label: "7", tone: "number", value: "7" },
+    { label: "8", tone: "number", value: "8" },
+    { label: "9", tone: "number", value: "9" },
+    { label: "/", tone: "accent", value: "/" },
+    { label: "*", tone: "accent", value: "*" },
+  ],
+  [
+    { label: "4", tone: "number", value: "4" },
+    { label: "5", tone: "number", value: "5" },
+    { label: "6", tone: "number", value: "6" },
+    { label: "-", tone: "accent", value: "-" },
+    { label: "+", tone: "accent", value: "+" },
+  ],
+  [
+    { label: "1", tone: "number", value: "1" },
+    { label: "2", tone: "number", value: "2" },
+    { label: "3", tone: "number", value: "3" },
+    { label: "0", tone: "number", value: "0" },
+    { label: ".", tone: "number", value: "." },
+  ],
+];
 
-  if (!value) {
+function sanitizeCalculatorInput(value: string) {
+  return value.replace(/[^0-9+\-*/%^().,!a-zA-Zπ×÷√\s]/g, "");
+}
+
+function formatCalculatorResult(value: number) {
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+
+  return parseFloat(value.toFixed(8)).toString();
+}
+
+function normalizeCalculatorExpression(expression: string) {
+  return expression
+    .replace(/π/g, "pi")
+    .replace(/√/g, "sqrt")
+    .replace(/[×x]/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/\s+/g, "");
+}
+
+function needsImplicitMultiplication(
+  left: CalculatorToken,
+  right: CalculatorToken,
+) {
+  const leftCanEnd =
+    left.type === "number" ||
+    left.type === "constant" ||
+    (left.type === "paren" && left.value === ")") ||
+    (left.type === "operator" && left.value === "!");
+  const rightCanStart =
+    right.type === "number" ||
+    right.type === "constant" ||
+    right.type === "function" ||
+    (right.type === "paren" && right.value === "(");
+
+  return leftCanEnd && rightCanStart;
+}
+
+function tokenizeCalculatorExpression(expression: string): CalculatorToken[] {
+  const normalized = normalizeCalculatorExpression(expression);
+
+  if (!normalized) {
+    return [];
+  }
+
+  const tokens: CalculatorToken[] = [];
+  let index = 0;
+
+  while (index < normalized.length) {
+    const character = normalized[index];
+
+    if (/\d|\./.test(character)) {
+      let nextIndex = index + 1;
+
+      while (
+        nextIndex < normalized.length &&
+        /[\d.]/.test(normalized[nextIndex])
+      ) {
+        nextIndex += 1;
+      }
+
+      const rawNumber = normalized.slice(index, nextIndex);
+
+      if (
+        rawNumber === "." ||
+        Number.isNaN(Number(rawNumber)) ||
+        rawNumber.split(".").length > 2
+      ) {
+        throw new Error("Тооны формат буруу байна.");
+      }
+
+      tokens.push({ type: "number", value: Number(rawNumber) });
+      index = nextIndex;
+      continue;
+    }
+
+    if (/[a-zA-Z]/.test(character)) {
+      let nextIndex = index + 1;
+
+      while (
+        nextIndex < normalized.length &&
+        /[a-zA-Z]/.test(normalized[nextIndex])
+      ) {
+        nextIndex += 1;
+      }
+
+      const word = normalized.slice(index, nextIndex).toLowerCase();
+
+      if (CALCULATOR_FUNCTION_NAMES.has(word as CalculatorFunctionName)) {
+        tokens.push({
+          type: "function",
+          value: word as CalculatorFunctionName,
+        });
+        index = nextIndex;
+        continue;
+      }
+
+      if (word === "pi" || word === "e" || word === "ans") {
+        tokens.push({
+          type: "constant",
+          value: word as CalculatorConstantName,
+        });
+        index = nextIndex;
+        continue;
+      }
+
+      throw new Error(`"${word}" функцийг calculator танихгүй байна.`);
+    }
+
+    if (character === "(" || character === ")") {
+      tokens.push({ type: "paren", value: character });
+      index += 1;
+      continue;
+    }
+
+    if (character === ",") {
+      tokens.push({ type: "comma" });
+      index += 1;
+      continue;
+    }
+
+    if ("+-*/%^!".includes(character)) {
+      tokens.push({
+        type: "operator",
+        value: character as Exclude<CalculatorOperator, "u+" | "u-">,
+      });
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`"${character}" тэмдэгт зөвшөөрөгдөхгүй.`);
+  }
+
+  const result: CalculatorToken[] = [];
+
+  for (const [tokenIndex, token] of tokens.entries()) {
+    if (tokenIndex === 0) {
+      result.push(token);
+      continue;
+    }
+
+    const previousToken = tokens[tokenIndex - 1];
+
+    if (needsImplicitMultiplication(previousToken, token)) {
+      result.push({ type: "operator", value: "*" });
+    }
+
+    result.push(token);
+  }
+
+  return result;
+}
+
+function getCalculatorOperatorPrecedence(operator: CalculatorOperator) {
+  switch (operator) {
+    case "!":
+      return 5;
+    case "^":
+      return 4;
+    case "u+":
+    case "u-":
+      return 3;
+    case "*":
+    case "/":
+    case "%":
+      return 2;
+    case "+":
+    case "-":
+      return 1;
+  }
+}
+
+function isRightAssociativeOperator(operator: CalculatorOperator) {
+  return operator === "^" || operator === "u+" || operator === "u-";
+}
+
+function toCalculatorRpn(tokens: CalculatorToken[]) {
+  const output: CalculatorToken[] = [];
+  const stack: CalculatorToken[] = [];
+  let previousToken: CalculatorToken | null = null;
+
+  for (const token of tokens) {
+    if (token.type === "number" || token.type === "constant") {
+      output.push(token);
+      previousToken = token;
+      continue;
+    }
+
+    if (token.type === "function") {
+      stack.push(token);
+      previousToken = token;
+      continue;
+    }
+
+    if (token.type === "comma") {
+      while (stack.length > 0) {
+        const topToken = stack[stack.length - 1];
+
+        if (topToken.type === "paren" && topToken.value === "(") {
+          break;
+        }
+
+        output.push(stack.pop()!);
+      }
+
+      if (stack.length === 0) {
+        throw new Error("Хаалт эсвэл аргументын бүтэц буруу байна.");
+      }
+
+      previousToken = token;
+      continue;
+    }
+
+    if (token.type === "paren" && token.value === "(") {
+      stack.push(token);
+      previousToken = token;
+      continue;
+    }
+
+    if (token.type === "paren" && token.value === ")") {
+      while (stack.length > 0) {
+        const topToken = stack[stack.length - 1];
+
+        if (topToken.type === "paren" && topToken.value === "(") {
+          break;
+        }
+
+        output.push(stack.pop()!);
+      }
+
+      if (stack.length === 0) {
+        throw new Error("Хаалт буруу байна.");
+      }
+
+      stack.pop();
+
+      if (stack[stack.length - 1]?.type === "function") {
+        output.push(stack.pop()!);
+      }
+
+      previousToken = token;
+      continue;
+    }
+
+    if (token.type === "operator") {
+      const shouldTreatAsUnary: boolean =
+        (token.value === "+" || token.value === "-") &&
+        (!previousToken ||
+          previousToken.type === "comma" ||
+          previousToken.type === "function" ||
+          previousToken.type === "operator" ||
+          (previousToken.type === "paren" && previousToken.value === "("));
+      const currentToken: CalculatorToken = shouldTreatAsUnary
+        ? {
+            type: "operator",
+            value: token.value === "+" ? "u+" : "u-",
+          }
+        : token;
+
+      while (stack.length > 0) {
+        const topToken = stack[stack.length - 1];
+
+        if (topToken.type === "function") {
+          output.push(stack.pop()!);
+          continue;
+        }
+
+        if (topToken.type !== "operator") {
+          break;
+        }
+
+        const currentPrecedence = getCalculatorOperatorPrecedence(
+          currentToken.value,
+        );
+        const topPrecedence = getCalculatorOperatorPrecedence(topToken.value);
+        const shouldPop = isRightAssociativeOperator(currentToken.value)
+          ? topPrecedence > currentPrecedence
+          : topPrecedence >= currentPrecedence;
+
+        if (!shouldPop) {
+          break;
+        }
+
+        output.push(stack.pop()!);
+      }
+
+      stack.push(currentToken);
+      previousToken = currentToken;
+    }
+  }
+
+  while (stack.length > 0) {
+    const topToken = stack.pop()!;
+
+    if (topToken.type === "paren") {
+      throw new Error("Хаалтаа гүйцээж бичнэ үү.");
+    }
+
+    output.push(topToken);
+  }
+
+  return output;
+}
+
+function toRadians(value: number, angleMode: CalculatorAngleMode) {
+  return angleMode === "deg" ? (value * Math.PI) / 180 : value;
+}
+
+function fromRadians(value: number, angleMode: CalculatorAngleMode) {
+  return angleMode === "deg" ? (value * 180) / Math.PI : value;
+}
+
+function calculateFactorial(value: number) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error("n! зөвхөн 0-ээс их бүхэл тоон дээр ажиллана.");
+  }
+
+  if (value > 170) {
+    throw new Error("Хэт том factorial бодож чадсангүй.");
+  }
+
+  let result = 1;
+
+  for (let current = 2; current <= value; current += 1) {
+    result *= current;
+  }
+
+  return result;
+}
+
+function applyCalculatorFunction(
+  fn: CalculatorFunctionName,
+  value: number,
+  angleMode: CalculatorAngleMode,
+) {
+  let result: number;
+
+  switch (fn) {
+    case "sin":
+      result = Math.sin(toRadians(value, angleMode));
+      break;
+    case "cos":
+      result = Math.cos(toRadians(value, angleMode));
+      break;
+    case "tan":
+      result = Math.tan(toRadians(value, angleMode));
+      break;
+    case "asin":
+      result = fromRadians(Math.asin(value), angleMode);
+      break;
+    case "acos":
+      result = fromRadians(Math.acos(value), angleMode);
+      break;
+    case "atan":
+      result = fromRadians(Math.atan(value), angleMode);
+      break;
+    case "sqrt":
+      result = Math.sqrt(value);
+      break;
+    case "ln":
+      result = Math.log(value);
+      break;
+    case "log":
+      result = Math.log10(value);
+      break;
+    case "abs":
+      result = Math.abs(value);
+      break;
+    case "exp":
+      result = Math.exp(value);
+      break;
+  }
+
+  if (!Number.isFinite(result)) {
+    throw new Error(`${fn} функцийг энэ утгад бодож чадсангүй.`);
+  }
+
+  return result;
+}
+
+function evaluateCalculatorExpression(
+  expression: string,
+  angleMode: CalculatorAngleMode,
+  lastResult: number | null,
+) {
+  const tokens = tokenizeCalculatorExpression(expression);
+
+  if (tokens.length === 0) {
     return null;
   }
 
-  const lines = value.split("\n");
+  const rpnTokens = toCalculatorRpn(tokens);
+  const stack: number[] = [];
 
-  return (
-    <div className="space-y-0.5 sm:space-y-1">
-      {lines.map((line, index) =>
-        line.length > 0 ? (
-          <div
-            key={`math-answer-render-${index}`}
-            className="min-h-6 break-words text-[13px] leading-6 text-slate-800 sm:min-h-7 sm:text-sm sm:leading-7"
-          >
-            <MathText
-              as="span"
-              className="text-inherit leading-inherit"
-              displayMode={false}
-              text={line}
-            />
-          </div>
-        ) : (
-          <div
-            key={`math-answer-render-space-${index}`}
-            className="h-6 sm:h-7"
-            aria-hidden="true"
-          />
-        ),
-      )}
-    </div>
-  );
+  for (const token of rpnTokens) {
+    if (token.type === "number") {
+      stack.push(token.value);
+      continue;
+    }
+
+    if (token.type === "constant") {
+      if (token.value === "pi") {
+        stack.push(Math.PI);
+        continue;
+      }
+
+      if (token.value === "e") {
+        stack.push(Math.E);
+        continue;
+      }
+
+      if (lastResult === null) {
+        throw new Error("Өмнөх хариу алга. Эхлээд нэг бодлого бодно уу.");
+      }
+
+      stack.push(lastResult);
+      continue;
+    }
+
+    if (token.type === "function") {
+      const value = stack.pop();
+
+      if (value === undefined) {
+        throw new Error("Функцийн оролт дутуу байна.");
+      }
+
+      stack.push(applyCalculatorFunction(token.value, value, angleMode));
+      continue;
+    }
+
+    if (token.type !== "operator") {
+      throw new Error("Тооцооллын бүтэц буруу байна.");
+    }
+
+    if (token.value === "u+" || token.value === "u-" || token.value === "!") {
+      const value = stack.pop();
+
+      if (value === undefined) {
+        throw new Error("Unary үйлдлийн оролт дутуу байна.");
+      }
+
+      if (token.value === "u+") {
+        stack.push(value);
+        continue;
+      }
+
+      if (token.value === "u-") {
+        stack.push(-value);
+        continue;
+      }
+
+      stack.push(calculateFactorial(value));
+      continue;
+    }
+
+    const right = stack.pop();
+    const left = stack.pop();
+
+    if (left === undefined || right === undefined) {
+      throw new Error("Тооцооллын илэрхийлэл дутуу байна.");
+    }
+
+    let nextValue: number;
+
+    switch (token.value) {
+      case "+":
+        nextValue = left + right;
+        break;
+      case "-":
+        nextValue = left - right;
+        break;
+      case "*":
+        nextValue = left * right;
+        break;
+      case "/":
+        if (right === 0) {
+          throw new Error("0-ээр хувааж болохгүй.");
+        }
+
+        nextValue = left / right;
+        break;
+      case "%":
+        if (right === 0) {
+          throw new Error("0-ээр үлдэгдэл бодож болохгүй.");
+        }
+
+        nextValue = left % right;
+        break;
+      case "^":
+        nextValue = left ** right;
+        break;
+      default:
+        throw new Error("Танигдаагүй үйлдэл байна.");
+    }
+
+    if (!Number.isFinite(nextValue)) {
+      throw new Error("Тооцооллыг гүйцэтгэж чадсангүй.");
+    }
+
+    stack.push(nextValue);
+  }
+
+  if (stack.length !== 1) {
+    throw new Error("Илэрхийлэл буруу байна.");
+  }
+
+  return stack[0];
 }
 
 function QuestionNavigation({
@@ -193,6 +785,21 @@ function ExamActionButtons({
         Сорилыг дуусгах
       </button>
     </div>
+  );
+}
+
+function CalculatorLauncher({
+  onOpen,
+}: CalculatorLauncherProps) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#b9d8ed] bg-white px-4 py-3 text-sm font-semibold text-[#1e6d99] shadow-[0_8px_18px_rgba(148,163,184,0.12)] transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+    >
+      <Calculator className="h-4 w-4" />
+      Calculator
+    </button>
   );
 }
 
@@ -296,6 +903,12 @@ export function TakeExam({
   onToggleFlag,
 }: TakeExamProps) {
   const questionCardRefs = useRef<Record<string, HTMLElement | null>>({});
+  const answerTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>(
+    {},
+  );
+  const answerSelectionRefs = useRef<
+    Record<string, { end: number; start: number }>
+  >({});
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(
     attempt.exam.questions[0]?.questionId ?? null,
   );
@@ -321,39 +934,177 @@ export function TakeExam({
   const [activeInputModeByQuestion, setActiveInputModeByQuestion] = useState<
     Record<string, "keyboard" | "ai" | "none">
   >({});
-  const [keyboardDraftByQuestion, setKeyboardDraftByQuestion] = useState<
-    Record<string, string>
-  >({});
+  const [calculatorAngleMode, setCalculatorAngleMode] =
+    useState<CalculatorAngleMode>("deg");
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const [calculatorExpression, setCalculatorExpression] = useState("");
+  const [calculatorLastResult, setCalculatorLastResult] = useState<number | null>(
+    null,
+  );
+  const [calculatorResult, setCalculatorResult] = useState("");
+  const [calculatorError, setCalculatorError] = useState<string | null>(null);
 
   const normalizePlainAnswer = (value: string) => value.replace(/\r\n/g, "\n");
 
-  const getLastEditableLine = (value: string) => {
-    const normalized = normalizePlainAnswer(value);
-    const lines = normalized.split("\n");
-    return lines[lines.length - 1] ?? "";
-  };
+  const syncAnswerTextareaHeight = (questionId: string) => {
+    const textarea = answerTextareaRefs.current[questionId];
 
-  const replaceLastEditableLine = (value: string, replacement: string) => {
-    const normalized = normalizePlainAnswer(value);
-    const lines = normalized.split("\n");
-
-    if (lines.length === 0) {
-      return replacement;
+    if (!textarea) {
+      return;
     }
 
-    lines[lines.length - 1] = replacement;
-    return lines.join("\n");
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(textarea.scrollHeight, 112)}px`;
   };
 
-  const plainTextToMathInputValue = (value: string) =>
-    normalizePlainAnswer(value).replace(/\n/g, "\\\\ ");
+  const storeAnswerSelection = (questionId: string) => {
+    const textarea = answerTextareaRefs.current[questionId];
 
-  const mathInputValueToPlainText = (value: string) =>
-    value.replace(/\\\\\s*/g, "\n");
+    if (!textarea) {
+      return;
+    }
+
+    answerSelectionRefs.current[questionId] = {
+      end: textarea.selectionEnd ?? textarea.value.length,
+      start: textarea.selectionStart ?? textarea.value.length,
+    };
+  };
+
+  const focusAnswerTextarea = (
+    questionId: string,
+    selection?: { end: number; start: number },
+  ) => {
+    requestAnimationFrame(() => {
+      const textarea = answerTextareaRefs.current[questionId];
+
+      if (!textarea) {
+        return;
+      }
+
+      textarea.focus();
+
+      if (selection) {
+        textarea.setSelectionRange(selection.start, selection.end);
+        answerSelectionRefs.current[questionId] = selection;
+      }
+
+      syncAnswerTextareaHeight(questionId);
+    });
+  };
+
+  const insertIntoAnswer = (
+    questionId: string,
+    insertedValue: string,
+    moveLeftAfterWrite = 0,
+  ) => {
+    const currentValue = normalizePlainAnswer(answers[questionId] ?? "");
+    const textarea = answerTextareaRefs.current[questionId];
+    const fallbackIndex = currentValue.length;
+    const selection =
+      answerSelectionRefs.current[questionId] ?? {
+        end: textarea?.selectionEnd ?? fallbackIndex,
+        start: textarea?.selectionStart ?? fallbackIndex,
+      };
+
+    const nextValue =
+      currentValue.slice(0, selection.start) +
+      insertedValue +
+      currentValue.slice(selection.end);
+    const nextCaret = Math.max(
+      selection.start,
+      selection.start + insertedValue.length - moveLeftAfterWrite,
+    );
+
+    onSelectAnswer(questionId, nextValue);
+    focusAnswerTextarea(questionId, {
+      end: nextCaret,
+      start: nextCaret,
+    });
+  };
+
+  const moveAnswerCursor = (questionId: string, direction: "left" | "right") => {
+    const currentValue = normalizePlainAnswer(answers[questionId] ?? "");
+    const textarea = answerTextareaRefs.current[questionId];
+    const fallbackIndex = currentValue.length;
+    const baseSelection =
+      answerSelectionRefs.current[questionId] ?? {
+        end: textarea?.selectionEnd ?? fallbackIndex,
+        start: textarea?.selectionStart ?? fallbackIndex,
+      };
+    const anchor =
+      direction === "left"
+        ? Math.min(baseSelection.start, baseSelection.end)
+        : Math.max(baseSelection.start, baseSelection.end);
+    const nextCaret =
+      direction === "left"
+        ? Math.max(0, anchor - 1)
+        : Math.min(currentValue.length, anchor + 1);
+
+    focusAnswerTextarea(questionId, {
+      end: nextCaret,
+      start: nextCaret,
+    });
+  };
+
+  const resetCalculatorFeedback = () => {
+    setCalculatorError(null);
+    setCalculatorResult("");
+  };
+
+  const openCalculator = () => {
+    setIsCalculatorOpen(true);
+  };
+
+  const appendCalculatorValue = (value: string) => {
+    resetCalculatorFeedback();
+    setCalculatorExpression((current) => `${current}${value}`);
+  };
+
+  const handleCalculatorBackspace = () => {
+    resetCalculatorFeedback();
+    setCalculatorExpression((current) => current.slice(0, -1));
+  };
+
+  const handleCalculatorClear = () => {
+    setCalculatorExpression("");
+    resetCalculatorFeedback();
+  };
+
+  const handleCalculatorEvaluate = () => {
+    try {
+      const nextResult = evaluateCalculatorExpression(
+        calculatorExpression,
+        calculatorAngleMode,
+        calculatorLastResult,
+      );
+
+      if (nextResult === null) {
+        resetCalculatorFeedback();
+        return;
+      }
+
+      setCalculatorLastResult(nextResult);
+      setCalculatorResult(formatCalculatorResult(nextResult));
+      setCalculatorError(null);
+    } catch (error) {
+      setCalculatorResult("");
+      setCalculatorError(
+        error instanceof Error ? error.message : "Тооцоолол буруу байна.",
+      );
+    }
+  };
 
   useEffect(() => {
     setActiveQuestionId(attempt.exam.questions[0]?.questionId ?? null);
   }, [attempt.attemptId, attempt.exam.questions]);
+
+  useEffect(() => {
+    for (const question of attempt.exam.questions) {
+      if (question.type === "math") {
+        syncAnswerTextareaHeight(question.questionId);
+      }
+    }
+  }, [answers, attempt.exam.questions]);
 
   useEffect(() => {
     if (!onQuestionFocus) {
@@ -499,18 +1250,20 @@ export function TakeExam({
               </div>
 
               <ExamActionButtons isMutating={isMutating} onSubmit={onSubmit} />
+
+              <div className="mt-3">
+                <CalculatorLauncher onOpen={openCalculator} />
+              </div>
             </div>
           </aside>
 
           <div className="order-2 space-y-3 lg:order-1 lg:space-y-6">
             {attempt.exam.questions.map((question, index) => {
               const selectedOptionId = answers[question.questionId];
-              const isAnswered = Boolean(answers[question.questionId]);
               const isFlagged = Boolean(flaggedQuestions[question.questionId]);
               const activeInputMode =
                 activeInputModeByQuestion[question.questionId] ?? "none";
               const isKeyboardInputActive = activeInputMode === "keyboard";
-              const hasMathAnswer = Boolean(selectedOptionId?.trim());
 
               return (
                 <div
@@ -538,6 +1291,7 @@ export function TakeExam({
                           Бүтэн оноо {question.points.toFixed(1)}
                         </span>
                         <button
+                          type="button"
                           onClick={() => onToggleFlag(question.questionId)}
                           className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition sm:gap-2 sm:px-3 sm:text-[12px] ${
                             isFlagged
@@ -565,62 +1319,79 @@ export function TakeExam({
                     <div className="space-y-3.5 pl-0 sm:space-y-5 sm:pl-1">
                       {question.type === "math" ? (
                         <div className="space-y-2.5 sm:space-y-3">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setKeyboardDraftByQuestion((prev) => ({
-                                ...prev,
-                                [question.questionId]: plainTextToMathInputValue(
-                                  getLastEditableLine(selectedOptionId ?? ""),
-                                ),
-                              }));
-                              setActiveInputModeByQuestion((prev) => ({
-                                ...prev,
-                                [question.questionId]: "keyboard",
-                              }));
-                            }}
-                            className={`min-h-24 w-full rounded-[18px] border px-3 py-2.5 text-left shadow-[0_10px_24px_rgba(148,163,184,0.10)] transition sm:min-h-28 sm:rounded-[24px] sm:px-4 sm:py-3 ${
+                          <div
+                            className={`rounded-[18px] border bg-white px-3 py-2.5 shadow-[0_10px_24px_rgba(148,163,184,0.10)] transition sm:rounded-[24px] sm:px-4 sm:py-3 ${
                               isKeyboardInputActive
-                                ? "border-sky-300 bg-sky-50/60"
-                                : "border-slate-200 bg-white hover:border-sky-200"
+                                ? "border-sky-300 bg-sky-50/40"
+                                : "border-slate-200"
                             }`}
                           >
-                            {hasMathAnswer ? (
-                              <MathAnswerRenderedLines text={selectedOptionId} />
-                            ) : (
-                              <span className="text-[13px] leading-6 text-slate-400 sm:text-sm sm:leading-7">
-                                Хариугаа энд бичнэ үү...
-                              </span>
-                            )}
-                          </button>
+                            <div className="min-h-24 sm:min-h-28">
+                              <textarea
+                                ref={(node) => {
+                                  answerTextareaRefs.current[question.questionId] = node;
+                                }}
+                                value={selectedOptionId ?? ""}
+                                onChange={(event) =>
+                                  onSelectAnswer(
+                                    question.questionId,
+                                    normalizePlainAnswer(event.target.value),
+                                  )
+                                }
+                                onFocus={() => {
+                                  onQuestionInteract?.();
+                                  storeAnswerSelection(question.questionId);
+                                  syncAnswerTextareaHeight(question.questionId);
+                                }}
+                                onClick={() => storeAnswerSelection(question.questionId)}
+                                onKeyUp={() => storeAnswerSelection(question.questionId)}
+                                onSelect={() => storeAnswerSelection(question.questionId)}
+                                onInput={() =>
+                                  syncAnswerTextareaHeight(question.questionId)
+                                }
+                                onKeyDown={(event) => {
+                                  onQuestionInteract?.();
+
+                                  if (event.key === "Enter") {
+                                    event.stopPropagation();
+                                  }
+                                }}
+                                placeholder="Хариугаа энд шууд бичнэ үү..."
+                                spellCheck={false}
+                                className="min-h-24 w-full resize-none overflow-hidden border-0 bg-transparent text-[13px] leading-6 text-slate-900 caret-slate-900 outline-none placeholder:text-slate-400 selection:bg-sky-200/60 sm:min-h-28 sm:text-sm sm:leading-7"
+                              />
+                            </div>
+                            <p className="mt-2 text-[11px] font-medium text-slate-500 sm:text-xs">
+                              Энд энгийн текст эсвэл LaTeX-ээ бичнэ. Доорх
+                              Keyboard дээрээс тэмдэгт, томьёо нэмж болно.
+                            </p>
+                            {isKeyboardInputActive && selectedOptionId?.trim() ? (
+                              <div className="mt-3 rounded-[16px] border border-slate-200 bg-slate-50/80 px-3 py-2.5 sm:rounded-[18px] sm:px-4 sm:py-3">
+                                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 sm:text-[11px]">
+                                  Томьёоны харагдац
+                                </p>
+                                <MathText
+                                  as="div"
+                                  className="text-[13px] leading-6 text-slate-900 sm:text-sm sm:leading-7"
+                                  text={selectedOptionId}
+                                />
+                              </div>
+                            ) : null}
+                          </div>
                           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                             <button
                               type="button"
-                              onClick={() =>
-                                {
-                                  const nextMode =
-                                    activeInputMode === "keyboard"
-                                      ? "none"
-                                      : "keyboard"
+                              onClick={() => {
+                                const nextMode =
+                                  activeInputMode === "keyboard"
+                                    ? "none"
+                                    : "keyboard";
 
-                                  if (nextMode === "keyboard") {
-                                    setKeyboardDraftByQuestion((prev) => ({
-                                      ...prev,
-                                      [question.questionId]:
-                                        plainTextToMathInputValue(
-                                          getLastEditableLine(
-                                            selectedOptionId ?? "",
-                                          ),
-                                        ),
-                                    }))
-                                  }
-
-                                  setActiveInputModeByQuestion((prev) => ({
-                                    ...prev,
-                                    [question.questionId]: nextMode,
-                                  }))
-                                }
-                              }
+                                setActiveInputModeByQuestion((prev) => ({
+                                  ...prev,
+                                  [question.questionId]: nextMode,
+                                }));
+                              }}
                               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition sm:gap-2 sm:px-3 sm:py-2 sm:text-xs ${
                                 activeInputMode === "keyboard"
                                   ? "border-sky-300 bg-sky-50 text-sky-700"
@@ -628,6 +1399,11 @@ export function TakeExam({
                               }`}
                             >
                               <Keyboard className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                              {activeInputMode === "keyboard" ? (
+                                <Minus className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                              ) : (
+                                <Plus className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                              )}
                               Keyboard
                             </button>
                             <button
@@ -652,29 +1428,30 @@ export function TakeExam({
 
                           {activeInputMode === "keyboard" ? (
                             <MathInput
-                              value={
-                                keyboardDraftByQuestion[question.questionId] ??
-                                plainTextToMathInputValue(
-                                  getLastEditableLine(selectedOptionId ?? ""),
+                              mode="palette"
+                              onInsertLatex={(nextValue, moveLeftAfterWrite) =>
+                                insertIntoAnswer(
+                                  question.questionId,
+                                  nextValue,
+                                  moveLeftAfterWrite,
                                 )
                               }
-                              onChange={(nextValue) => {
-                                setKeyboardDraftByQuestion((prev) => ({
-                                  ...prev,
-                                  [question.questionId]: nextValue,
-                                }))
-
-                                const nextPlainLine =
-                                  mathInputValueToPlainText(nextValue)
-                                onSelectAnswer(
-                                  question.questionId,
-                                  replaceLastEditableLine(
-                                    selectedOptionId ?? "",
-                                    nextPlainLine,
-                                  ),
-                                )
+                              onInsertSystemLine={() =>
+                                insertIntoAnswer(question.questionId, "\n")
+                              }
+                              onMoveLeft={() =>
+                                moveAnswerCursor(question.questionId, "left")
+                              }
+                              onMoveRight={() =>
+                                moveAnswerCursor(question.questionId, "right")
+                              }
+                              onClear={() => {
+                                onSelectAnswer(question.questionId, "");
+                                focusAnswerTextarea(question.questionId, {
+                                  end: 0,
+                                  start: 0,
+                                });
                               }}
-                              placeholder="Хариугаа энд бичнэ үү..."
                               className="shadow-[0_10px_24px_rgba(148,163,184,0.10)]"
                             />
                           ) : activeInputMode === "ai" ? (
@@ -705,8 +1482,8 @@ export function TakeExam({
                                             }
                                             className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition sm:px-3 sm:text-xs ${
                                               isActive
-                                                ? "bg-slate-900 text-white"
-                                                : "text-slate-600 hover:bg-white"
+                                                ? "bg-[#27a7ea] text-white"
+                                                : "text-slate-600 hover:bg-white hover:text-sky-700"
                                             }`}
                                           >
                                             {provider === "auto"
@@ -802,7 +1579,7 @@ export function TakeExam({
                                   !assistTextByQuestion[question.questionId]?.trim() ||
                                   assistLoadingByQuestion[question.questionId]
                                 }
-                              className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-[13px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:text-sm lg:w-auto"
+                              className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#18b8ff] px-4 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(24,184,255,0.28)] transition hover:bg-[#07a9f0] disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:text-sm lg:w-auto"
                             >
                                 {assistLoadingByQuestion[question.questionId] ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -872,6 +1649,7 @@ export function TakeExam({
                         })
                       )}
                     </div>
+
                   </article>
                 </div>
               );
@@ -892,6 +1670,9 @@ export function TakeExam({
                   isMutating={isMutating}
                   onSubmit={onSubmit}
                 />
+                <div className="mt-3">
+                  <CalculatorLauncher onOpen={openCalculator} />
+                </div>
               </section>
             </div>
           </div>
@@ -906,6 +1687,144 @@ export function TakeExam({
         onJumpToQuestion={scrollToQuestion}
         timeLeftLabel={timeLeftLabel}
       />
+
+      <Dialog
+        open={isCalculatorOpen}
+        onOpenChange={(open) => {
+          setIsCalculatorOpen(open);
+
+          if (!open) {
+            setCalculatorError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-[calc(100vw-1.5rem)] border-slate-200 bg-white p-0 sm:max-w-2xl">
+          <DialogHeader className="px-4 py-3">
+            <div className="flex items-center justify-between gap-3 pr-10">
+              <DialogTitle className="flex items-center gap-2 text-slate-900">
+                <Calculator className="h-5 w-5 text-sky-600" />
+                Тооны машин
+              </DialogTitle>
+
+              <div className="mr-2 inline-flex rounded-full border border-sky-200 bg-sky-50 p-1">
+                {(["deg", "rad"] as const).map((mode) => {
+                  const isActive = calculatorAngleMode === mode;
+
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setCalculatorAngleMode(mode)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                        isActive
+                          ? "bg-sky-600 text-white"
+                          : "text-sky-700 hover:bg-white/80"
+                      }`}
+                    >
+                      {mode.toUpperCase()}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 px-4 pb-4">
+            <div className="rounded-[20px] border border-slate-200 bg-slate-50 p-3">
+              <input
+                type="text"
+                inputMode="text"
+                value={calculatorExpression}
+                onChange={(event) => {
+                  resetCalculatorFeedback();
+                  setCalculatorExpression(
+                    sanitizeCalculatorInput(event.target.value),
+                  );
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    handleCalculatorEvaluate();
+                  }
+                }}
+                placeholder="Жишээ: sin(45)"
+                className="h-10 w-full border-0 bg-transparent text-right text-xl font-semibold tracking-tight text-slate-900 outline-none placeholder:text-slate-400"
+              />
+
+              <div className="mt-2 flex min-h-5 items-center justify-end">
+                {calculatorError ? (
+                  <p className="text-xs font-medium text-rose-600 sm:ml-auto">
+                    {calculatorError}
+                  </p>
+                ) : calculatorResult ? (
+                  <p className="text-sm font-semibold text-sky-700 sm:ml-auto">
+                    = {calculatorResult}
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-400 sm:ml-auto">
+                    Enter дарж эсвэл доорх `=` товчоор бодно.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-2">
+              {SCIENTIFIC_CALCULATOR_BUTTONS.flat().map((button) => {
+                const toneClasses =
+                  button.tone === "action"
+                    ? "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    : button.tone === "accent"
+                      ? "border-sky-100 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                      : "border-slate-200 bg-white text-slate-900 hover:border-sky-200 hover:bg-sky-50";
+
+                return (
+                  <button
+                    key={`${button.label}-${button.value}`}
+                    type="button"
+                    onClick={() => {
+                      if (button.value === "__clear__") {
+                        handleCalculatorClear();
+                        return;
+                      }
+
+                      if (button.value === "__backspace__") {
+                        handleCalculatorBackspace();
+                        return;
+                      }
+
+                      appendCalculatorValue(button.value);
+                    }}
+                    className={`inline-flex h-12 items-center justify-center rounded-2xl border text-sm font-semibold transition ${toneClasses}`}
+                    aria-label={button.ariaLabel ?? button.label}
+                  >
+                    {button.label === "⌫" ? (
+                      <Delete className="h-4 w-4" />
+                    ) : button.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2">
+              <button
+                type="button"
+                onClick={handleCalculatorClear}
+                className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Цэвэрлэх
+              </button>
+              <button
+                type="button"
+                onClick={handleCalculatorEvaluate}
+                className="inline-flex h-10 items-center justify-center rounded-2xl border border-[#27a7ea] bg-[#27a7ea] text-lg font-bold text-white transition hover:bg-[#1199de]"
+                aria-label="Хариуг бодох"
+              >
+                =
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

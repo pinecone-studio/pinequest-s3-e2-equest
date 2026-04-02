@@ -155,6 +155,7 @@ type QuestionFeedbackRequest = {
   correctAnswer?: string | null;
   questionText: string;
   questionType?: string | null;
+  referenceGuide?: string | null;
   studentAnswer?: string | null;
 };
 
@@ -1031,6 +1032,30 @@ const extractSimpleSubtraction = (questionText: string) => {
   return { left, result: left - right, right };
 };
 
+const buildVariableRelationFallback = (body: QuestionFeedbackRequest) => {
+  if (body.correctAnswer?.trim()) {
+    return null;
+  }
+
+  const questionText = body.questionText.trim();
+  const referenceGuide = body.referenceGuide?.trim();
+  const studentAnswer = body.studentAnswer?.trim();
+  const combined = `${questionText} ${referenceGuide ?? ""}`.toLowerCase();
+  const mentionsFormulaRelation =
+    /(томьёо|хамаар|функц|formula|function)/i.test(combined) ||
+    (/[xх]/i.test(combined) && /[yу]/i.test(combined));
+
+  if (!mentionsFormulaRelation) {
+    return null;
+  }
+
+  const lead = studentAnswer
+    ? `Таны хариулт "${studentAnswer}" байна.`
+    : "Энэ асуултад өгсөн хариулт дутуу байна.";
+
+  return `${lead} Томьёог уншихдаа аль хувьсагч нь алинаасаа хамаарч байгааг эхэлж зөв тогтоох хэрэгтэй. Жишээлбэл x-ийг y-ээр илэрхийлсэн бол x нь y-ээс хамаарна. Дараа нь орлуулалт, хувиргалт хийх бүрдээ тэнцлийн хоёр талд ижил үйлдэл хийснээ шалгаарай.`;
+};
+
 const buildHeuristicFeedback = (body: QuestionFeedbackRequest) => {
   const questionText = body.questionText.trim();
   const studentAnswer = body.studentAnswer?.trim();
@@ -1061,6 +1086,11 @@ const buildHeuristicFeedback = (body: QuestionFeedbackRequest) => {
     return `Та интегралын үндсэн илэрхийллээ зөв олсон ч интегралын тогтмол болох +C-г орхигдуулсан байна. Интеграл бодох бүрдээ эцсийн хариундаа +C заавал нэмдэг дүрмээ давтаж, ижил төрлийн 2 жишээ дээр дахин баталгаажуулаарай.`;
   }
 
+  const relationFallback = buildVariableRelationFallback(body);
+  if (relationFallback) {
+    return relationFallback;
+  }
+
   if (studentAnswer && correctAnswer) {
     const topicHint = competency
       ? `${competency} сэдвийн дүрэм,`
@@ -1083,13 +1113,18 @@ const buildFallbackFeedback = (body: QuestionFeedbackRequest) => {
   const studentAnswer = body.studentAnswer?.trim();
   const correctAnswer = body.correctAnswer?.trim();
   const competency = body.competency?.trim();
+  const referenceGuide = body.referenceGuide?.trim();
 
   const lead = studentAnswer
     ? correctAnswer
       ? `Таны хариулт "${studentAnswer}" байсан ч зөв хариулт нь "${correctAnswer}" байна.`
+      : referenceGuide
+        ? `Таны хариулт "${studentAnswer}" байна. Жишиг чиглүүлэг нь "${referenceGuide}" юм.`
       : `Таны хариулт "${studentAnswer}" дээр үндсэн алхмаа дахин шалгах хэрэгтэй байна.`
     : correctAnswer
       ? `Энэ асуултад хариулаагүй байна. Зөв хариулт нь "${correctAnswer}" юм.`
+      : referenceGuide
+        ? `Энэ асуултад хариулаагүй байна. Жишиг чиглүүлэг нь "${referenceGuide}" юм.`
       : "Энэ асуултад өгөх хариултаа дахин нэг нягталж бодоорой.";
 
   const concept =
@@ -1105,12 +1140,13 @@ const buildFallbackFeedback = (body: QuestionFeedbackRequest) => {
 const buildQuestionFeedbackPrompt = (body: QuestionFeedbackRequest) =>
   JSON.stringify({
     instruction:
-      "feedback гэсэн ганц key-тэй JSON буцаа. feedback нь монгол хэлээр 2-4 өгүүлбэртэй байна. Асуултыг, сурагчийн өгсөн хариултыг, зөв хариуг харьцуулж яг ямар ойлголт эсвэл алхам дээр алдсаныг тодорхой тайлбарла. Ерөнхий үг бүү хэрэглэ. Боломжтой бол яагаад тэр зөв хариу гарах ёстойг 1 богино логикоор тайлбарла. Эцэст нь ямар сэдэв эсвэл дүрмийг давтах ёстойг хэл.",
+      "feedback гэсэн ганц key-тэй JSON буцаа. feedback нь монгол хэлээр 2-4 өгүүлбэртэй байна. Асуултыг, сурагчийн өгсөн хариултыг, зөв хариу эсвэл referenceGuide-тэй харьцуулж яг ямар ойлголт эсвэл алхам дээр алдсаныг тодорхой тайлбарла. Ерөнхий үг бүү хэрэглэ. Боломжтой бол яагаад тэр зөв хариу гарах ёстойг 1 богино логикоор тайлбарла. Эцэст нь ямар сэдэв эсвэл дүрмийг давтах ёстойг хэл.",
     payload: {
       competency: body.competency ?? null,
       correctAnswer: body.correctAnswer ?? null,
       questionText: body.questionText,
       questionType: body.questionType ?? null,
+      referenceGuide: body.referenceGuide ?? null,
       studentAnswer: body.studentAnswer ?? null,
     },
   });

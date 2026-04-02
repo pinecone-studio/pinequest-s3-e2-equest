@@ -713,10 +713,10 @@ export function MathAssistField({
   const topFieldClassName = cn(
     multiline ? "flex min-h-16 w-full" : "flex min-h-8 w-full items-center",
     hasActiveRenderedEditor
-      ? "rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 pr-12"
+      ? "cursor-text rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 pr-12"
       : multiline
-        ? "rounded-lg border border-input bg-transparent px-2.5 py-2 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30"
-        : "rounded-lg border border-input bg-transparent px-2.5 py-1 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30",
+        ? "cursor-text rounded-lg border border-input bg-transparent px-2.5 py-2 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30"
+        : "cursor-text rounded-lg border border-input bg-transparent px-2.5 py-1 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30",
     className,
   );
 

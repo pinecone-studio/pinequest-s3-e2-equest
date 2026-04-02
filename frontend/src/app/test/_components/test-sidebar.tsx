@@ -100,10 +100,10 @@ export function TestSidebar({
   );
 
   return (
-    <aside className="row-start-1 row-end-3 col-start-1 flex min-h-0 flex-col border-r border-slate-200 bg-white transition-[background-color,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
+    <aside className="row-start-1 row-end-2 col-start-1 flex min-h-0 flex-col border-r border-slate-200 bg-white transition-[background-color,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
       <div
         className={cn(
-          "flex h-[72px] items-center border-b border-slate-200 transition-[padding,justify-content] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "flex min-h-[88px] items-center border-b border-slate-200 transition-[padding,justify-content] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
           compact ? "justify-center px-3" : "gap-3 px-6",
         )}
       >

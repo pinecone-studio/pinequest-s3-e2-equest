@@ -61,6 +61,21 @@ export const typeDefs = /* GraphQL */ `
     responseGuide: String
   }
 
+  type TeacherExamQuestion {
+    questionId: ID!
+    type: String!
+    prompt: String!
+    options: [ExamOption!]!
+    points: Int!
+    competency: String
+    imageUrl: String
+    audioUrl: String
+    videoUrl: String
+    correctOptionId: String
+    responseGuide: String
+    answerLatex: String
+  }
+
   type ExamSession {
     testId: ID!
     title: String!
@@ -68,6 +83,15 @@ export const typeDefs = /* GraphQL */ `
     criteria: TestCriteria!
     timeLimitMinutes: Int!
     questions: [StudentExamQuestion!]!
+  }
+
+  type TeacherExamSession {
+    testId: ID!
+    title: String!
+    description: String!
+    criteria: TestCriteria!
+    timeLimitMinutes: Int!
+    questions: [TeacherExamQuestion!]!
   }
 
   type ExamProgress {
@@ -211,9 +235,9 @@ export const typeDefs = /* GraphQL */ `
 
   type Query {
     students: [Student!]!
-    availableTests: [Test!]!
-    attempts: [AttemptSummary!]!
-    testMaterial(testId: ID!): ExamSession
+    availableTests(forceRefresh: Boolean): [Test!]!
+    attempts(forceRefresh: Boolean): [AttemptSummary!]!
+    testMaterial(testId: ID!, forceRefresh: Boolean): TeacherExamSession
     liveMonitoringFeed(limit: Int): [AttemptLiveFeedItem!]!
     externalNewMathExams(limit: Int): [ExternalExamSummary!]!
   }

@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -42,6 +41,7 @@ import {
   createAiExamSchema,
   type CreateAiExamFormValues,
 } from "@/lib/ai-exam-form-validation";
+import { confirmDeleteAction } from "@/lib/confirm-destructive-action";
 
 import { AiExamAnalyzePromptField } from "@/app/ai-scheduler/_components/AiExamAnalyzePromptField";
 
@@ -482,7 +482,18 @@ export function CreateAiExamComponent() {
                             variant="ghost"
                             size="sm"
                             className="text-destructive hover:text-destructive"
-                            onClick={() => remove(index)}
+                            onClick={async () => {
+                              if (
+                                !(await confirmDeleteAction(
+                                  "Энэ асуултыг",
+                                  "Асуултын мөр формоос хасагдана.",
+                                ))
+                              ) {
+                                return;
+                              }
+
+                              remove(index);
+                            }}
                           >
                             Устгах
                           </Button>

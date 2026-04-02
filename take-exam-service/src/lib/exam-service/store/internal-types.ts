@@ -1,4 +1,9 @@
-import type { AttemptStatus, ExamAnswerInput, ExamTest } from "@/lib/exam-service/types";
+import type {
+	AnswerKeySource,
+	AttemptStatus,
+	ExamAnswerInput,
+	ExamTest,
+} from "@/lib/exam-service/types";
 
 export type CachedAttemptState = {
 	attemptId: string;
@@ -18,6 +23,8 @@ export type CachedTestSummary = {
 	title: string;
 	description: string;
 	criteria: ExamTest["criteria"];
+	answerKeySource?: AnswerKeySource;
+	sourceService?: string | null;
 	timeLimitMinutes: number;
 	updatedAt: string;
 };

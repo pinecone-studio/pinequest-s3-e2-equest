@@ -297,8 +297,8 @@ const InlineTextEditor = forwardRef<
       suppressContentEditableWarning
       className={cn(
         richText
-          ? "block min-h-[4rem] w-full whitespace-pre-wrap break-words bg-transparent text-foreground outline-none"
-          : "inline-block min-w-[3rem] whitespace-pre-wrap break-words bg-transparent text-foreground outline-none",
+          ? "block min-h-[4rem] w-full cursor-text whitespace-pre-wrap break-words bg-transparent text-foreground outline-none"
+          : "inline-block min-w-[3rem] cursor-text whitespace-pre-wrap break-words bg-transparent text-foreground outline-none",
         className,
       )}
       onClick={(event) => event.stopPropagation()}

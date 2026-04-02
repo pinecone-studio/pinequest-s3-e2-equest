@@ -150,7 +150,9 @@ export type DashboardApiPayload = {
   }>;
   testMaterial?: {
     questions: Array<{
+      answerLatex?: string | null;
       competency?: string | null;
+      correctOptionId?: string | null;
       options: Array<{ id: string; text: string }>;
       points: number;
       prompt: string;
@@ -477,6 +479,46 @@ const getTextAnswer = (value?: string | null) => {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 };
 
+const getOptionTextFromAnswerValue = (
+  question: MaterialQuestion | undefined,
+  value?: string | null,
+) => {
+  const normalizedValue = getTextAnswer(value);
+  if (!normalizedValue || !question) {
+    return null;
+  }
+
+  return (
+    question.options.find((option) => option.id === normalizedValue)?.text ?? null
+  );
+};
+
+const getSelectedAnswerLabel = ({
+  materialQuestion,
+  selectedAnswerText,
+  selectedOptionId,
+}: {
+  materialQuestion?: MaterialQuestion;
+  selectedAnswerText?: string | null;
+  selectedOptionId?: string | null;
+}) => {
+  const directAnswer = getTextAnswer(selectedAnswerText);
+  const optionTextFromAnswer = getOptionTextFromAnswerValue(
+    materialQuestion,
+    directAnswer,
+  );
+
+  if (optionTextFromAnswer) {
+    return optionTextFromAnswer;
+  }
+
+  if (directAnswer) {
+    return directAnswer;
+  }
+
+  return getOptionLabel(materialQuestion, selectedOptionId ?? null);
+};
+
 const isLikelyInstructionText = (value?: string | null) => {
   const trimmed = value?.trim().toLowerCase();
   if (!trimmed) {
@@ -511,27 +553,64 @@ const getCorrectAnswerLabel = ({
   correctAnswerText,
   correctOptionId,
   materialQuestion,
+  responseGuide,
 }: {
   correctAnswerText?: string | null;
   correctOptionId?: string | null;
   materialQuestion?: MaterialQuestion;
+  responseGuide?: string | null;
 }) => {
   const directAnswer = getTextAnswer(correctAnswerText);
-  if (isLikelyDirectAnswer(directAnswer)) {
-    return directAnswer ?? "Зөв хариулт ирээгүй";
+  const optionTextFromDirectAnswer = getOptionTextFromAnswerValue(
+    materialQuestion,
+    directAnswer,
+  );
+  const materialAnswer = getTextAnswer(materialQuestion?.answerLatex);
+  const exactAnswer = directAnswer ?? materialAnswer;
+  if (optionTextFromDirectAnswer) {
+    return {
+      kind: "exact" as const,
+      value: optionTextFromDirectAnswer,
+    };
   }
 
-  if (correctOptionId) {
-    return getOptionLabel(materialQuestion, correctOptionId);
+  if (isLikelyDirectAnswer(exactAnswer)) {
+    return {
+      kind: "exact" as const,
+      value: exactAnswer ?? "Зөв хариулт ирээгүй",
+    };
   }
 
-  return "Зөв хариулт ирээгүй";
+  const resolvedCorrectOptionId = correctOptionId ?? materialQuestion?.correctOptionId;
+  if (resolvedCorrectOptionId) {
+    return {
+      kind: "exact" as const,
+      value: getOptionLabel(materialQuestion, resolvedCorrectOptionId),
+    };
+  }
+
+  const referenceGuide =
+    getTextAnswer(responseGuide) ??
+    getTextAnswer(materialQuestion?.responseGuide) ??
+    exactAnswer;
+  if (referenceGuide) {
+    return {
+      kind: "reference" as const,
+      value: referenceGuide,
+    };
+  }
+
+  return {
+    kind: "missing" as const,
+    value: "Зөв хариулт ирээгүй",
+  };
 };
 
 const buildQuestionReviews = (
   attempt: DashboardAttempt,
   materialQuestionsById: Map<string, MaterialQuestion>,
 ): QuestionReview[] => {
+  const isApprovedAttempt = attempt.status === "approved";
   const answerReviewByQuestionId = new Map(
     (attempt.answerReview ?? []).map((question) => [question.questionId, question] as const),
   );
@@ -548,14 +627,22 @@ const buildQuestionReviews = (
         questionResult.questionType ??
         answerReview?.questionType ??
         "single-choice";
-      const hasScoredResult = typeof questionResult.isCorrect === "boolean";
-      const requiresManualReview =
-        !hasScoredResult && (questionType === "math" || Boolean(selectedAnswerText));
       const responseGuide =
         questionResult.explanation ??
         answerReview?.responseGuide ??
         materialQuestion?.responseGuide ??
         null;
+      const correctAnswer = getCorrectAnswerLabel({
+        correctAnswerText: answerReview?.correctAnswerText ?? null,
+        materialQuestion,
+        correctOptionId: questionResult.correctOptionId ?? null,
+        responseGuide,
+      });
+      const hasScoredResult = typeof questionResult.isCorrect === "boolean";
+      const requiresManualReview =
+        attempt.answerKeySource === "teacher_service" &&
+        questionType === "math" &&
+        attempt.status !== "approved";
 
       return {
         competency:
@@ -570,28 +657,28 @@ const buildQuestionReviews = (
           questionResult.prompt ??
           answerReview?.prompt ??
           `Асуулт ${index + 1}`,
-        studentAnswer:
-          selectedAnswerText ??
-          getOptionLabel(
-            materialQuestion,
+        studentAnswer: getSelectedAnswerLabel({
+          materialQuestion,
+          selectedAnswerText,
+          selectedOptionId:
             questionResult.selectedOptionId ?? answerReview?.selectedOptionId ?? null,
-          ),
-        correctAnswer: getCorrectAnswerLabel({
-              correctAnswerText: answerReview?.correctAnswerText ?? null,
-              materialQuestion,
-              correctOptionId: questionResult.correctOptionId ?? null,
-            }),
+        }),
+        correctAnswer: correctAnswer.value,
+        correctAnswerKind: correctAnswer.kind,
         aiAnalysis: requiresManualReview
           ? responseGuide ?? "AI дүгнэлт хараахан ирээгүй байна."
           : undefined,
         aiSource: questionResult.explanationSource as AiContentSource | undefined,
         questionType,
         requiresManualReview,
-        reviewState: hasScoredResult
+        reviewState: requiresManualReview
+          ? "pending"
+          : hasScoredResult
           ? questionResult.isCorrect
             ? "correct"
             : "incorrect"
           : "pending",
+        reviewed: isApprovedAttempt,
         points: hasScoredResult ? questionResult.pointsAwarded : 0,
         maxPoints: questionResult.maxPoints,
         explanation: responseGuide ?? undefined,
@@ -605,11 +692,17 @@ const buildQuestionReviews = (
     const questionType =
       materialQuestion?.type ?? answerReview.questionType ?? "single-choice";
     const requiresManualReview =
-      questionType === "math" || Boolean(selectedAnswerText);
+      attempt.answerKeySource === "teacher_service" && questionType === "math";
     const responseGuide =
       answerReview.responseGuide ??
       materialQuestion?.responseGuide ??
       null;
+    const correctAnswer = getCorrectAnswerLabel({
+      correctAnswerText: answerReview.correctAnswerText ?? null,
+      materialQuestion,
+      correctOptionId: null,
+      responseGuide,
+    });
 
     return {
       competency:
@@ -620,14 +713,13 @@ const buildQuestionReviews = (
         materialQuestion?.prompt ??
         answerReview.prompt ??
         `Асуулт ${index + 1}`,
-      studentAnswer:
-        selectedAnswerText ??
-        getOptionLabel(materialQuestion, answerReview.selectedOptionId ?? null),
-      correctAnswer: getCorrectAnswerLabel({
-        correctAnswerText: answerReview.correctAnswerText ?? null,
+      studentAnswer: getSelectedAnswerLabel({
         materialQuestion,
-        correctOptionId: null,
+        selectedAnswerText,
+        selectedOptionId: answerReview.selectedOptionId ?? null,
       }),
+      correctAnswer: correctAnswer.value,
+      correctAnswerKind: correctAnswer.kind,
       aiAnalysis: requiresManualReview
         ? responseGuide ?? "AI дүгнэлт хараахан ирээгүй байна."
         : undefined,
@@ -635,6 +727,7 @@ const buildQuestionReviews = (
       questionType,
       requiresManualReview,
       reviewState: "pending",
+      reviewed: isApprovedAttempt,
       points: 0,
       maxPoints: materialQuestion?.points ?? answerReview.points ?? 0,
       explanation: responseGuide ?? undefined,
@@ -658,8 +751,10 @@ const buildSubmittedAttempt = (
       attempt.status === "approved"
         ? "reviewed"
         : attempt.status === "processing"
-          ? "in-review"
-          : "pending",
+        ? "in-review"
+        : "pending",
+    completionRate: attempt.progress.completionRate,
+    hasPublishedResult: Boolean(attempt.result),
     reviewableItems:
       (attempt.result?.incorrectCount ?? 0) +
         (attempt.result?.unansweredCount ?? 0) || questions.length,
