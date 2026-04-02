@@ -1,349 +1,78 @@
 PRAGMA foreign_keys = OFF;
 
-DELETE FROM school_event_teacher_targets
-WHERE event_id IN (
-  'event-001', 'event-002', 'event-003', 'event-004', 'event-005', 'event-006', 'event-007', 'event-008', 'event-009', 'event-010',
-  'rec-teacher-meeting', 'rec-teacher-meeting-spring', 'rec-teacher-meeting-fall', 'rec-cleaning', 'rec-cleaning-spring', 'rec-cleaning-fall',
-  'ev-01-01', 'ev-02-01', 'ev-03-01', 'ev-03-02', 'ev-04-01', 'ev-04-02', 'ev-04-03', 'ev-05-01', 'ev-05-02', 'ev-06-01', 'ev-06-02', 'ev-09-01', 'ev-12-01'
-);
+-- Өмнөх датаг цэвэрлэх
+DELETE FROM school_event_teacher_targets;
+DELETE FROM school_event_targets;
+DELETE FROM school_events;
 
-DELETE FROM school_event_targets
-WHERE event_id IN (
-  'event-001', 'event-002', 'event-003', 'event-004', 'event-005', 'event-006', 'event-007', 'event-008', 'event-009', 'event-010',
-  'rec-teacher-meeting', 'rec-teacher-meeting-spring', 'rec-teacher-meeting-fall', 'rec-cleaning', 'rec-cleaning-spring', 'rec-cleaning-fall',
-  'ev-01-01', 'ev-02-01', 'ev-03-01', 'ev-03-02', 'ev-04-01', 'ev-04-02', 'ev-04-03', 'ev-05-01', 'ev-05-02', 'ev-06-01', 'ev-06-02', 'ev-09-01', 'ev-12-01'
-);
-
-DELETE FROM school_events
-WHERE id IN (
-  'event-001', 'event-002', 'event-003', 'event-004', 'event-005', 'event-006', 'event-007', 'event-008', 'event-009', 'event-010',
-  'rec-teacher-meeting', 'rec-teacher-meeting-spring', 'rec-teacher-meeting-fall', 'rec-cleaning', 'rec-cleaning-spring', 'rec-cleaning-fall',
-  'ev-01-01', 'ev-02-01', 'ev-03-01', 'ev-03-02', 'ev-04-01', 'ev-04-02', 'ev-04-03', 'ev-05-01', 'ev-05-02', 'ev-06-01', 'ev-06-02', 'ev-09-01', 'ev-12-01'
-);
-
+-- Үндсэн арга хэмжээнүүдийг оруулах
 INSERT INTO school_events (
-  id,
-  title,
-  description,
-  event_type,
-  priority,
-  urgency_level,
-  start_date,
-  end_date,
-  start_period_id,
-  end_period_id,
-  repeat_pattern,
-  is_full_lock,
-  target_type,
-  is_school_wide,
-  color_code,
-  created_at
+  id, title, description, event_type, priority, urgency_level,
+  start_date, end_date, start_period_id, end_period_id,
+  repeat_pattern, is_full_lock, target_type, is_school_wide, color_code, created_at
 ) VALUES
+  -- 1. Долоо хоног бүрийн тогтмол арга хэмжээ
   (
-    'rec-teacher-meeting-spring',
-    'Багш нарын хурал',
-    'Хаврын улиралд Даваа гараг бүрийн 1-р цагт бүх багш нар хуралтай тул шалгалт авах боломжгүй.',
-    'TEACHER_DEVELOPMENT',
-    3,
-    'REQUIRED',
-    1767571200000,
-    1767574800000,
-    1,
-    1,
-    'WEEKLY',
-    1,
-    'TEACHERS',
-    1,
-    '#3B82F6',
-    1767571200000
+    'rec-teacher-meeting-spring', 'Багш нарын хурал', 'Даваа гараг бүрийн 1-р цагт.',
+    'TEACHER_DEVELOPMENT', 3, 'REQUIRED', 1767571200000, 1767574800000, 1, 1, 'WEEKLY', 1, 'TEACHERS', 1, '#3B82F6', 1767571200000
   ),
   (
-    'rec-teacher-meeting-fall',
-    'Багш нарын хурал',
-    'Намрын улиралд Даваа гараг бүрийн 1-р цагт бүх багш нар хуралтай тул шалгалт авах боломжгүй.',
-    'TEACHER_DEVELOPMENT',
-    3,
-    'REQUIRED',
-    1788739200000,
-    1788742800000,
-    1,
-    1,
-    'WEEKLY',
-    1,
-    'TEACHERS',
-    1,
-    '#3B82F6',
-    1788739200000
+    'rec-cleaning-spring', 'Их цэвэрлэгээ', 'Баасан гарагийн оройн их цэвэрлэгээ.',
+    'MAINTENANCE', 1, 'FLEXIBLE', 1767339000000, 1767344400000, 7, 8, 'WEEKLY', 0, 'ALL', 1, '#6B7280', 1767339000000
+  ),
+
+  -- 2. Баяр ёслол болон Амралт (Holidays)
+  (
+    'ev-01-01', 'Шинэ жилийн амралт', NULL, 'HOLIDAY', 4, 'REQUIRED',
+    1767225600000, 1767520800000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#F97316', 1767225600000
   ),
   (
-    'rec-cleaning-spring',
-    'Их цэвэрлэгээ',
-    'Хаврын улиралд Баасан гарагийн оройн их цэвэрлэгээ. Уян хатан тул шаардлагатай бол шалгалт авч болно.',
-    'MAINTENANCE',
-    1,
-    'FLEXIBLE',
-    1767339000000,
-    1767344400000,
-    7,
-    8,
-    'WEEKLY',
-    0,
-    'ALL',
-    1,
-    '#6B7280',
-    1767339000000
+    'ev-02-01', 'Сар шинийн баярын амралт', NULL, 'HOLIDAY', 4, 'REQUIRED',
+    1771200000000, 1771581600000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#F97316', 1771200000000
   ),
   (
-    'rec-cleaning-fall',
-    'Их цэвэрлэгээ',
-    'Намрын улиралд Баасан гарагийн оройн их цэвэрлэгээ. Уян хатан тул шаардлагатай бол шалгалт авч болно.',
-    'MAINTENANCE',
-    1,
-    'FLEXIBLE',
-    1788507000000,
-    1788512400000,
-    7,
-    8,
-    'WEEKLY',
-    0,
-    'ALL',
-    1,
-    '#6B7280',
-    1788507000000
+    'ev-06-02', 'Зуны амралт', 'Урт хугацааны амралт.', 'HOLIDAY', 4, 'REQUIRED',
+    1780358400000, 1788170400000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#F97316', 1780358400000
+  ),
+
+  -- 3. Сургуулийн онцлох үйл явдлууд
+  (
+    'ev-03-01', 'Олон улсын эмэгтэйчүүдийн өдөр', NULL, 'EVENT', 4, 'REQUIRED',
+    1772928000000, 1773050400000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#10B981', 1772928000000
   ),
   (
-    'ev-01-01',
-    'Шинэ жилийн амралт',
-    NULL,
-    'HOLIDAY',
-    4,
-    'REQUIRED',
-    1767225600000,
-    1767520800000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#F97316',
-    1767225600000
+    'ev-04-01', 'Сургуулийн ойн баяр', '08:00-13:00 цагийн хооронд.',
+    'EVENT', 4, 'REQUIRED', 1776211200000, 1776229200000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#10B981', 1776211200000
   ),
   (
-    'ev-02-01',
-    'Сар шинийн баярын амралт',
-    NULL,
-    'HOLIDAY',
-    4,
-    'REQUIRED',
-    1771200000000,
-    1771581600000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#F97316',
-    1771200000000
+    'ev-04-02', 'Спортын наадам', NULL, 'EXTRACURRICULAR', 2, 'REQUIRED',
+    1775782800000, 1775901600000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#F59E0B', 1775782800000
   ),
   (
-    'ev-03-01',
-    'Олон улсын эмэгтэйчүүдийн өдөр',
-    NULL,
-    'EVENT',
-    4,
-    'REQUIRED',
-    1772928000000,
-    1773050400000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#10B981',
-    1772928000000
+    'ev-05-02', 'Төгсөлтийн хонхны баяр', '2026 оны төгсөлт.',
+    'EVENT', 4, 'REQUIRED', 1779667200000, 1779696000000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#10B981', 1779667200000
   ),
   (
-    'ev-03-02',
-    'Улсын Математикийн Олимпиад',
-    NULL,
-    'EXAM',
-    4,
-    'REQUIRED',
-    1773966600000,
-    1773986400000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#DC2626',
-    1773966600000
+    'ev-09-01', 'Хичээлийн шинэ жилийн нээлт', NULL, 'EVENT', 4, 'REQUIRED',
+    1788220800000, 1788235200000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#3B82F6', 1788220800000
+  ),
+
+  -- 4. Шалгалт болон Олимпиад (Exams)
+  (
+    'ev-03-02', 'Улсын Математикийн Олимпиад', NULL, 'EXAM', 4, 'REQUIRED',
+    1773966600000, 1773986400000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#DC2626', 1773966600000
   ),
   (
-    'ev-04-01',
-    'Сургуулийн ойн баяр',
-    NULL,
-    'EVENT',
-    4,
-    'REQUIRED',
-    1775174400000,
-    1775217600000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#10B981',
-    1775174400000
-  ),
-  (
-    'ev-04-02',
-    'Спортын наадам',
-    NULL,
-    'EXTRACURRICULAR',
-    2,
-    'REQUIRED',
-    1775782800000,
-    1775901600000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#F59E0B',
-    1775782800000
-  ),
-  (
-    'ev-04-03',
-    'Сургуулийн ариутгал, цэвэрлэгээ',
-    NULL,
-    'MAINTENANCE',
-    3,
-    'REQUIRED',
-    1776729600000,
-    1776765600000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#6B7280',
-    1776729600000
-  ),
-  (
-    'ev-05-01',
-    'Улсын шалгалтын сорил',
-    NULL,
-    'EXAM',
-    4,
-    'REQUIRED',
-    1778545800000,
-    1778558400000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#DC2626',
-    1778545800000
-  ),
-  (
-    'ev-05-02',
-    'Төгсөлтийн хонхны баяр',
-    '2026 оны төгсөлтийн баяр.',
-    'EVENT',
-    4,
-    'REQUIRED',
-    1779667200000,
-    1779696000000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#10B981',
-    1779667200000
-  ),
-  (
-    'ev-06-01',
-    'Хүүхдийн баяр & Эрдмийн баяр',
-    'Хичээлийн жилийн хаалт, зуны амралт эхлэх.',
-    'EVENT',
-    4,
-    'REQUIRED',
-    1780275600000,
-    1780293600000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#10B981',
-    1780275600000
-  ),
-  (
-    'ev-06-02',
-    'Зуны амралт',
-    NULL,
-    'HOLIDAY',
-    4,
-    'REQUIRED',
-    1780358400000,
-    1788170400000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#F97316',
-    1780358400000
-  ),
-  (
-    'ev-09-01',
-    'Хичээлийн шинэ жилийн нээлт',
-    NULL,
-    'EVENT',
-    4,
-    'REQUIRED',
-    1788220800000,
-    1788235200000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#3B82F6',
-    1788220800000
-  ),
-  (
-    'ev-12-01',
-    'Харшны сүлд модны наадам',
-    NULL,
-    'EVENT',
-    4,
-    'REQUIRED',
-    1798675200000,
-    1798718400000,
-    NULL,
-    NULL,
-    'NONE',
-    1,
-    'ALL',
-    1,
-    '#10B981',
-    1798675200000
+    'ev-05-01', 'Улсын шалгалтын сорил', NULL, 'EXAM', 4, 'REQUIRED',
+    1778545800000, 1778558400000, NULL, NULL, 'NONE', 1, 'ALL', 1, '#DC2626', 1778545800000
   );
+
+-- Зорилтот бүлгүүдийг холбох (School Event Targets)
+-- school_event_targets schema: composite PK (event_id, group_id)
+INSERT OR IGNORE INTO school_event_targets (event_id, group_id)
+SELECT e.id, g.id
+FROM school_events e
+JOIN `groups` g
+WHERE e.is_school_wide = 1;
 
 PRAGMA foreign_keys = ON;
