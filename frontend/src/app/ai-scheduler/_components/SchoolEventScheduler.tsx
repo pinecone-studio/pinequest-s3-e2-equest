@@ -45,6 +45,7 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   Globe,
@@ -663,7 +664,7 @@ export function SchoolEventScheduler({
                     </p>
                   </div>
                   <div
-                    className="flex justify-center"
+                    className="flex justify-center rounded-xl bg-white p-2 dark:bg-zinc-900"
                     aria-label="Өдөр сонгох хуанли"
                   >
                     <Calendar
@@ -679,7 +680,7 @@ export function SchoolEventScheduler({
                 <div
                   className={cn(
                     panelLight,
-                    "divide-y divide-zinc-100 dark:divide-zinc-800",
+                    "divide-y divide-white/30 border-white/40 bg-white/55 backdrop-blur-md dark:divide-white/10 dark:border-white/10 dark:bg-zinc-950/40",
                   )}
                 >
                   <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -703,6 +704,17 @@ export function SchoolEventScheduler({
                       >
                         <span
                           className={cn(
+                            "shrink-0 rounded-md border p-1 transition-colors",
+                            on
+                              ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
+                              : "border-zinc-300 bg-white text-transparent dark:border-zinc-700 dark:bg-zinc-950",
+                          )}
+                          aria-hidden
+                        >
+                          <Check className="size-3.5" strokeWidth={3} />
+                        </span>
+                        <span
+                          className={cn(
                             "size-2.5 shrink-0 rounded-sm",
                             meta.swatch,
                             !on && "opacity-35",
@@ -712,25 +724,6 @@ export function SchoolEventScheduler({
                           <span className="block truncate text-sm font-medium">
                             {meta.labelMn}
                           </span>
-                          <span className="block truncate text-[10px] text-zinc-500 dark:text-zinc-400">
-                            {meta.examplesMn}
-                          </span>
-                          <span
-                            className="mt-0.5 block truncate text-[9px] text-zinc-400 dark:text-zinc-500"
-                            title={meta.impactMn}
-                          >
-                            {meta.impactMn}
-                          </span>
-                        </span>
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                            on
-                              ? "bg-blue-100 text-blue-800 dark:bg-blue-900/70 dark:text-blue-200"
-                              : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
-                          )}
-                        >
-                          {on ? "Идэвхтэй" : "Нуугдсан"}
                         </span>
                       </button>
                     );
@@ -848,11 +841,12 @@ export function SchoolEventScheduler({
                       className="relative shrink-0 text-right"
                       style={{ minHeight: GRID_BODY_MIN_H }}
                     >
-                      {TIME_SLOT_LABELS.map((row) => (
+                      {TIME_SLOT_LABELS.map((row, idx) => (
                         <div
                           key={row.key}
                           className={cn(
-                            "flex items-start justify-end border-t pr-1 pt-0.5 text-[10px] tabular-nums first:border-t-0 first:pt-0 sm:pr-1.5",
+                            "flex items-start justify-end border-t pr-1 pt-0.5 text-[10px] tabular-nums sm:pr-1.5",
+                            idx === 0 && "border-t-0 pt-0",
                             row.isHourMark
                               ? "border-zinc-200 font-medium text-zinc-500 dark:border-zinc-700 dark:text-zinc-400 sm:text-[11px]"
                               : "border-zinc-100 text-[9px] text-zinc-400/85 dark:border-zinc-800 dark:text-zinc-500/90",
@@ -899,7 +893,7 @@ export function SchoolEventScheduler({
                           {CALENDAR_OVERLAY_LAYOUTS.map((z) => (
                             <div
                               key={z.id}
-                              className="calendar-red-zone-stripes pointer-events-auto absolute inset-x-0 z-1 cursor-help border-y border-rose-300/35 dark:border-rose-800/45"
+                              className="calendar-blue-zone-stripes pointer-events-auto absolute inset-x-0 z-1 cursor-help border-y border-blue-300/35 dark:border-blue-800/45"
                               style={{
                                 top: `${z.topPct}%`,
                                 height: `${z.heightPct}%`,
