@@ -14,7 +14,11 @@ import { AiStudentPersonalScheduler } from "@/app/ai-scheduler/_components/AiStu
 import GenerateExamPage from "@/app/ai-scheduler/_components/GenerateExamPage";
 import { SchoolEventScheduler } from "@/app/ai-scheduler/_components/SchoolEventScheduler";
 
-export function AiSchedulerHubClient() {
+export function AiSchedulerHubClient({
+  hideSchedulerHeaders = false,
+}: {
+  hideSchedulerHeaders?: boolean;
+} = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawView = searchParams.get("view");
@@ -42,13 +46,13 @@ export function AiSchedulerHubClient() {
       <div className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col">
         <div className="min-h-0 min-w-0 flex-1">
           {view === "school" ? (
-            <SchoolEventScheduler shellMode />
+            <SchoolEventScheduler shellMode hideHeader={hideSchedulerHeaders} />
           ) : view === "generate" ? (
             <GenerateExamPage />
           ) : view === "student" ? (
-            <AiStudentPersonalScheduler shellMode />
+            <AiStudentPersonalScheduler shellMode hideHeader={hideSchedulerHeaders} />
           ) : (
-            <AiTeacherPersonalScheduler shellMode />
+            <AiTeacherPersonalScheduler shellMode hideHeader={hideSchedulerHeaders} />
           )}
         </div>
       </div>

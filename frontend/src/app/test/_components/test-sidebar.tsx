@@ -52,7 +52,7 @@ const navigationItems: NavigationItem[] = [
     label: "Шалгалтын материал үүсгэх",
   },
   {
-    href: "/ai-scheduler",
+    href: "/test/ai-scheduler",
     icon: CalendarClock,
     label: "Шалгалт товлох",
   },

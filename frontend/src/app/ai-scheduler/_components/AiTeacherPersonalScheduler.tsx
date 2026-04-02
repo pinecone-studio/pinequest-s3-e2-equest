@@ -208,13 +208,13 @@ function formatBlockDuration(
 
 /** getISODay: 1=Даваа … 7=Ням — нэг үсэг (Дав/Мяг гэх мэт биш). */
 const WEEKDAY_LETTER_MN: Record<number, string> = {
-  1: "Д",
-  2: "М",
-  3: "Л",
-  4: "П",
-  5: "Б",
-  6: "Б",
-  7: "Н",
+  1: "Да",
+  2: "Мя",
+  3: "Лха",
+  4: "Пү",
+  5: "Ба",
+  6: "Бя",
+  7: "Ня",
 };
 
 const DEFAULT_CLASS_ID = "10A";
@@ -634,12 +634,15 @@ function ReclaimLightBackdrop() {
 export type AiTeacherPersonalSchedulerProps = {
   /** Үнэн бол гаднах hub rail нуугдана (зөвхөн /ai-scheduler дээр). */
   shellMode?: boolean;
+  /** Үнэн бол дотор header (гарчиг + theme/teacher picker) нуугдана. */
+  hideHeader?: boolean;
   /** Хуанлийн анхны scroll: I → 07:00, II → 12:00 (профайлаас дамжуулж болно). */
   defaultTeacherShift?: TeacherShiftId;
 };
 
 export function AiTeacherPersonalScheduler({
   shellMode = false,
+  hideHeader = false,
   defaultTeacherShift = "I",
 }: AiTeacherPersonalSchedulerProps) {
   const router = useRouter();
@@ -1432,168 +1435,124 @@ export function AiTeacherPersonalScheduler({
 
       <div className="relative z-10 flex min-h-screen flex-col">
         {/* Дээд мөр */}
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5 rounded-2xl">
-          <div className="flex min-w-0 items-center gap-3">
-            {shellMode ? (
-              <>
-                <button
-                  type="button"
-                  className="hidden size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:flex"
-                  aria-expanded={calendarSidebarOpen}
-                  aria-controls="scheduler-calendar-sidebar"
-                  onClick={() => setCalendarSidebarOpen((o) => !o)}
-                >
-                  <span className="sr-only">Хуанлын панел нээх, хаах</span>
-                  {calendarSidebarOpen ? (
-                    <ChevronLeft
-                      className="size-5"
-                      strokeWidth={1.5}
-                      aria-hidden
-                    />
-                  ) : (
-                    <ChevronRight
-                      className="size-5"
-                      strokeWidth={1.5}
-                      aria-hidden
-                    />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:hidden"
-                  aria-expanded={calendarSidebarOpen}
-                  aria-controls="scheduler-calendar-sidebar"
-                  onClick={() => setCalendarSidebarOpen((o) => !o)}
-                >
-                  <span className="sr-only">Хуанлын панел нээх, хаах</span>
-                  <Menu className="size-5" strokeWidth={1.5} aria-hidden />
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:hidden"
-                aria-expanded={calendarSidebarOpen}
-                aria-controls="scheduler-calendar-sidebar"
-                onClick={() => setCalendarSidebarOpen((o) => !o)}
-              >
-                <span className="sr-only">Хуанлын панел нээх, хаах</span>
-                <Menu className="size-5" strokeWidth={1.5} aria-hidden />
-              </button>
-            )}
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 ring-1 ring-sky-200/80 dark:bg-sky-950/80 dark:text-sky-200 dark:ring-sky-700/60">
-                <CalendarClock className="size-4" strokeWidth={2} aria-hidden />
-              </span>
-              <div className="min-w-0">
-                <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
-                  Багшийн хуанли
-                </h1>
-              </div>
-            </div>
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <SchedulerAppearanceMenu />
-            <Popover
-              open={teacherPickerOpen}
-              onOpenChange={setTeacherPickerOpen}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 max-w-[min(100%,14rem)] shrink-0 gap-1.5 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                  aria-expanded={teacherPickerOpen}
-                  aria-haspopup="dialog"
-                >
-                  <span className="truncate">
-                    {selectedTeacher.displayName}
-                  </span>
-                  <ChevronDown
-                    className="size-4 shrink-0 opacity-60"
+        {hideHeader ? null : (
+          <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5 rounded-2xl">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-800 ring-1 ring-sky-200/80 dark:bg-sky-950/80 dark:text-sky-200 dark:ring-sky-700/60">
+                  <CalendarClock
+                    className="size-4"
+                    strokeWidth={2}
                     aria-hidden
                   />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                sideOffset={8}
-                className="w-[min(100vw-2rem,20rem)] border-zinc-200 p-2 font-sans shadow-lg dark:border-zinc-600"
+                </span>
+                <div className="min-w-0">
+                  <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
+                    Багшийн хуанли
+                  </h1>
+                </div>
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              <SchedulerAppearanceMenu />
+              <Popover
+                open={teacherPickerOpen}
+                onOpenChange={setTeacherPickerOpen}
               >
-                <p className="px-2 pb-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                  Багш сонгох (9–12 · Математик)
-                </p>
-                <p className="mb-2 px-2 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-                  {teacherLoading
-                    ? "Ачааллаж байна…"
-                    : teacherOptions.length
-                      ? `Нийт ${teacherOptions.length} багш`
-                      : "Багш олдсонгүй."}
-                </p>
-                <ul className="max-h-[min(60vh,16rem)] space-y-0.5 overflow-y-auto">
-                  {teacherOptions
-                    .map((t) => ({
-                      id: t.id,
-                      displayName: (t.shortName?.trim()
-                        ? t.shortName
-                        : `${t.lastName} ${t.firstName}`) as string,
-                      roleNote: `${teacherDepartmentLabel(t.department)} · ${teacherTeachingLevelLabel(t.teachingLevel)}`,
-                      shift: teacherShift,
-                    }))
-                    .map((t) => {
-                      const on = t.id === selectedTeacherId;
-                      return (
-                        <li key={t.id}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedTeacherId(t.id);
-                              setTeacherPickerOpen(false);
-                            }}
-                            className={cn(
-                              "flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors",
-                              on
-                                ? "bg-sky-50 text-sky-950 dark:bg-sky-950/50 dark:text-sky-50"
-                                : "text-zinc-800 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800/80",
-                            )}
-                          >
-                            <span
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 max-w-[min(100%,14rem)] shrink-0 gap-1.5 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                    aria-expanded={teacherPickerOpen}
+                    aria-haspopup="dialog"
+                  >
+                    <span className="truncate">
+                      {selectedTeacher.displayName}
+                    </span>
+                    <ChevronDown
+                      className="size-4 shrink-0 opacity-60"
+                      aria-hidden
+                    />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  sideOffset={8}
+                  className="w-[min(100vw-2rem,20rem)] border-zinc-200 p-2 font-sans shadow-lg dark:border-zinc-600"
+                >
+                  <p className="mb-2 px-2 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
+                    {teacherLoading
+                      ? "Ачааллаж байна…"
+                      : teacherOptions.length
+                        ? `Нийт ${teacherOptions.length} багш`
+                        : "Багш олдсонгүй."}
+                  </p>
+                  <ul className="max-h-[min(60vh,16rem)] space-y-0.5 overflow-y-auto">
+                    {teacherOptions
+                      .map((t) => ({
+                        id: t.id,
+                        displayName: (t.shortName?.trim()
+                          ? t.shortName
+                          : `${t.lastName} ${t.firstName}`) as string,
+                        roleNote: `${teacherDepartmentLabel(t.department)} · ${teacherTeachingLevelLabel(t.teachingLevel)}`,
+                        shift: teacherShift,
+                      }))
+                      .map((t) => {
+                        const on = t.id === selectedTeacherId;
+                        return (
+                          <li key={t.id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTeacherId(t.id);
+                                setTeacherPickerOpen(false);
+                              }}
                               className={cn(
-                                "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                                "flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors",
                                 on
-                                  ? "border-sky-600 bg-sky-600 text-white dark:border-sky-500 dark:bg-sky-500"
-                                  : "border-zinc-300 dark:border-zinc-600",
+                                  ? "bg-sky-50 text-sky-950 dark:bg-sky-950/50 dark:text-sky-50"
+                                  : "text-zinc-800 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800/80",
                               )}
-                              aria-hidden
                             >
-                              {on ? (
-                                <Check className="size-2.5" strokeWidth={3} />
-                              ) : null}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block font-medium">
-                                {t.displayName}
+                              <span
+                                className={cn(
+                                  "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                                  on
+                                    ? "border-sky-600 bg-sky-600 text-white dark:border-sky-500 dark:bg-sky-500"
+                                    : "border-zinc-300 dark:border-zinc-600",
+                                )}
+                                aria-hidden
+                              >
+                                {on ? (
+                                  <Check className="size-2.5" strokeWidth={3} />
+                                ) : null}
                               </span>
-                              <span className="mt-0.5 block text-[11px] font-normal text-zinc-500 dark:text-zinc-400">
-                                {t.roleNote}
+                              <span className="min-w-0 flex-1">
+                                <span className="block font-medium">
+                                  {t.displayName}
+                                </span>
+                                <span className="mt-0.5 block text-[11px] font-normal text-zinc-500 dark:text-zinc-400">
+                                  {t.roleNote}
+                                </span>
                               </span>
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                </ul>
-              </PopoverContent>
-            </Popover>
-            {pollExamId ? (
-              <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                <Loader2 className="size-3.5 animate-spin text-blue-600 dark:text-blue-400" />
-                AI туслах ажиллаж байна
-              </span>
-            ) : null}
-          </div>
-        </header>
+                            </button>
+                          </li>
+                        );
+                      })}
+                  </ul>
+                </PopoverContent>
+              </Popover>
+              {pollExamId ? (
+                <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+                  <Loader2 className="size-3.5 animate-spin text-blue-600 dark:text-blue-400" />
+                  AI туслах ажиллаж байна
+                </span>
+              ) : null}
+            </div>
+          </header>
+        )}
 
         <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-[#F1F4FA]">
           {!shellMode ? (
@@ -1774,6 +1733,76 @@ export function AiTeacherPersonalScheduler({
               >
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
                   <div className="min-w-0">
+                    {shellMode ? (
+                      <>
+                        <button
+                          type="button"
+                          className="hidden size-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-white hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900/80 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 xl:inline-flex"
+                          aria-expanded={calendarSidebarOpen}
+                          aria-controls="scheduler-calendar-sidebar"
+                          onClick={() => setCalendarSidebarOpen((o) => !o)}
+                          title={
+                            calendarSidebarOpen
+                              ? "Жижиг хуанли хураах"
+                              : "Жижиг хуанли дэлгэх"
+                          }
+                        >
+                          <span className="sr-only">
+                            Жижиг хуанли нээх, хаах
+                          </span>
+                          {calendarSidebarOpen ? (
+                            <ChevronLeft
+                              className="size-4"
+                              strokeWidth={2}
+                              aria-hidden
+                            />
+                          ) : (
+                            <ChevronRight
+                              className="size-4"
+                              strokeWidth={2}
+                              aria-hidden
+                            />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-white hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900/80 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 xl:hidden"
+                          aria-expanded={calendarSidebarOpen}
+                          aria-controls="scheduler-calendar-sidebar"
+                          onClick={() => setCalendarSidebarOpen((o) => !o)}
+                          title={
+                            calendarSidebarOpen
+                              ? "Жижиг хуанли хураах"
+                              : "Жижиг хуанли дэлгэх"
+                          }
+                        >
+                          <span className="sr-only">
+                            Жижиг хуанли нээх, хаах
+                          </span>
+                          <Menu
+                            className="size-4"
+                            strokeWidth={2}
+                            aria-hidden
+                          />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-white hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900/80 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 xl:hidden"
+                        aria-expanded={calendarSidebarOpen}
+                        aria-controls="scheduler-calendar-sidebar"
+                        onClick={() => setCalendarSidebarOpen((o) => !o)}
+                        title={
+                          calendarSidebarOpen
+                            ? "Жижиг хуанли хураах"
+                            : "Жижиг хуанли дэлгэх"
+                        }
+                      >
+                        <span className="sr-only">Жижиг хуанли нээх, хаах</span>
+                        <Menu className="size-4" strokeWidth={2} aria-hidden />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => router.push("/ai-scheduler?view=student")}

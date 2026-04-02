@@ -292,12 +292,15 @@ function mockStudentBlocks(): StudentBlock[] {
 export type AiStudentPersonalSchedulerProps = {
   /** Үнэн бол гаднах hub rail нуугдана (future: /ai-scheduler?view=student) */
   shellMode?: boolean;
+  /** Үнэн бол дотор header (гарчиг + theme/menu) нуугдана. */
+  hideHeader?: boolean;
   /** Хуанлийн анхны scroll — student профайлаас ирж болно. */
   defaultShift?: TeacherShiftId;
 };
 
 export function AiStudentPersonalScheduler({
   shellMode = false,
+  hideHeader = false,
   defaultShift = "II",
 }: AiStudentPersonalSchedulerProps) {
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -507,158 +510,173 @@ export function AiStudentPersonalScheduler({
       <ReclaimLightBackdrop />
 
       <div className="relative z-10 flex min-h-screen flex-col">
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5">
-          <div className="flex min-w-0 items-center gap-3">
-            <button
-              type="button"
-              className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:hidden"
-              aria-expanded={calendarSidebarOpen}
-              aria-controls="student-scheduler-sidebar"
-              onClick={() => setCalendarSidebarOpen((o) => !o)}
-            >
-              <span className="sr-only">Хуанлын панел нээх, хаах</span>
-              <Menu className="size-5" strokeWidth={1.5} aria-hidden />
-            </button>
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200/80 dark:bg-emerald-950/80 dark:text-emerald-200 dark:ring-emerald-700/60">
-                <GraduationCap className="size-4" strokeWidth={2} aria-hidden />
-              </span>
-              <div className="min-w-0">
-                <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
-                  Сурагчийн хуанли
-                </h1>
+        {hideHeader ? null : (
+          <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-800 xl:hidden"
+                aria-expanded={calendarSidebarOpen}
+                aria-controls="student-scheduler-sidebar"
+                onClick={() => setCalendarSidebarOpen((o) => !o)}
+              >
+                <span className="sr-only">Хуанлын панел нээх, хаах</span>
+                <Menu className="size-5" strokeWidth={1.5} aria-hidden />
+              </button>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200/80 dark:bg-emerald-950/80 dark:text-emerald-200 dark:ring-emerald-700/60">
+                  <GraduationCap
+                    className="size-4"
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                </span>
+                <div className="min-w-0">
+                  <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-base">
+                    Сурагчийн хуанли
+                  </h1>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <SchedulerAppearanceMenu />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 shrink-0 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                  aria-label="Анги сонгох"
-                >
-                  <span className="max-w-[min(100%,10rem)] truncate">
-                    {selectedGrade}-р анги
-                  </span>
-                  <ChevronDown className="ml-2 size-4 opacity-70" aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuLabel>Анги</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={selectedGrade}
-                  onValueChange={(v) =>
-                    setSelectedGrade(v as "9" | "10" | "11" | "12")
-                  }
-                >
-                  <DropdownMenuRadioItem value="9">
-                    9-р анги
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="10">
-                    10-р анги
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="11">
-                    11-р анги
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="12">
-                    12-р анги
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 shrink-0 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                  aria-label="Бүлэг сонгох"
-                >
-                  <span className="max-w-[min(100%,8rem)] truncate">
-                    {selectedGroup} бүлэг
-                  </span>
-                  <ChevronDown className="ml-2 size-4 opacity-70" aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuLabel>Бүлэг</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={selectedGroup}
-                  onValueChange={(v) =>
-                    setSelectedGroup(v as "A" | "B" | "C" | "D")
-                  }
-                >
-                  <DropdownMenuRadioItem value="A">
-                    A бүлэг
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="B">
-                    B бүлэг
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="C">
-                    C бүлэг
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="D">
-                    D бүлэг
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu
-              open={studentPickerOpen}
-              onOpenChange={(open) => {
-                setStudentPickerOpen(open);
-                if (open) fetchStudentsForSelectedGroup();
-              }}
-            >
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 shrink-0 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                  aria-label="Сурагч сонгох"
-                >
-                  <span className="max-w-[min(100%,12rem)] truncate">
-                    {selectedStudent
-                      ? `${selectedStudent.lastName} ${selectedStudent.firstName}`
-                      : studentsLoading || studentScheduleLoading
-                        ? "Уншиж байна…"
-                        : "Сурагч сонгох"}
-                  </span>
-                  <ChevronDown className="ml-2 size-4 opacity-70" aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72">
-                <DropdownMenuLabel>
-                  {selectedGrade}
-                  {selectedGroup} · Сурагч
-                </DropdownMenuLabel>
-                <div className="max-h-72 overflow-y-auto">
-                  <DropdownMenuRadioGroup
-                    value={selectedStudentId}
-                    onValueChange={(v) => setSelectedStudentId(String(v))}
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              <SchedulerAppearanceMenu />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 shrink-0 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                    aria-label="Анги сонгох"
                   >
-                    {studentOptions.length === 0 ? (
-                      <div className="px-2 py-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        Сурагч олдсонгүй.
-                      </div>
-                    ) : (
-                      studentOptions.map((s) => (
-                        <DropdownMenuRadioItem key={s.id} value={s.id}>
-                          <span className="truncate">
-                            {s.lastName} {s.firstName}
-                          </span>
-                        </DropdownMenuRadioItem>
-                      ))
-                    )}
+                    <span className="max-w-[min(100%,10rem)] truncate">
+                      {selectedGrade}-р анги
+                    </span>
+                    <ChevronDown
+                      className="ml-2 size-4 opacity-70"
+                      aria-hidden
+                    />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuLabel>Анги</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={selectedGrade}
+                    onValueChange={(v) =>
+                      setSelectedGrade(v as "9" | "10" | "11" | "12")
+                    }
+                  >
+                    <DropdownMenuRadioItem value="9">
+                      9-р анги
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="10">
+                      10-р анги
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="11">
+                      11-р анги
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="12">
+                      12-р анги
+                    </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 shrink-0 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                    aria-label="Бүлэг сонгох"
+                  >
+                    <span className="max-w-[min(100%,8rem)] truncate">
+                      {selectedGroup} бүлэг
+                    </span>
+                    <ChevronDown
+                      className="ml-2 size-4 opacity-70"
+                      aria-hidden
+                    />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuLabel>Бүлэг</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={selectedGroup}
+                    onValueChange={(v) =>
+                      setSelectedGroup(v as "A" | "B" | "C" | "D")
+                    }
+                  >
+                    <DropdownMenuRadioItem value="A">
+                      A бүлэг
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="B">
+                      B бүлэг
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="C">
+                      C бүлэг
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="D">
+                      D бүлэг
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu
+                open={studentPickerOpen}
+                onOpenChange={(open) => {
+                  setStudentPickerOpen(open);
+                  if (open) fetchStudentsForSelectedGroup();
+                }}
+              >
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 shrink-0 rounded-xl border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                    aria-label="Сурагч сонгох"
+                  >
+                    <span className="max-w-[min(100%,12rem)] truncate">
+                      {selectedStudent
+                        ? `${selectedStudent.lastName} ${selectedStudent.firstName}`
+                        : studentsLoading || studentScheduleLoading
+                          ? "Уншиж байна…"
+                          : "Сурагч сонгох"}
+                    </span>
+                    <ChevronDown
+                      className="ml-2 size-4 opacity-70"
+                      aria-hidden
+                    />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-72">
+                  <DropdownMenuLabel>
+                    {selectedGrade}
+                    {selectedGroup} · Сурагч
+                  </DropdownMenuLabel>
+                  <div className="max-h-72 overflow-y-auto">
+                    <DropdownMenuRadioGroup
+                      value={selectedStudentId}
+                      onValueChange={(v) => setSelectedStudentId(String(v))}
+                    >
+                      {studentOptions.length === 0 ? (
+                        <div className="px-2 py-2 text-xs text-zinc-500 dark:text-zinc-400">
+                          Сурагч олдсонгүй.
+                        </div>
+                      ) : (
+                        studentOptions.map((s) => (
+                          <DropdownMenuRadioItem key={s.id} value={s.id}>
+                            <span className="truncate">
+                              {s.lastName} {s.firstName}
+                            </span>
+                          </DropdownMenuRadioItem>
+                        ))
+                      )}
+                    </DropdownMenuRadioGroup>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </header>
+        )}
 
         <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
           {!shellMode ? (
@@ -747,7 +765,7 @@ export function AiStudentPersonalScheduler({
           >
             <div
               className={cn(
-                "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4 bg-[#F1F4FA]",
+                "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-8 bg-[#F1F4FA]",
                 shellMode
                   ? "min-w-[min(100vw,272px)]"
                   : "min-w-[min(100vw-68px,272px)]",

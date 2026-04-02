@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,6 +13,7 @@ interface TestShellProps {
   compactSidebar?: boolean;
   contentClassName?: string;
   description?: string;
+  headerRightSlot?: ReactNode;
   hideHeader?: boolean;
   isTeacherRefreshing?: boolean;
   meta?: ReactNode;
@@ -27,6 +29,7 @@ export function TestShell({
   compactSidebar = false,
   contentClassName,
   description,
+  headerRightSlot,
   hideHeader,
   isTeacherRefreshing,
   meta,
@@ -35,11 +38,12 @@ export function TestShell({
   teacherVariant,
   title,
 }: TestShellProps) {
+  const pathname = usePathname();
   const [isSidebarCompact, setIsSidebarCompact] = useState(compactSidebar);
 
   useEffect(() => {
     setIsSidebarCompact(compactSidebar);
-  }, [compactSidebar]);
+  }, [compactSidebar, pathname]);
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -55,6 +59,7 @@ export function TestShell({
               actions={actions}
               description={description}
               isTeacherRefreshing={isTeacherRefreshing}
+              rightSlot={headerRightSlot}
               meta={meta}
               onTeacherRefresh={onTeacherRefresh}
               teacherVariant={teacherVariant}

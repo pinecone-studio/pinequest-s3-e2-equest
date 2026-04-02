@@ -1,11 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import {
-  ChevronDown,
-  RefreshCw,
-  UserRound,
-} from "lucide-react";
+import { ChevronDown, RefreshCw, UserRound } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +21,7 @@ type TeacherProfile = {
 
 type TestHeaderBarProps = {
   actions?: ReactNode;
+  rightSlot?: ReactNode;
   description?: string;
   isTeacherRefreshing?: boolean;
   meta?: ReactNode;
@@ -55,6 +52,7 @@ const MOCK_TEACHERS: TeacherProfile[] = [
 
 export function TestHeaderBar({
   actions,
+  rightSlot,
   description,
   isTeacherRefreshing = false,
   meta,
@@ -62,7 +60,9 @@ export function TestHeaderBar({
   teacherVariant = "default",
   title,
 }: TestHeaderBarProps) {
-  const [selectedTeacherId, setSelectedTeacherId] = useState(MOCK_TEACHERS[0].id);
+  const [selectedTeacherId, setSelectedTeacherId] = useState(
+    MOCK_TEACHERS[0].id,
+  );
 
   useEffect(() => {
     const storedTeacherId = window.localStorage.getItem(STORAGE_KEY);
@@ -106,7 +106,9 @@ export function TestHeaderBar({
             {actions}
           </div>
         ) : null}
-        {teacherVariant === "none" ? null : (
+        {rightSlot ? (
+          rightSlot
+        ) : teacherVariant === "none" ? null : (
           <TeacherControl
             isRefreshing={isTeacherRefreshing}
             onRefresh={onTeacherRefresh}
@@ -187,7 +189,9 @@ function TeacherControl({
           className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 disabled:cursor-default disabled:opacity-80"
           aria-label="Шинэчлэх"
         >
-          <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+          />
         </button>
         <div>
           <p className="text-[15px] font-semibold leading-none text-slate-900">

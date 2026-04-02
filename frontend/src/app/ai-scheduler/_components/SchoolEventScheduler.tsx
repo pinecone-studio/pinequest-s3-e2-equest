@@ -289,10 +289,13 @@ function segmentForDay(
 
 export type SchoolEventSchedulerProps = {
   shellMode?: boolean;
+  /** Үнэн бол дотор header (гарчиг + theme/menu) нуугдана. */
+  hideHeader?: boolean;
 };
 
 export function SchoolEventScheduler({
   shellMode = false,
+  hideHeader = false,
 }: SchoolEventSchedulerProps) {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [calendarSidebarOpen, setCalendarSidebarOpen] = useState(true);
@@ -511,7 +514,8 @@ export function SchoolEventScheduler({
       <ReclaimLightBackdrop />
 
       <div className="relative z-10 flex min-h-screen flex-col">
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5">
+        {hideHeader ? null : (
+          <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200/90 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-950/90 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
             {shellMode ? (
               <>
@@ -586,7 +590,8 @@ export function SchoolEventScheduler({
               Багшийн хуваарь
             </Link>
           </div>
-        </header>
+          </header>
+        )}
 
         <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
           {!shellMode ? (
