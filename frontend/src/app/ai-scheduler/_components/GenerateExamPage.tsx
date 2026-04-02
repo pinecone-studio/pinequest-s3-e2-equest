@@ -32,13 +32,13 @@ import {
 import {
   ExamStatus,
   ExamType,
-  QuestionFormat,
   type ExamGenerationInput,
   type ExamGenerationResult,
   type GeneratedQuestion,
   type SaveExamInput,
   type SaveExamPayload,
 } from "@/gql/graphql";
+import { confirmDeleteAction } from "@/lib/confirm-destructive-action";
 
 const GRADE_CLASSES = Array.from({ length: 4 }, (_, i) => i + 9).flatMap((g) =>
   (["a", "b", "c", "d"] as const).map((s) => `${g}${s}`),
@@ -556,7 +556,16 @@ export default function GenerateExamPage() {
     setTopicDraft("");
   };
 
-  const removeTopic = (v: string) => {
+  const removeTopic = async (v: string) => {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ сэдвийг",
+        "Сэдвийн жагсаалтаас хасагдана.",
+      ))
+    ) {
+      return;
+    }
+
     setTopics((prev) => prev.filter((x) => x !== v));
   };
 

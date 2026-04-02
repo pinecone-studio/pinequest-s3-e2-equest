@@ -103,8 +103,8 @@ export function TestHeaderBar({
     breadcrumb !== undefined || resolvedBreadcrumbItems.length > 0;
 
   return (
-    <header className="row-start-1 col-start-2 flex items-center justify-between border-b border-slate-200 bg-white px-8">
-      <div className="min-w-0">
+    <header className="row-start-1 col-start-2 flex min-h-[88px] items-center justify-between gap-6 border-b border-slate-200 bg-white px-8 py-4">
+      <div className="min-w-0 flex-1">
         {shouldRenderBreadcrumb
           ? breadcrumb ?? <TestBreadcrumb items={resolvedBreadcrumbItems} />
           : null}
@@ -115,7 +115,7 @@ export function TestHeaderBar({
         ) : null}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         {meta ? (
           <div className="hidden items-center gap-3 text-[14px] font-medium text-slate-500 xl:flex">
             {meta}

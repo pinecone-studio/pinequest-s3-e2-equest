@@ -10,6 +10,10 @@ import {
   type EditorQuestionItem,
   type ExamQuestion,
 } from "@/lib/math-exam-model";
+import {
+  confirmDeleteAction,
+  confirmDestructiveAction,
+} from "@/lib/confirm-destructive-action";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,7 +75,18 @@ function McqOptionEditor({
           variant="ghost"
           size="icon-sm"
           disabled={!canRemove}
-          onClick={onRemove}
+          onClick={async () => {
+            if (
+              !(await confirmDeleteAction(
+                "Энэ хариултын сонголтыг",
+                "Сонгосон хариултын мөр устна.",
+              ))
+            ) {
+              return;
+            }
+
+            onRemove();
+          }}
         >
           <Trash2 />
         </Button>
@@ -260,13 +275,29 @@ function QuestionEditor({
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() =>
+	                  onClick={async () => {
+	                    if (!question.imageDataUrl) {
+	                      return;
+	                    }
+
+	                    if (
+	                      !(await confirmDestructiveAction({
+	                        prompt: "Энэ зургийг арилгах уу?",
+	                        description: "Асуултад хавсаргасан зураг арилна.",
+	                        cancelLabel: "Буцах",
+	                        confirmLabel: "Устгах",
+	                        successMessage: "Зураг амжилттай ариллаа.",
+	                      }))
+	                    ) {
+	                      return;
+	                    }
+
                     onUpdate(question.id, (current) => ({
                       ...current,
                       imageAlt: "",
                       imageDataUrl: undefined,
-                    }))
-                  }
+                    }));
+                  }}
                 >
                   Зураг арилгах
                 </Button>

@@ -56,7 +56,7 @@ export function TestShell({
       <div className="h-screen overflow-hidden bg-[#edf2f7]">
         <div
           className={cn(
-            "mx-auto grid h-full w-full max-w-[1440px] grid-rows-[72px_1fr] overflow-hidden border border-slate-200/90 bg-white transition-[grid-template-columns] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "mx-auto grid h-full w-full max-w-[1440px] grid-rows-[minmax(0,1fr)] overflow-hidden border border-slate-200/90 bg-white transition-[grid-template-columns] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
             hideSidebar
               ? "grid-cols-1"
               : isSidebarCompact
@@ -64,36 +64,6 @@ export function TestShell({
                 : "grid-cols-[272px_1fr]",
           )}
         >
-          {hideHeader ? null : hideSidebar ? (
-            <div className="row-start-1 col-start-1">
-              <TestHeaderBar
-                actions={actions}
-                breadcrumb={breadcrumb}
-                breadcrumbItems={breadcrumbItems}
-                description={description}
-                isTeacherRefreshing={isTeacherRefreshing}
-                meta={meta}
-                onTeacherRefresh={onTeacherRefresh}
-                rightSlot={headerRightSlot}
-                teacherVariant={teacherVariant}
-                title={title}
-              />
-            </div>
-          ) : (
-            <TestHeaderBar
-              actions={actions}
-              breadcrumb={breadcrumb}
-              breadcrumbItems={breadcrumbItems}
-              description={description}
-              isTeacherRefreshing={isTeacherRefreshing}
-              rightSlot={headerRightSlot}
-              meta={meta}
-              onTeacherRefresh={onTeacherRefresh}
-              teacherVariant={teacherVariant}
-              title={title}
-            />
-          )}
-
           {hideSidebar ? null : (
             <TestSidebar
               collapsible={sidebarCollapsible}
@@ -106,16 +76,32 @@ export function TestShell({
             />
           )}
 
-          <main
+          <div
             className={cn(
               hideSidebar
-                ? "row-start-2 col-start-1 overflow-y-auto bg-[#f3f6fb] p-8"
-                : "row-start-2 col-start-2 overflow-y-auto bg-[#f3f6fb] p-8",
-              contentClassName,
+                ? "row-start-1 col-start-1 min-h-0 overflow-y-auto bg-[#f3f6fb]"
+                : "row-start-1 col-start-2 min-h-0 overflow-y-auto bg-[#f3f6fb]",
             )}
           >
-            <div className="w-full">{children}</div>
-          </main>
+            {hideHeader ? null : (
+              <TestHeaderBar
+                actions={actions}
+                breadcrumb={breadcrumb}
+                breadcrumbItems={breadcrumbItems}
+                description={description}
+                isTeacherRefreshing={isTeacherRefreshing}
+                meta={meta}
+                onTeacherRefresh={onTeacherRefresh}
+                rightSlot={headerRightSlot}
+                teacherVariant={teacherVariant}
+                title={title}
+              />
+            )}
+
+            <main className={cn("p-8", contentClassName)}>
+              <div className="w-full">{children}</div>
+            </main>
+          </div>
         </div>
       </div>
     </TooltipProvider>

@@ -12,6 +12,7 @@ import {
   type DragEvent,
 } from "react";
 import {
+  Check,
   BookOpen,
   ChevronDown,
   ChevronUp,
@@ -66,6 +67,8 @@ import {
   RegenerateQuestionAnswerDocument,
 } from "@/gql/create-exam-documents";
 import { Difficulty, QuestionFormat } from "@/gql/graphql";
+import { requestExtractedExam } from "@/lib/math-exam-api";
+import { confirmDeleteAction } from "@/lib/confirm-destructive-action";
 import { cn } from "@/lib/utils";
 import {
   fetchR2TextbookCandidates,
@@ -73,8 +76,7 @@ import {
   type MaterialBuilderSubject,
   type R2TextbookCandidate,
 } from "@/features/textbook-processing/api";
-import {
-} from "@/features/textbook-processing/status";
+import {} from "@/features/textbook-processing/status";
 import {
   loadPersistedImportedTextbookCards,
   persistImportedTextbookCards,
@@ -97,7 +99,10 @@ import {
   type PreviewQuestion,
   type PreviewQuestionSourceType,
 } from "./material-builder-types";
-import { TextbookSection, type TextbookGeneratedState } from "./textbook-section";
+import {
+  TextbookSection,
+  type TextbookGeneratedState,
+} from "./textbook-section";
 import { mergeTextbookQuestionsIntoPreview } from "./textbook-preview-merge";
 import { mapGeneratedTextbookTestToPreviewQuestions } from "./textbook-preview-adapter";
 
@@ -119,6 +124,7 @@ type Props = {
 };
 const mathAssistFieldClassName =
   "rounded-[20px]! border-[#dbe4f3]! bg-[#F1F4FA]! px-3! py-2.5! hover:border-[#c7d5ea]! focus-visible:border-[#b8c8e0]! focus-visible:ring-[#b8c8e0]/20";
+const questionMathAssistFieldClassName = `${mathAssistFieldClassName} bg-white!`;
 const answerMathAssistFieldClassName = `${mathAssistFieldClassName} h-11! min-h-11! bg-white!`;
 const mathAssistFieldContentClassName =
   "pl-3 font-sans text-[14px] leading-[1.6] font-normal tracking-normal text-slate-800 [&_.katex]:text-inherit";
@@ -141,7 +147,9 @@ function normalizeGeneratedExplanationText(value: string) {
 
 const workspaceSourceOptions = sourceOptions;
 
-function normalizeTextbookSubject(value: string): MaterialBuilderSubject | null {
+function normalizeTextbookSubject(
+  value: string,
+): MaterialBuilderSubject | null {
   const normalized = value.trim().toLowerCase();
 
   if (!normalized) {
@@ -208,18 +216,159 @@ type QueuedTextbookImport = {
   uploadedAsset?: PersistedImportedTextbookCard["uploadedAsset"];
 };
 
+type ImportedQuestion = Omit<PreviewQuestion, "index"> & {
+  imageAlt?: string;
+  imageDataUrl?: string;
+};
+
+type ImportedDocument = {
+  fileName: string;
+  questions: ImportedQuestion[];
+  selectedIds: string[];
+};
+
+const DOCX_MIME_TYPE =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const DOC_IMPORT_ACCEPT =
+  ".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function isDocImportFile(file: File) {
+  const fileName = file.name.toLowerCase();
+
+  return (
+    file.type === DOCX_MIME_TYPE ||
+    file.type === "application/msword" ||
+    /\.(doc|docx)$/i.test(fileName)
+  );
+}
+
 function createTextbookImportId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
 
   return `textbook-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function buildTextbookAssetIdentity(input?: {
-  bucketName?: string | null;
-  key?: string | null;
-} | null) {
+function summarizeImportFileNames(files: File[]) {
+  if (files.length === 0) {
+    return "attachment";
+  }
+
+  if (files.length === 1) {
+    return files[0]?.name ?? "attachment";
+  }
+
+  return `${files[0]?.name ?? "attachment"} +${files.length - 1} файл`;
+}
+
+function shouldUseFastImport(files: File[]) {
+  return files.every((file) => {
+    const fileName = file.name.toLowerCase();
+
+    return (
+      file.type === DOCX_MIME_TYPE ||
+      file.type.startsWith("text/") ||
+      /\.(docx|txt|md|markdown|csv|json)$/i.test(fileName)
+    );
+  });
+}
+
+function buildImportedQuestions(
+  exam: Awaited<ReturnType<typeof requestExtractedExam>>,
+  sourceName: string,
+): ImportedQuestion[] {
+  const sourceImagesByName = Object.fromEntries(
+    (exam.sourceImages ?? [])
+      .filter(
+        (
+          image,
+        ): image is {
+          alt?: string;
+          dataUrl: string;
+          name: string;
+        } =>
+          typeof image.name === "string" &&
+          image.name.trim().length > 0 &&
+          typeof image.dataUrl === "string" &&
+          image.dataUrl.trim().length > 0,
+      )
+      .map((image) => [image.name, image]),
+  );
+  const rawQuestions = Array.isArray(exam.questions) ? exam.questions : [];
+
+  return rawQuestions.reduce<ImportedQuestion[]>((result, question, index) => {
+    const prompt = question.prompt?.trim();
+    const linkedImage = question.sourceImageName
+      ? sourceImagesByName[question.sourceImageName]
+      : undefined;
+
+    if (!prompt) {
+      return result;
+    }
+
+    const options = (question.options ?? [])
+      .map((option) => option.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+
+    if (question.type === "mcq" || options.length >= 2) {
+      const correct =
+        typeof question.correctOption === "number" &&
+        question.correctOption >= 0 &&
+        question.correctOption < options.length
+          ? question.correctOption
+          : 0;
+
+      result.push({
+        answers: options.length >= 2 ? options : ["Сонголт танигдсангүй."],
+        correct,
+        explanation: question.responseGuide?.trim() || undefined,
+        id: `import-${Date.now()}-${index + 1}`,
+        imageAlt: question.imageAlt?.trim() || linkedImage?.alt,
+        imageDataUrl: linkedImage?.dataUrl,
+        points: question.points ?? 1,
+        question: prompt,
+        questionType: "single-choice",
+        source: sourceName,
+        sourceType: "import",
+      });
+
+      return result;
+    }
+
+    const writtenAnswer =
+      question.answerLatex?.trim() ||
+      question.responseGuide?.trim() ||
+      "Хариултын тайлбар олдсонгүй.";
+
+    result.push({
+      answers: [writtenAnswer],
+      correct: 0,
+      explanation: question.responseGuide?.trim() || undefined,
+      id: `import-${Date.now()}-${index + 1}`,
+      imageAlt: question.imageAlt?.trim() || linkedImage?.alt,
+      imageDataUrl: linkedImage?.dataUrl,
+      points: question.points ?? 1,
+      question: prompt,
+      questionType: "written",
+      source: sourceName,
+      sourceType: "import",
+    });
+
+    return result;
+  }, []);
+}
+
+function buildTextbookAssetIdentity(
+  input?: {
+    bucketName?: string | null;
+    key?: string | null;
+  } | null,
+) {
   if (!input?.bucketName || !input?.key) {
     return "";
   }
@@ -265,8 +414,7 @@ function findTextbookCardByAsset(
 
   return (
     cards.find(
-      (card) =>
-        buildTextbookAssetIdentity(card.uploadedAsset) === identity,
+      (card) => buildTextbookAssetIdentity(card.uploadedAsset) === identity,
     ) ?? null
   );
 }
@@ -362,7 +510,9 @@ function getTextbookCardCoverTheme(seed: string) {
     hash = (hash * 31 + char.charCodeAt(0)) % 2147483647;
   }
 
-  return TEXTBOOK_CARD_COVER_THEMES[Math.abs(hash) % TEXTBOOK_CARD_COVER_THEMES.length];
+  return TEXTBOOK_CARD_COVER_THEMES[
+    Math.abs(hash) % TEXTBOOK_CARD_COVER_THEMES.length
+  ];
 }
 
 function toRomanGrade(value: number) {
@@ -403,7 +553,9 @@ function getTextbookCoverSubjectLabel(
     return "ХИМИ";
   }
 
-  return getTextbookSubjectLabel(fallbackSubject).toUpperCase() || "СУРАХ БИЧИГ";
+  return (
+    getTextbookSubjectLabel(fallbackSubject).toUpperCase() || "СУРАХ БИЧИГ"
+  );
 }
 
 function getTextbookCoverGradeLabel(fallbackGrade: number | null) {
@@ -520,10 +672,10 @@ function WorkspaceTabs({
             type="button"
             onClick={() => onSourceChange(option.id)}
             className={cn(
-              "flex w-full cursor-pointer items-center gap-2 rounded-[12px] px-2.5 py-2 text-left text-[12.5px] font-medium transition-all",
+              "flex w-full origin-center cursor-pointer items-center gap-2 rounded-[12px] px-2.5 py-2 text-left text-[12.5px] font-medium transition-[transform,background-color,color,box-shadow] duration-200 ease-out will-change-transform",
               active
                 ? "bg-[#0b5cab] text-white shadow-[0_10px_22px_rgba(11,92,171,0.2)]"
-                : "bg-white text-slate-900 hover:bg-[#f8fbff]",
+                : "bg-white text-slate-900 hover:-translate-y-0.5 hover:scale-[1.03] hover:bg-slate-100 hover:text-slate-950 hover:shadow-[0_12px_24px_rgba(15,23,42,0.10)]",
             )}
           >
             <Icon className="h-[15px] w-[15px] shrink-0" />
@@ -539,37 +691,175 @@ function WorkspaceTabs({
   );
 }
 
-function FilePanel() {
+function FilePanel({
+  importedDocument,
+  importError,
+  isExtracting,
+  onClear,
+  onOpenReview,
+  onSelectFiles,
+}: {
+  importedDocument: ImportedDocument | null;
+  importError: string | null;
+  isExtracting: boolean;
+  onClear: () => void;
+  onOpenReview: () => void;
+  onSelectFiles: (files: File[]) => Promise<void> | void;
+}) {
+  const allFileInputRef = useRef<HTMLInputElement | null>(null);
+  const docInputRef = useRef<HTMLInputElement | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const questionCount = importedDocument?.questions.length ?? 0;
+  const selectedCount = importedDocument?.selectedIds.length ?? 0;
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    void onSelectFiles(Array.from(event.target.files ?? []));
+    event.target.value = "";
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    void onSelectFiles(Array.from(event.dataTransfer.files ?? []));
+  }
+
   return (
-    <div className="min-w-0 overflow-x-hidden">
-      <div className="relative rounded-[20px] border border-dashed border-[#cfd8e3] bg-transparent px-5 py-7 text-center">
+    <div className="min-w-0 space-y-3 overflow-x-hidden">
+      <input
+        ref={allFileInputRef}
+        type="file"
+        accept={DOC_IMPORT_ACCEPT}
+        className="hidden"
+        onChange={handleFileChange}
+      />
+      <input
+        ref={docInputRef}
+        type="file"
+        accept={DOC_IMPORT_ACCEPT}
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      <div
+        onDragEnter={(event) => {
+          event.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          if (event.currentTarget === event.target) {
+            setIsDragging(false);
+          }
+        }}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={handleDrop}
+        className={cn(
+          "relative rounded-[20px] border border-dashed px-5 py-7 text-center transition-all",
+          isDragging
+            ? "border-[#0b5cab] bg-[#f4f8ff]"
+            : "border-[#cfd8e3] bg-transparent",
+        )}
+      >
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#eef2f7] text-slate-600">
-          <Upload className="h-4 w-4" />
+          {isExtracting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Upload className="h-4 w-4" />
+          )}
         </div>
         <p className="mt-4 text-[16px] font-semibold text-slate-900">
-          Файл чирж оруулах эсвэл сонгох
+          {isExtracting
+            ? "Файлаас асуулт уншиж байна..."
+            : "Файл чирж оруулах эсвэл сонгох"}
         </p>
         <p className="mt-2 text-[14px] text-slate-500">
-          PDF, DOC, DOCX форматууд
+          DOC, DOCX форматууд
         </p>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-4 rounded-[12px] border-[#dbe4f3] bg-[#f8fbff]"
+          disabled={isExtracting}
+          onClick={() => allFileInputRef.current?.click()}
+        >
+          <FileUp className="h-4 w-4" />
+          {isExtracting ? "Уншиж байна..." : "Файл сонгох"}
+        </Button>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2">
         <button
           type="button"
-          className="flex min-w-0 h-[42px] cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[14px] border border-[#d9e3f0] bg-[#f4f7fb] px-2 text-[12px] font-medium leading-none text-slate-700 transition hover:bg-[#eef3f9] sm:text-[13px]"
-        >
-          <FileText className="h-4 w-4 text-rose-500" />
-          PDF
-        </button>
-        <button
-          type="button"
+          onClick={() => docInputRef.current?.click()}
+          disabled={isExtracting}
           className="flex min-w-0 h-[42px] cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[14px] border border-[#d9e3f0] bg-[#f4f7fb] px-2 text-[12px] font-medium leading-none text-slate-700 transition hover:bg-[#eef3f9] sm:text-[13px]"
         >
           <FileText className="h-4 w-4 text-blue-500" />
           DOC/DOCX
         </button>
       </div>
+
+      <div className="rounded-[14px] border border-[#dbe4f3] bg-[#f8fbff] px-4 py-3 text-[13px] text-slate-500">
+        DOC файл дээр `AI enhance` ашиглаж уншина. DOCX файл бол шууд `fast
+        import`-оор танина.
+      </div>
+
+      {importError ? (
+        <div className="rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-700">
+          {importError}
+        </div>
+      ) : null}
+
+      {importedDocument ? (
+        <div className="space-y-3">
+          <div className="rounded-[16px] border border-[#d7e7de] bg-[#effaf4] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-[15px] font-semibold text-slate-900">
+                  {importedDocument.fileName}
+                </p>
+                <p className="text-[13px] text-slate-500">
+                  {questionCount} асуулт олдлоо · {selectedCount} сонгогдсон
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={onOpenReview}
+                className="rounded-[10px] border-[#dbe4f3] bg-white text-slate-700 hover:bg-[#f8fbff]"
+                variant="outline"
+              >
+                Нээх
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 rounded-[14px] border border-[#dbe4f3] bg-[#f8fbff] p-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 rounded-[12px] border-[#dbe4f3] bg-white"
+              onClick={onClear}
+            >
+              <X className="h-4 w-4" />
+              Цуцлах
+            </Button>
+            <Button
+              type="button"
+              className="flex-1 rounded-[12px] bg-[#0b5cab] text-white hover:bg-[#0a4f96]"
+              onClick={onOpenReview}
+              disabled={questionCount === 0}
+            >
+              <Check className="h-4 w-4" />
+              Асуултуудыг шалгах
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-[16px] border border-[#e5edf7] bg-[#fbfdff] px-4 py-4 text-[14px] text-slate-500">
+          DOC / DOCX import хийсний дараа танигдсан асуултуудыг эндээс шалгаад
+          шалгалт руу нэмнэ.
+        </div>
+      )}
     </div>
   );
 }
@@ -586,10 +876,7 @@ const QuestionBankPanel = forwardRef<
     onAppendQuestion: (question: Omit<PreviewQuestion, "id" | "index">) => void;
     onQuestionAdded?: () => void;
   }
->(function QuestionBankPanel(
-  { onAppendQuestion, onQuestionAdded },
-  ref,
-) {
+>(function QuestionBankPanel({ onAppendQuestion, onQuestionAdded }, ref) {
   const lastDemoIndexRef = useRef<number | null>(null);
   const [generateAnswer, { loading: generating }] = useMutation(
     GenerateQuestionAnswerDocument,
@@ -627,7 +914,16 @@ const QuestionBankPanel = forwardRef<
     setShowAnswerCountError(false);
   }
 
-  function handleRemoveAnswer(index: number) {
+  async function handleRemoveAnswer(index: number) {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ хариултыг",
+        "Сонгосон хариултын мөр устна.",
+      ))
+    ) {
+      return;
+    }
+
     setAnswers((prev) => {
       const next = prev.filter((_, i) => i !== index);
       if (next.length === 0) return [""];
@@ -971,12 +1267,12 @@ const QuestionBankPanel = forwardRef<
             Асуулт
           </label>
         </div>
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-          <div className="w-full lg:w-[82px] lg:shrink-0">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+          <div className="min-w-0">
             <Select value={scoreValue} onValueChange={setScoreValue}>
               <SelectTrigger
                 title="Оноо"
-                className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
+                className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] !bg-white [&>span]:truncate"
               >
                 <SelectValue placeholder="Оноо" />
               </SelectTrigger>
@@ -989,14 +1285,14 @@ const QuestionBankPanel = forwardRef<
             </Select>
           </div>
 
-          <div className="min-w-0 flex-1 lg:min-w-[120px]">
+          <div className="min-w-0">
             <Select
               value={questionTypeValue}
               onValueChange={setQuestionTypeValue}
             >
               <SelectTrigger
                 title="Асуултын төрөл"
-                className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
+                className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] !bg-white [&>span]:truncate"
               >
                 <SelectValue placeholder="Төрөл" />
               </SelectTrigger>
@@ -1007,11 +1303,11 @@ const QuestionBankPanel = forwardRef<
             </Select>
           </div>
 
-          <div className="w-full lg:w-[192px] lg:shrink-0">
+          <div className="min-w-0">
             <Select value={difficultyValue} onValueChange={setDifficultyValue}>
               <SelectTrigger
                 title="Асуултын хүндрэлийн түвшин"
-                className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f3f6fb] [&>span]:truncate"
+                className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] !bg-white [&>span]:truncate"
               >
                 <SelectValue placeholder="Хүндрэлийн түвшин" />
               </SelectTrigger>
@@ -1024,7 +1320,7 @@ const QuestionBankPanel = forwardRef<
           </div>
         </div>
         <MathAssistField
-          className={mathAssistFieldClassName}
+          className={questionMathAssistFieldClassName}
           contentClassName={mathAssistFieldContentClassName}
           value={questionText}
           multiline
@@ -1496,7 +1792,16 @@ function SharedLibraryPanel({
     );
   }
 
-  function deleteEditingExamQuestion(questionId: string) {
+  async function deleteEditingExamQuestion(questionId: string) {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ асуултыг",
+        "Шалгалтын доторх асуултын жагсаалтаас хасагдана.",
+      ))
+    ) {
+      return;
+    }
+
     setEditingExam((prev) =>
       prev
         ? {
@@ -1518,28 +1823,28 @@ function SharedLibraryPanel({
   return (
     <div className="space-y-4">
       {hideLauncher ? null : (
-      <div className="rounded-[18px] border border-[#dbe4f3] bg-transparent p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[15px] font-semibold text-slate-900">
-              Сангаас шалгалт сонгох
-            </p>
+        <div className="rounded-[18px] border border-[#dbe4f3] bg-transparent p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[15px] font-semibold text-slate-900">
+                Сангаас шалгалт сонгох
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => onDialogOpenChange(true)}
+              className="cursor-pointer rounded-[12px] bg-[#0b5cab] px-4 text-white hover:bg-[#0a4f96]"
+            >
+              <Database className="h-4 w-4" />
+              Сан нээх
+            </Button>
           </div>
-          <Button
-            type="button"
-            onClick={() => onDialogOpenChange(true)}
-            className="cursor-pointer rounded-[12px] bg-[#0b5cab] px-4 text-white hover:bg-[#0a4f96]"
-          >
-            <Database className="h-4 w-4" />
-            Сан нээх
-          </Button>
+          <div className="mt-3 rounded-[14px] border border-dashed border-[#dbe4f3] bg-[#f8fbff] px-4 py-3 text-[13px] text-slate-500">
+            {selectedSharedMaterialId
+              ? "Сонгосон шалгалтын дэлгэрэнгүйг дахин харах эсвэл өөр шалгалт сонгож болно."
+              : "Сонгосон анги, хичээл, шалгалтын төрөлд таарах сангийн материалууд dialog дотор харагдана."}
+          </div>
         </div>
-        <div className="mt-3 rounded-[14px] border border-dashed border-[#dbe4f3] bg-[#f8fbff] px-4 py-3 text-[13px] text-slate-500">
-          {selectedSharedMaterialId
-            ? "Сонгосон шалгалтын дэлгэрэнгүйг дахин харах эсвэл өөр шалгалт сонгож болно."
-            : "Сонгосон анги, хичээл, шалгалтын төрөлд таарах сангийн материалууд dialog дотор харагдана."}
-        </div>
-      </div>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
@@ -1607,77 +1912,99 @@ function SharedLibraryPanel({
                       </Button>
                     </div>
 
-                    <div className="flex flex-wrap items-start gap-3">
-                      <Select
-                        value={durationFilter}
-                        onValueChange={setDurationFilter}
-                      >
-                        <SelectTrigger className="w-[180px] cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
-                          <SelectValue placeholder="Хугацаа" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Бүх хугацаа</SelectItem>
-                          {durationOptions.map((value) => (
-                            <SelectItem
-                              key={`duration-${value}`}
-                              value={String(value)}
-                            >
-                              {value} мин
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="text-[12px] font-medium text-slate-600">
+                          Хугацаа
+                        </p>
+                        <Select
+                          value={durationFilter}
+                          onValueChange={setDurationFilter}
+                        >
+                          <SelectTrigger className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                            <SelectValue placeholder="Сонгох" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Бүх хугацаа</SelectItem>
+                            {durationOptions.map((value) => (
+                              <SelectItem
+                                key={`duration-${value}`}
+                                value={String(value)}
+                              >
+                                {value} мин
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                      <Select
-                        value={teacherFilter}
-                        onValueChange={setTeacherFilter}
-                      >
-                        <SelectTrigger className="w-[180px] cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
-                          <SelectValue placeholder="Багш" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Бүх багш</SelectItem>
-                          {teacherOptions.map((value) => (
-                            <SelectItem key={`teacher-${value}`} value={value}>
-                              {value === "unknown" ? "Тодорхойгүй" : value}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="text-[12px] font-medium text-slate-600">
+                          Багш
+                        </p>
+                        <Select
+                          value={teacherFilter}
+                          onValueChange={setTeacherFilter}
+                        >
+                          <SelectTrigger className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                            <SelectValue placeholder="Сонгох" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Бүх багш</SelectItem>
+                            {teacherOptions.map((value) => (
+                              <SelectItem key={`teacher-${value}`} value={value}>
+                                {value === "unknown"
+                                  ? "Тодорхойгүй"
+                                  : value}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                      <Select
-                        value={variantFilter}
-                        onValueChange={setVariantFilter}
-                      >
-                        <SelectTrigger className="w-[180px] cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
-                          <SelectValue placeholder="Хувилбар" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Бүгд</SelectItem>
-                          <SelectItem value="with">Хувилбартай</SelectItem>
-                          <SelectItem value="without">Хувилбаргүй</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="text-[12px] font-medium text-slate-600">
+                          Хувилбар
+                        </p>
+                        <Select
+                          value={variantFilter}
+                          onValueChange={setVariantFilter}
+                        >
+                          <SelectTrigger className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                            <SelectValue placeholder="Сонгох" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Бүгд</SelectItem>
+                            <SelectItem value="with">Хувилбартай</SelectItem>
+                            <SelectItem value="without">Хувилбаргүй</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                      <Select
-                        value={questionCountFilter}
-                        onValueChange={setQuestionCountFilter}
-                      >
-                        <SelectTrigger className="w-[180px] cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
-                          <SelectValue placeholder="Асуултын тоо" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Бүгд</SelectItem>
-                          {questionCountOptions.map((value) => (
-                            <SelectItem
-                              key={`count-${value}`}
-                              value={String(value)}
-                            >
-                              {value} асуулт
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="text-[12px] font-medium text-slate-600">
+                          Асуултын тоо
+                        </p>
+                        <Select
+                          value={questionCountFilter}
+                          onValueChange={setQuestionCountFilter}
+                        >
+                          <SelectTrigger className="w-full cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff]">
+                            <SelectValue placeholder="Сонгох" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Бүгд</SelectItem>
+                            {questionCountOptions.map((value) => (
+                              <SelectItem
+                                key={`count-${value}`}
+                                value={String(value)}
+                              >
+                                {value} асуулт
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -2151,12 +2478,12 @@ function PreviewQuestionCard({
       <div className="min-w-0">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 text-[14px] font-semibold text-slate-900">
-            <div className="inline-flex flex-wrap items-baseline gap-x-1">
-              <span>{`Асуулт ${question.index} - `}</span>
+            <div className="space-y-1.5">
+              <span className="block">{`Асуулт ${question.index}:`}</span>
               <MathPreviewText
                 content={question.question}
                 contentSource="preview"
-                className="inline text-[14px] leading-relaxed text-slate-900"
+                className="block text-[14px] leading-relaxed text-slate-900"
               />
             </div>
           </div>
@@ -2300,10 +2627,16 @@ export function MaterialBuilderWorkspaceSection({
     null,
   );
   const [fileDialogOpen, setFileDialogOpen] = useState(false);
+  const [importedDocument, setImportedDocument] =
+    useState<ImportedDocument | null>(null);
+  const [importReviewDialogOpen, setImportReviewDialogOpen] = useState(false);
+  const [isExtractingImport, setIsExtractingImport] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
   const [sharedLibraryDialogOpen, setSharedLibraryDialogOpen] = useState(false);
   const [textbookDialogOpen, setTextbookDialogOpen] = useState(false);
-  const [textbookDetailDialogOpen, setTextbookDetailDialogOpen] = useState(false);
+  const [textbookDetailDialogOpen, setTextbookDetailDialogOpen] =
+    useState(false);
   const [textbookQuestionDialogOpen, setTextbookQuestionDialogOpen] =
     useState(false);
   const [textbookCards, setTextbookCards] = useState<
@@ -2379,14 +2712,17 @@ export function MaterialBuilderWorkspaceSection({
 
     return [...savedItems, ...r2Items].sort((left, right) => {
       const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0;
-      const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+      const rightTime = right.createdAt
+        ? new Date(right.createdAt).getTime()
+        : 0;
       return rightTime - leftTime;
     });
   }, [textbookCards, textbookR2Candidates]);
   const sourceCounts = useMemo(
     () => ({
       "question-bank": previewQuestions.filter(
-        (question) => resolvePreviewQuestionSourceType(question) === "question-bank",
+        (question) =>
+          resolvePreviewQuestionSourceType(question) === "question-bank",
       ).length,
       textbook: previewQuestions.filter(
         (question) => resolvePreviewQuestionSourceType(question) === "textbook",
@@ -2395,7 +2731,8 @@ export function MaterialBuilderWorkspaceSection({
         (question) => resolvePreviewQuestionSourceType(question) === "import",
       ).length,
       "shared-library": previewQuestions.filter(
-        (question) => resolvePreviewQuestionSourceType(question) === "shared-library",
+        (question) =>
+          resolvePreviewQuestionSourceType(question) === "shared-library",
       ).length,
     }),
     [previewQuestions],
@@ -2459,17 +2796,228 @@ export function MaterialBuilderWorkspaceSection({
     return () => {
       cancelled = true;
     };
-  }, [
-    textbookDialogOpen,
-    textbookGrade,
-    textbookSubject,
-  ]);
+  }, [textbookDialogOpen, textbookGrade, textbookSubject]);
 
   useEffect(() => {
     setSelectedTextbookQuestionIds(
       textbookPreviewQuestions.map((question) => question.id),
     );
   }, [textbookPreviewQuestions]);
+
+  function appendImportedQuestions(questions: ImportedQuestion[]) {
+    onPreviewQuestionsChange(
+      reindexQuestions([
+        ...previewQuestions,
+        ...questions.map((question, index) => ({
+          ...question,
+          id: `import-${Date.now()}-${index + 1}`,
+          index: 0,
+        })),
+      ]),
+    );
+  }
+
+  function handleToggleImportedQuestion(id: string, checked: boolean) {
+    setImportedDocument((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const selectedIds = checked
+        ? Array.from(new Set([...current.selectedIds, id]))
+        : current.selectedIds.filter((item) => item !== id);
+
+      return {
+        ...current,
+        selectedIds,
+      };
+    });
+  }
+
+  function handleUpdateImportedQuestion(
+    questionId: string,
+    updater: (question: ImportedQuestion) => ImportedQuestion,
+  ) {
+    setImportedDocument((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        questions: current.questions.map((question) =>
+          question.id === questionId ? updater(question) : question,
+        ),
+      };
+    });
+  }
+
+  function handleAddImportedAnswer(questionId: string) {
+    handleUpdateImportedQuestion(questionId, (question) => ({
+      ...question,
+      answers: [...question.answers, ""],
+    }));
+  }
+
+  async function handleRemoveImportedAnswer(
+    questionId: string,
+    answerIndex: number,
+  ) {
+    const question = importedDocument?.questions.find(
+      (item) => item.id === questionId,
+    );
+
+    if (
+      !question ||
+      question.questionType === "written" ||
+      question.answers.length <= 2
+    ) {
+      return;
+    }
+
+    if (
+      !(await confirmDeleteAction(
+        "Энэ хариултыг",
+        "Импортолсон асуултын энэ сонголт устна.",
+      ))
+    ) {
+      return;
+    }
+
+    handleUpdateImportedQuestion(questionId, (question) => {
+      if (question.questionType === "written") {
+        return question;
+      }
+
+      if (question.answers.length <= 2) {
+        return question;
+      }
+
+      const nextAnswers = question.answers.filter(
+        (_, index) => index !== answerIndex,
+      );
+      const nextCorrect =
+        question.correct === answerIndex
+          ? 0
+          : question.correct > answerIndex
+            ? question.correct - 1
+            : question.correct;
+
+      return {
+        ...question,
+        answers: nextAnswers,
+        correct: Math.max(0, Math.min(nextCorrect, nextAnswers.length - 1)),
+      };
+    });
+  }
+
+  function handleSetImportedCorrectAnswer(
+    questionId: string,
+    answerIndex: number,
+  ) {
+    handleUpdateImportedQuestion(questionId, (question) => ({
+      ...question,
+      correct: answerIndex,
+    }));
+  }
+
+  function handleClearImportedDocument() {
+    setImportedDocument(null);
+    setImportReviewDialogOpen(false);
+    setImportError(null);
+  }
+
+  async function handleSelectImportFiles(files: File[]) {
+    if (files.length === 0) {
+      return;
+    }
+
+    const invalidFiles = files.filter((file) => !isDocImportFile(file));
+
+    if (invalidFiles.length > 0) {
+      const message =
+        "Одоогоор import дээр зөвхөн DOC эсвэл DOCX файл оруулна.";
+      setImportError(message);
+      setImportedDocument(null);
+      setImportReviewDialogOpen(false);
+      toast.error(message);
+      return;
+    }
+
+    setImportError(null);
+    setIsExtractingImport(true);
+
+    try {
+      const useFastImport = shouldUseFastImport(files);
+      const fileLabel = summarizeImportFileNames(files);
+      const exam = await requestExtractedExam(files, {
+        mode: useFastImport ? "fast" : "enhance",
+      });
+      const questions = buildImportedQuestions(exam, fileLabel);
+
+      if (questions.length === 0) {
+        throw new Error("Файлаас танигдсан асуулт олдсонгүй.");
+      }
+
+      setImportedDocument({
+        fileName: fileLabel,
+        questions,
+        selectedIds: questions.map((question) => question.id),
+      });
+      setImportReviewDialogOpen(true);
+      onSourceChange("import");
+      toast.success(`${fileLabel}-с ${questions.length} асуулт уншлаа.`);
+    } catch (error: unknown) {
+      const message =
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message: string }).message)
+          : "Файлаас асуулт уншихад алдаа гарлаа.";
+
+      setImportedDocument(null);
+      setImportReviewDialogOpen(false);
+      setImportError(message);
+      toast.error(message);
+    } finally {
+      setIsExtractingImport(false);
+    }
+  }
+
+  function handleAddAllImportedQuestions() {
+    if (!importedDocument || importedDocument.questions.length === 0) {
+      return;
+    }
+
+    appendImportedQuestions(importedDocument.questions);
+    toast.success(`${importedDocument.questions.length} асуулт нэмэгдлээ.`);
+    setImportedDocument(null);
+    setImportReviewDialogOpen(false);
+    setImportError(null);
+    setFileDialogOpen(false);
+    onSourceChange("import");
+  }
+
+  function handleAddSelectedImportedQuestions() {
+    if (!importedDocument) {
+      return;
+    }
+
+    const selectedQuestions = importedDocument.questions.filter((question) =>
+      importedDocument.selectedIds.includes(question.id),
+    );
+
+    if (selectedQuestions.length === 0) {
+      toast.error("Нэмэх асуултаа сонгоно уу.");
+      return;
+    }
+
+    appendImportedQuestions(selectedQuestions);
+    toast.success(`${selectedQuestions.length} асуулт нэмэгдлээ.`);
+    setImportedDocument(null);
+    setImportReviewDialogOpen(false);
+    setImportError(null);
+    setFileDialogOpen(false);
+    onSourceChange("import");
+  }
 
   useEffect(() => {
     if (!textbookGeneratedState) {
@@ -2486,7 +3034,8 @@ export function MaterialBuilderWorkspaceSection({
       materialId: textbookGeneratedState.materialId || "",
       openQuestionCount:
         textbookGeneratedState.generatedTest.openQuestionCountGenerated,
-      questionCount: textbookGeneratedState.generatedTest.questionCountGenerated,
+      questionCount:
+        textbookGeneratedState.generatedTest.questionCountGenerated,
       selectedSectionIds: textbookGeneratedState.selectedSectionIds,
     });
 
@@ -2583,7 +3132,8 @@ export function MaterialBuilderWorkspaceSection({
     const uploadedAsset = createUploadedAssetFromR2Candidate(candidate);
     const existingCard = findTextbookCardByAsset(textbookCards, uploadedAsset);
     const importId =
-      existingCard?.id || createTextbookImportIdFromUploadedAsset(uploadedAsset);
+      existingCard?.id ||
+      createTextbookImportIdFromUploadedAsset(uploadedAsset);
     const nextCard: PersistedImportedTextbookCard = {
       createdAt:
         existingCard?.createdAt ||
@@ -2627,7 +3177,8 @@ export function MaterialBuilderWorkspaceSection({
           existing?.createdAt ||
           next.uploadedAsset?.uploadedAt ||
           new Date().toISOString(),
-        errorMessage: next.material?.errorMessage ?? existing?.errorMessage ?? null,
+        errorMessage:
+          next.material?.errorMessage ?? existing?.errorMessage ?? null,
         fileName:
           next.material?.fileName?.trim() ||
           next.uploadedAsset?.fileName ||
@@ -2640,7 +3191,8 @@ export function MaterialBuilderWorkspaceSection({
         materialStatus:
           next.material?.status ?? existing?.materialStatus ?? "uploaded",
         pageCount: next.material?.pageCount ?? existing?.pageCount ?? 0,
-        sectionCount: next.material?.sectionCount ?? existing?.sectionCount ?? 0,
+        sectionCount:
+          next.material?.sectionCount ?? existing?.sectionCount ?? 0,
         subchapterCount:
           next.material?.subchapterCount ?? existing?.subchapterCount ?? 0,
         title:
@@ -2714,7 +3266,16 @@ export function MaterialBuilderWorkspaceSection({
     );
   }
 
-  function handleDeleteQuestion(questionId: string) {
+  async function handleDeleteQuestion(questionId: string) {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ асуултыг",
+        "Шалгалтын асуултын жагсаалтаас хасагдана.",
+      ))
+    ) {
+      return;
+    }
+
     onPreviewQuestionsChange(
       previewQuestions
         .filter((question) => question.id !== questionId)
@@ -2814,16 +3375,13 @@ export function MaterialBuilderWorkspaceSection({
       />
       <div className="grid gap-5 xl:grid-cols-[206px_minmax(0,1fr)]">
         <div className="w-full rounded-[20px] bg-[#f4f7fb] p-3 xl:max-w-[196px]">
-          <div className="mb-3.5">
-            <h2 className="text-[15px] font-bold tracking-tight text-slate-900">
+          <div className="mb-5">
+            <h2 className="text-[15px] mt-3 font-bold tracking-tight text-slate-900">
               Асуулт нэмэх
             </h2>
           </div>
 
-          <WorkspaceTabs
-            source={source}
-            onSourceChange={handleSourceSelect}
-          />
+          <WorkspaceTabs source={source} onSourceChange={handleSourceSelect} />
         </div>
 
         <div
@@ -2935,12 +3493,12 @@ export function MaterialBuilderWorkspaceSection({
               <DialogTitle className="text-[20px] font-semibold text-slate-900">
                 Гараар асуулт үүсгэх
               </DialogTitle>
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => manualQuestionPanelRef.current?.fillDemo()}
-                  className="h-8 cursor-pointer rounded-[10px] border-[#dbe4f3] bg-white px-2.5 text-[11px] font-medium text-slate-500 shadow-none hover:bg-slate-50 hover:text-slate-700"
+                  className="h-auto border-0 bg-transparent px-1 py-0 text-[10px] font-medium tracking-[0.01em] text-slate-300 opacity-70 shadow-none transition hover:bg-transparent hover:text-slate-500 hover:opacity-100"
                 >
                   Demo
                 </Button>
@@ -2948,7 +3506,7 @@ export function MaterialBuilderWorkspaceSection({
                   type="button"
                   variant="outline"
                   onClick={() => manualQuestionPanelRef.current?.fillAiDemo()}
-                  className="h-8 cursor-pointer rounded-[10px] border-[#dbe4f3] bg-white px-2.5 text-[11px] font-medium text-slate-500 shadow-none hover:bg-slate-50 hover:text-slate-700"
+                  className="h-auto border-0 bg-transparent px-1 py-0 text-[10px] font-medium tracking-[0.01em] text-slate-300 opacity-70 shadow-none transition hover:bg-transparent hover:text-slate-500 hover:opacity-100"
                 >
                   Demo-AI
                 </Button>
@@ -2956,7 +3514,7 @@ export function MaterialBuilderWorkspaceSection({
                   type="button"
                   variant="outline"
                   onClick={() => manualQuestionPanelRef.current?.reset()}
-                  className="h-8 cursor-pointer rounded-[10px] border-[#dbe4f3] bg-white px-2.5 text-[11px] font-medium text-slate-500 shadow-none hover:bg-slate-50 hover:text-slate-700"
+                  className="h-auto border-0 bg-transparent px-1 py-0 text-[10px] font-medium tracking-[0.01em] text-slate-300 opacity-70 shadow-none transition hover:bg-transparent hover:text-slate-500 hover:opacity-100"
                 >
                   Reset
                 </Button>
@@ -2973,7 +3531,15 @@ export function MaterialBuilderWorkspaceSection({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={fileDialogOpen} onOpenChange={setFileDialogOpen}>
+      <Dialog
+        open={fileDialogOpen}
+        onOpenChange={(open) => {
+          setFileDialogOpen(open);
+          if (!open) {
+            setImportReviewDialogOpen(false);
+          }
+        }}
+      >
         <DialogContent className="w-[min(100vw-1.5rem,38rem)]! max-w-none! gap-0 overflow-hidden rounded-[24px] border border-[#dfe7f3] bg-white p-0 shadow-[0_26px_72px_-30px_rgba(15,23,42,0.26)]">
           <DialogHeader className="border-b border-[#e6edf7] px-5 py-4">
             <DialogTitle className="text-[20px] font-semibold text-slate-900">
@@ -2981,8 +3547,268 @@ export function MaterialBuilderWorkspaceSection({
             </DialogTitle>
           </DialogHeader>
           <div className="bg-white px-5 py-5">
-            <FilePanel />
+            <FilePanel
+              importedDocument={importedDocument}
+              importError={importError}
+              isExtracting={isExtractingImport}
+              onClear={handleClearImportedDocument}
+              onOpenReview={() => setImportReviewDialogOpen(true)}
+              onSelectFiles={handleSelectImportFiles}
+            />
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={importReviewDialogOpen}
+        onOpenChange={setImportReviewDialogOpen}
+      >
+        <DialogContent className="max-w-4xl gap-0 overflow-hidden rounded-[28px] border border-[#dbe4f3] bg-white p-0 sm:max-w-4xl">
+          <DialogHeader className="border-b border-[#e6edf7] px-5 py-5 sm:px-6">
+            <div className="pr-10">
+              <DialogTitle className="text-[20px] font-semibold text-slate-900">
+                {importedDocument?.fileName ?? "Import review"}
+              </DialogTitle>
+              <p className="mt-1 text-[14px] text-slate-500">
+                Танигдсан асуултуудаа эндээс шалгаад сонгон нэмнэ үү.
+              </p>
+            </div>
+          </DialogHeader>
+
+          {importedDocument ? (
+            <>
+              <div className="max-h-[70vh] space-y-3 overflow-y-auto px-5 py-5 sm:px-6">
+                {importedDocument.questions.map((question, index) => {
+                  const checked = importedDocument.selectedIds.includes(
+                    question.id,
+                  );
+
+                  return (
+                    <div
+                      key={question.id}
+                      className="rounded-[16px] border border-[#dbe4f3] bg-white px-4 py-4 shadow-[0_4px_14px_rgba(15,23,42,0.03)]"
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(next) =>
+                            handleToggleImportedQuestion(
+                              question.id,
+                              next === true,
+                            )
+                          }
+                          className="mt-1"
+                        />
+                        <div className="min-w-0 flex-1">
+                          {question.imageDataUrl ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={question.imageDataUrl}
+                              alt={question.imageAlt || "Question image"}
+                              className="mb-3 max-h-44 rounded-[12px] border border-[#dbe4f3] object-contain"
+                            />
+                          ) : null}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <MathAssistField
+                                value={question.question}
+                                multiline
+                                onChange={(value) =>
+                                  handleUpdateImportedQuestion(
+                                    question.id,
+                                    (current) => ({
+                                      ...current,
+                                      question: value,
+                                    }),
+                                  )
+                                }
+                                placeholder="Асуултын текст"
+                              />
+                            </div>
+                            <span className="rounded-full bg-[#f2f6fb] px-2 py-1 text-[11px] font-semibold text-slate-600">
+                              #{index + 1}
+                            </span>
+                          </div>
+
+                          {question.questionType === "written" ? (
+                            <div className="mt-3 space-y-3">
+                              <div>
+                                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  Хариултын чиглэл
+                                </p>
+                                <MathAssistField
+                                  value={question.answers[0] ?? ""}
+                                  multiline
+                                  onChange={(value) =>
+                                    handleUpdateImportedQuestion(
+                                      question.id,
+                                      (current) => ({
+                                        ...current,
+                                        answers: [value],
+                                      }),
+                                    )
+                                  }
+                                  placeholder="Хариултын чиглэл / зөв хариу"
+                                />
+                              </div>
+                              <div>
+                                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  Тайлбар
+                                </p>
+                                <MathAssistField
+                                  value={question.explanation ?? ""}
+                                  multiline
+                                  onChange={(value) =>
+                                    handleUpdateImportedQuestion(
+                                      question.id,
+                                      (current) => ({
+                                        ...current,
+                                        explanation: value,
+                                      }),
+                                    )
+                                  }
+                                  placeholder="Нэмэлт тайлбар"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-3 space-y-3">
+                              {question.answers.map((answer, answerIndex) => (
+                                <div
+                                  key={`${question.id}-answer-${answerIndex}`}
+                                  className="flex items-center gap-3 rounded-[14px] border border-[#dbe4f3] bg-[#f8fbff] px-3 py-3"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleSetImportedCorrectAnswer(
+                                        question.id,
+                                        answerIndex,
+                                      )
+                                    }
+                                    className={cn(
+                                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold transition",
+                                      answerIndex === question.correct
+                                        ? "border-[#16a36d] bg-[#16a36d] text-white"
+                                        : "border-[#cbd5e1] bg-white text-slate-600 hover:border-[#0b5cab] hover:text-[#0b5cab]",
+                                    )}
+                                  >
+                                    {String.fromCharCode(65 + answerIndex)}
+                                  </button>
+                                  <div className="flex-1">
+                                    <MathAssistField
+                                      value={answer}
+                                      onChange={(value) =>
+                                        handleUpdateImportedQuestion(
+                                          question.id,
+                                          (current) => ({
+                                            ...current,
+                                            answers: current.answers.map(
+                                              (item, itemIndex) =>
+                                                itemIndex === answerIndex
+                                                  ? value
+                                                  : item,
+                                            ),
+                                          }),
+                                        )
+                                      }
+                                      placeholder={`Сонголт ${String.fromCharCode(65 + answerIndex)}`}
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleRemoveImportedAnswer(
+                                        question.id,
+                                        answerIndex,
+                                      )
+                                    }
+                                    className="rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                                    aria-label="Хариулт устгах"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              ))}
+
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-[12px] text-slate-500">
+                                  Зөв хариултыг зүүн талын үсгэн товчоор
+                                  сонгоно.
+                                </p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="rounded-[10px] border-[#dbe4f3] bg-white"
+                                  onClick={() =>
+                                    handleAddImportedAnswer(question.id)
+                                  }
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  Хариулт нэмэх
+                                </Button>
+                              </div>
+
+                              <div>
+                                <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  Тайлбар
+                                </p>
+                                <MathAssistField
+                                  value={question.explanation ?? ""}
+                                  multiline
+                                  onChange={(value) =>
+                                    handleUpdateImportedQuestion(
+                                      question.id,
+                                      (current) => ({
+                                        ...current,
+                                        explanation: value,
+                                      }),
+                                    )
+                                  }
+                                  placeholder="Нэмэлт тайлбар"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-3 border-t border-[#e6edf7] bg-[#fbfdff] px-5 py-4 sm:px-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 rounded-[12px] border-[#dbe4f3] bg-white"
+                  onClick={handleClearImportedDocument}
+                >
+                  <X className="h-4 w-4" />
+                  Цуцлах
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1 rounded-[12px] bg-[#0b5cab] text-white hover:bg-[#0a4f96]"
+                  onClick={handleAddSelectedImportedQuestions}
+                  disabled={importedDocument.selectedIds.length === 0}
+                >
+                  <Check className="h-4 w-4" />
+                  {importedDocument.selectedIds.length} асуулт нэмэх
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 rounded-[12px] border-[#dbe4f3] bg-white"
+                  onClick={handleAddAllImportedQuestions}
+                  disabled={importedDocument.questions.length === 0}
+                >
+                  <Plus className="h-4 w-4" />
+                  Бүгдийг нэмэх
+                </Button>
+              </div>
+            </>
+          ) : null}
         </DialogContent>
       </Dialog>
 
@@ -3044,102 +3870,106 @@ export function MaterialBuilderWorkspaceSection({
                 </DialogTitle>
               </DialogHeader>
               <div className="max-h-[min(82vh,48rem)] overflow-y-auto px-6 py-6">
-              <div className="space-y-5">
-                <div className="flex items-center justify-between gap-4">
-                  <p className="text-[15px] font-medium text-slate-900">
-                    Миний сурах бичгүүд
-                  </p>
-                  <Button
-                    type="button"
-                    onClick={handleAddTextbook}
-                    disabled={!textbookSubject || !textbookGrade}
-                    className="h-12 rounded-[12px] bg-[#0B5CAB] px-6 text-[15px] font-semibold text-white shadow-[0_10px_24px_rgba(11,92,171,0.22)] hover:bg-[#0a4f96] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Сурах бичиг нэмэх
-                  </Button>
-                </div>
-
-                {!textbookSubject || !textbookGrade ? (
-                  <div className="rounded-[18px] border border-dashed border-[#dbe4f3] bg-[#f8fbff] px-5 py-5 text-[14px] leading-6 text-slate-500">
-                    Сурах бичгийн логик ашиглахын өмнө `Ерөнхий мэдээлэл` хэсэгт
-                    анги болон хичээлээ бөглөнө үү.
-                  </div>
-                ) : textbookLibraryItems.length === 0 ? (
-                  <div className="rounded-[18px] border border-dashed border-[#dbe4f3] bg-[#fcfdff] px-6 py-10 text-center">
-                    <BookOpen className="mx-auto h-10 w-10 text-slate-400" />
-                    <p className="mt-4 text-[18px] font-semibold text-slate-900">
-                      Сурах бичиг алга байна
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-[15px] font-medium text-slate-900">
+                      Миний сурах бичгүүд
                     </p>
-                    <p className="mx-auto mt-2 max-w-[34rem] text-[14px] leading-6 text-slate-500">
-                      {textbookR2Loading
-                        ? "Сурах бичгийн санг ачаалж байна..."
-                        : textbookR2Error
-                          ? textbookR2Error
-                          : `Шинэ PDF нэмж болно. Хүлээгдэж буй файл: ${textbookExpectedR2FileName}`}
-                    </p>
+                    <Button
+                      type="button"
+                      onClick={handleAddTextbook}
+                      disabled={!textbookSubject || !textbookGrade}
+                      className="h-12 rounded-[12px] bg-[#0B5CAB] px-6 text-[15px] font-semibold text-white shadow-[0_10px_24px_rgba(11,92,171,0.22)] hover:bg-[#0a4f96] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Сурах бичиг нэмэх
+                    </Button>
                   </div>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {textbookLibraryItems.map((item) => {
-                      const theme = getTextbookCardCoverTheme(`${item.id}:${item.title}`);
-                      const coverSubject = getTextbookCoverSubjectLabel(
-                        `${item.title} ${item.fileName}`,
-                        textbookSubject,
-                      );
-                      const coverGrade = getTextbookCoverGradeLabel(textbookGrade);
-                      const displayTitle = getTextbookDisplayTitle(
-                        item.title,
-                        textbookSubject,
-                        textbookGrade,
-                      );
 
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => {
-                            if (item.kind === "saved") {
-                              handleOpenTextbookDetail(item.card.id);
-                              return;
-                            }
+                  {!textbookSubject || !textbookGrade ? (
+                    <div className="rounded-[18px] border border-dashed border-[#dbe4f3] bg-[#f8fbff] px-5 py-5 text-[14px] leading-6 text-slate-500">
+                      Сурах бичгийн логик ашиглахын өмнө `Ерөнхий мэдээлэл`
+                      хэсэгт анги болон хичээлээ бөглөнө үү.
+                    </div>
+                  ) : textbookLibraryItems.length === 0 ? (
+                    <div className="rounded-[18px] border border-dashed border-[#dbe4f3] bg-[#fcfdff] px-6 py-10 text-center">
+                      <BookOpen className="mx-auto h-10 w-10 text-slate-400" />
+                      <p className="mt-4 text-[18px] font-semibold text-slate-900">
+                        Сурах бичиг алга байна
+                      </p>
+                      <p className="mx-auto mt-2 max-w-[34rem] text-[14px] leading-6 text-slate-500">
+                        {textbookR2Loading
+                          ? "Сурах бичгийн санг ачаалж байна..."
+                          : textbookR2Error
+                            ? textbookR2Error
+                            : `Шинэ PDF нэмж болно. Хүлээгдэж буй файл: ${textbookExpectedR2FileName}`}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {textbookLibraryItems.map((item) => {
+                        const theme = getTextbookCardCoverTheme(
+                          `${item.id}:${item.title}`,
+                        );
+                        const coverSubject = getTextbookCoverSubjectLabel(
+                          `${item.title} ${item.fileName}`,
+                          textbookSubject,
+                        );
+                        const coverGrade =
+                          getTextbookCoverGradeLabel(textbookGrade);
+                        const displayTitle = getTextbookDisplayTitle(
+                          item.title,
+                          textbookSubject,
+                          textbookGrade,
+                        );
 
-                            handleOpenTextbookR2Candidate(item.candidate);
-                          }}
-                          className="overflow-hidden rounded-[18px] border border-[#dfe5ee] bg-white text-left shadow-[0_8px_18px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_16px_28px_rgba(15,23,42,0.08)]"
-                        >
-                          <div
-                            className="relative h-[144px] overflow-hidden"
-                            style={theme}
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              if (item.kind === "saved") {
+                                handleOpenTextbookDetail(item.card.id);
+                                return;
+                              }
+
+                              handleOpenTextbookR2Candidate(item.candidate);
+                            }}
+                            className="overflow-hidden rounded-[18px] border border-[#dfe5ee] bg-white text-left shadow-[0_8px_18px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_16px_28px_rgba(15,23,42,0.08)]"
                           >
-                            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(15,23,42,0.08))]" />
-                            <div className="absolute -left-8 bottom-0 h-20 w-44 rounded-[999px] bg-white/16" />
-                            <div className="absolute -right-8 top-3 h-24 w-40 rounded-[999px] bg-white/12" />
-                            <div className="absolute inset-x-0 top-6 px-5 text-center text-white [text-shadow:0_2px_8px_rgba(15,23,42,0.35)]">
-                              <p className="text-[15px] font-semibold tracking-[0.08em]">
-                                {coverSubject}
-                              </p>
-                              {coverGrade ? (
-                                <p className="mt-1 text-[16px] font-semibold">
-                                  {coverGrade}
+                            <div
+                              className="relative h-[144px] overflow-hidden"
+                              style={theme}
+                            >
+                              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(15,23,42,0.08))]" />
+                              <div className="absolute -left-8 bottom-0 h-20 w-44 rounded-[999px] bg-white/16" />
+                              <div className="absolute -right-8 top-3 h-24 w-40 rounded-[999px] bg-white/12" />
+                              <div className="absolute inset-x-0 top-6 px-5 text-center text-white [text-shadow:0_2px_8px_rgba(15,23,42,0.35)]">
+                                <p className="text-[15px] font-semibold tracking-[0.08em]">
+                                  {coverSubject}
                                 </p>
-                              ) : null}
+                                {coverGrade ? (
+                                  <p className="mt-1 text-[16px] font-semibold">
+                                    {coverGrade}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
-                          </div>
 
-                          <div className="px-5 py-4">
-                            <p className="truncate text-[16px] font-semibold text-slate-900">
-                              {displayTitle}
-                            </p>
-                            <p className="mt-1 text-[13px] text-slate-500">
-                              Үүсгэсэн: {formatTextbookUpdatedAt(item.createdAt) || "-"}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                            <div className="px-5 py-4">
+                              <p className="truncate text-[16px] font-semibold text-slate-900">
+                                {displayTitle}
+                              </p>
+                              <p className="mt-1 text-[13px] text-slate-500">
+                                Үүсгэсэн:{" "}
+                                {formatTextbookUpdatedAt(item.createdAt) || "-"}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -3188,7 +4018,9 @@ export function MaterialBuilderWorkspaceSection({
 
             <div className="mt-4 space-y-5">
               {textbookPreviewQuestions.map((question, index) => {
-                const isSelected = selectedTextbookQuestionIds.includes(question.id);
+                const isSelected = selectedTextbookQuestionIds.includes(
+                  question.id,
+                );
                 const isWrittenQuestion = question.questionType === "written";
 
                 return (
@@ -3201,7 +4033,10 @@ export function MaterialBuilderWorkspaceSection({
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={(checked) =>
-                            handleToggleTextbookQuestion(question.id, checked === true)
+                            handleToggleTextbookQuestion(
+                              question.id,
+                              checked === true,
+                            )
                           }
                         />
                         <span>Асуулт {index + 1}</span>
@@ -3253,7 +4088,9 @@ export function MaterialBuilderWorkspaceSection({
                                 <span
                                   className={cn(
                                     "h-2.5 w-2.5 rounded-full",
-                                    isCorrect ? "bg-[#0b5cab]" : "bg-transparent",
+                                    isCorrect
+                                      ? "bg-[#0b5cab]"
+                                      : "bg-transparent",
                                   )}
                                 />
                               </div>
