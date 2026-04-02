@@ -777,7 +777,7 @@ export function AiStudentPersonalScheduler({
                     Календарь
                   </p>
                 </div>
-                <div className="flex justify-center rounded-xl bg-white p-2 dark:bg-zinc-900">
+                <div className="flex justify-center rounded-xl bg-white p-2 dark:bg-zinc-900 shadow-md">
                   <Calendar
                     mode="single"
                     selected={date}

@@ -516,6 +516,26 @@ type CalendarLayerId =
   | "personal"
   | "conflict";
 
+const LAYER_CHECK_BG: Record<CalendarLayerId, string> = {
+  primary: "bg-blue-100",
+  confirmed_exam: "bg-blue-100",
+  school_event: "bg-sky-300",
+  ancillary_confirmed: "bg-indigo-300",
+  personal: "bg-slate-300",
+  ai_draft: "bg-violet-200",
+  conflict: "bg-rose-200",
+};
+
+const LAYER_CHECK_FG: Record<CalendarLayerId, string> = {
+  primary: "text-blue-900",
+  confirmed_exam: "text-blue-900",
+  school_event: "text-sky-950",
+  ancillary_confirmed: "text-indigo-950",
+  personal: "text-slate-900",
+  ai_draft: "text-violet-950",
+  conflict: "text-rose-950",
+};
+
 const CALENDAR_LAYERS: {
   id: CalendarLayerId;
   label: string;
@@ -527,34 +547,34 @@ const CALENDAR_LAYERS: {
     id: "primary",
     label: "Хичээлийн хуваарь",
     role: `I/II ээлж · ${LESSON_MINUTES} мин цаг · завсар 5–15 мин (жишээ)`,
-    swatch: "bg-sky-400",
+    swatch: "bg-blue-200",
     style: "pointer-events-none",
   },
   {
     id: "confirmed_exam",
     label: "Шалгалтын хуваарь",
     role: "Сурагчдад зарлагдсан албан ёсны шалгалтууд (Locked / Double confirmation нүдлэнэ).",
-    swatch: "bg-emerald-500",
+    swatch: "bg-blue-100",
   },
   {
     id: "school_event",
     label: "Сургуулийн эвент",
     role: "Сургуулийн нэгдсэн календарийн (School Event Calendar) read-only давхарга.",
-    swatch: "bg-amber-100 ring-1 ring-amber-400/30",
+    swatch: "bg-sky-300",
   },
   {
     id: "ancillary_confirmed",
     label: "Нэмэлт үйл ажиллагаа (Confirmed)",
     role: "Анги удирдсан цаг, Зөвлөх цаг, Баталгаажсан давтлага, Секц. (дизайн mock)",
-    swatch: "bg-indigo-400",
+    swatch: "bg-indigo-300",
     style:
       "ring-1 ring-indigo-300/80 dark:bg-indigo-800/40 dark:ring-indigo-600/60",
   },
   {
     id: "personal",
-    label: "Хувийн завгүй цаг",
+    label: "Хувийн цаг",
     role: "Google Calendar-аас татсан хувийн завгүй цагууд (Private).",
-    swatch: "bg-slate-100",
+    swatch: "bg-slate-300",
     style: "ring-1 ring-slate-300/80 dark:bg-slate-800 dark:ring-slate-600/80",
   },
   {
@@ -1642,7 +1662,7 @@ export function AiTeacherPersonalScheduler({
           >
             <div
               className={cn(
-                "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto p-4 bg-[#F1F4FA]",
+                "flex h-full w-full max-w-[272px] flex-col py-8 gap-4 overflow-y-auto p-4 bg-[#F1F4FA]",
                 shellMode
                   ? "min-w-[min(100vw,272px)]"
                   : "min-w-[min(100vw-68px,272px)]",
@@ -1665,9 +1685,8 @@ export function AiTeacherPersonalScheduler({
                 )}
               >
                 <div className="px-3 py-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Эвент (
-                    {CALENDAR_LAYERS.filter((x) => x.id !== "conflict").length})
+                  <p className="text-[14px] font-semibold tracking-wider text-black dark:text-zinc-400">
+                    Багшийн хуваарь
                   </p>
                 </div>
                 {CALENDAR_LAYERS.filter((x) => x.id !== "conflict").map(
@@ -1689,25 +1708,28 @@ export function AiTeacherPersonalScheduler({
                       >
                         <span
                           className={cn(
-                            "shrink-0 rounded-md border p-1 transition-colors",
+                            "shrink-0 rounded-md p-1 transition-colors",
                             on
-                              ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
-                              : "border-zinc-300 bg-white text-transparent dark:border-zinc-700 dark:bg-zinc-950",
+                              ? cn(
+                                  LAYER_CHECK_BG[layer.id],
+                                  LAYER_CHECK_FG[layer.id],
+                                )
+                              : "border border-slate-300 bg-transparent text-transparent dark:border-slate-600",
                           )}
                           aria-hidden
                         >
-                          <Check className="size-3.5" strokeWidth={3} />
+                          <Check
+                            className={cn(
+                              "size-3.5",
+                              on
+                                ? LAYER_CHECK_FG[layer.id]
+                                : "text-transparent",
+                            )}
+                            strokeWidth={3}
+                          />
                         </span>
-                        <span
-                          className={cn(
-                            "size-2.5 shrink-0 rounded-sm",
-                            layer.swatch,
-                            layer.style,
-                            !on && "opacity-35",
-                          )}
-                        />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">
+                          <span className="block truncate text-[15px] font-normal">
                             {layer.label}
                           </span>
                         </span>
