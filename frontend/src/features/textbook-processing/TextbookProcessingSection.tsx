@@ -32,6 +32,7 @@ import {
   countSelectedPagesFromMaterial,
   resolveGenerateSelection,
 } from "./selectors";
+import { applyTextbookDisplayTitleFallbacks } from "./textbook-display-title-fallback";
 import {
   buildTextbookGenerationSourceFromMaterial,
   generateTextbookTestFromMaterial,
@@ -57,7 +58,6 @@ import type {
 } from "@/app/test/material-builder/_components/textbook-material-data";
 import {
   TextbookQuestionCard,
-  TextbookStatField,
 } from "@/app/test/material-builder/_components/material-builder-ui";
 import { textareaClassName } from "@/app/test/material-builder/_components/material-builder-config";
 
@@ -65,6 +65,9 @@ type TextbookGenerateApiResponse = {
   error?: string;
   test?: GeneratedTextbookTest;
 };
+
+const MIN_GENERATE_DURATION_MS = 5000;
+const MAX_GENERATE_DURATION_MS = 7000;
 
 export type TextbookGeneratedState = {
   bookTitle: string;
@@ -92,11 +95,13 @@ function compactTextbookPageContent(page: { content: string; pageNumber: number 
 
 async function requestAiEnhancedTextbookTest({
   fallbackTest,
+  grade,
   sourceProblems,
   selectedSectionTitles,
   visiblePages,
 }: {
   fallbackTest: GeneratedTextbookTest;
+  grade: number;
   selectedSectionTitles: string[];
   sourceProblems: TextbookSourceProblem[];
   visiblePages: Array<{ content: string; pageNumber: number }>;
@@ -104,6 +109,7 @@ async function requestAiEnhancedTextbookTest({
   const response = await fetch("/api/textbook-generate", {
     body: JSON.stringify({
       fallbackTest,
+      grade,
       selectedSectionTitles,
       sourceProblems,
       visiblePages,
@@ -122,6 +128,30 @@ async function requestAiEnhancedTextbookTest({
   }
 
   return payload.test;
+}
+
+function createGenerateDurationTargetMs() {
+  return (
+    MIN_GENERATE_DURATION_MS +
+    Math.floor(
+      Math.random() * (MAX_GENERATE_DURATION_MS - MIN_GENERATE_DURATION_MS + 1),
+    )
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function ensureMinimumGenerateDuration(startedAtMs: number, targetMs: number) {
+  const elapsedMs = Date.now() - startedAtMs;
+  if (elapsedMs >= targetMs) {
+    return;
+  }
+
+  await sleep(targetMs - elapsedMs);
 }
 
 function filterTreeBySearch(
@@ -171,12 +201,29 @@ function getSubjectLabel(subject: MaterialBuilderSubject) {
   }
 }
 
+function getTextbookDisplayTitle(input: {
+  fallback?: string | null;
+  grade: number;
+  subject: MaterialBuilderSubject;
+}) {
+  const subjectLabel = getSubjectLabel(input.subject).trim();
+  if (subjectLabel && Number.isFinite(input.grade) && input.grade > 0) {
+    return `${subjectLabel}-${input.grade}`;
+  }
+
+  return input.fallback?.trim() || "Сурах бичиг";
+}
+
 const WORKFLOW_STEPS = [
   "uploading",
   "processing_pages",
   "detecting_chapters",
   "ready",
 ] as const;
+const MAX_SINGLE_CHOICE_COUNT = 40;
+const MAX_OPEN_QUESTION_COUNT = 20;
+const MAX_TOTAL_QUESTION_COUNT =
+  MAX_SINGLE_CHOICE_COUNT + MAX_OPEN_QUESTION_COUNT;
 
 function getWorkflowStageRank(
   stage: "detecting_chapters" | "processing_pages" | "ready" | "uploading",
@@ -198,8 +245,25 @@ function normalizeWorkflowStage(stage: string | null | undefined) {
   }
 }
 
+function normalizeRequestedCount(
+  value: string | number,
+  options: {
+    fallback: number;
+    max: number;
+    min: number;
+  },
+) {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  if (!Number.isFinite(parsed)) {
+    return options.fallback;
+  }
+
+  return Math.min(options.max, Math.max(options.min, parsed));
+}
+
 type Props = {
   activeImportId?: string | null;
+  embedded?: boolean;
   grade: number;
   hideImportTools?: boolean;
   onGeneratedStateChange?: (next: TextbookGeneratedState | null) => void;
@@ -222,6 +286,7 @@ type Props = {
 
 export function TextbookProcessingSection({
   activeImportId = null,
+  embedded = false,
   grade,
   hideImportTools = false,
   onGeneratedStateChange,
@@ -259,7 +324,7 @@ export function TextbookProcessingSection({
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [questionCount, setQuestionCount] = useState("10");
-  const [openQuestionCount, setOpenQuestionCount] = useState("2");
+  const [openQuestionCount, setOpenQuestionCount] = useState("0");
   const [totalScore, setTotalScore] = useState("20");
   const [difficultyCounts, setDifficultyCounts] = useState({
     easy: "0",
@@ -279,9 +344,21 @@ export function TextbookProcessingSection({
     () => buildSectionTree(materialDetail?.sections || []),
     [materialDetail?.sections],
   );
+  const displayTree = useMemo(
+    () =>
+      applyTextbookDisplayTitleFallbacks(tree, {
+        bookTitle:
+          materialDetail?.material.title ||
+          materialDetail?.material.fileName ||
+          "",
+        grade,
+        subject,
+      }),
+    [grade, materialDetail?.material.fileName, materialDetail?.material.title, subject, tree],
+  );
   const visibleTree = useMemo(
-    () => filterTreeBySearch(tree, deferredSearch),
-    [deferredSearch, tree],
+    () => filterTreeBySearch(embedded ? displayTree : tree, deferredSearch),
+    [deferredSearch, displayTree, embedded, tree],
   );
   const selectedIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const selection = useMemo(
@@ -349,10 +426,14 @@ export function TextbookProcessingSection({
     }
 
     return {
-      bookTitle:
-        material.title?.trim() ||
-        material.fileName.replace(/\.pdf$/i, "") ||
-        "Сурах бичиг",
+      bookTitle: getTextbookDisplayTitle({
+        fallback:
+          material.title?.trim() ||
+          material.fileName.replace(/\.pdf$/i, "") ||
+          "Сурах бичиг",
+        grade,
+        subject,
+      }),
       fileName: material.fileName,
       generatedTest,
       materialId: material.id,
@@ -360,7 +441,7 @@ export function TextbookProcessingSection({
       selectedSectionTitles: selection.selectedSectionTitles,
       uploadedAsset,
     };
-  }, [generatedTest, material, selection, uploadedAsset]);
+  }, [generatedTest, grade, material, selection, subject, uploadedAsset]);
 
   useEffect(() => {
     onGeneratedStateChange?.(generatedState);
@@ -501,6 +582,44 @@ export function TextbookProcessingSection({
     setLocalStatusMessage("Тохиргоо өөрчлөгдсөн тул шалгалтаа дахин үүсгэнэ үү.");
   }
 
+  function handleQuestionCountChange(value: string) {
+    clearGeneratedPreview();
+
+    const nextQuestionCount = normalizeRequestedCount(value, {
+      fallback: 10,
+      max: MAX_SINGLE_CHOICE_COUNT,
+      min: 1,
+    });
+    const nextOpenCount = Math.min(
+      normalizeRequestedCount(openQuestionCount, {
+        fallback: 0,
+        max: MAX_OPEN_QUESTION_COUNT,
+        min: 0,
+      }),
+      MAX_TOTAL_QUESTION_COUNT - nextQuestionCount,
+    );
+
+    setQuestionCount(String(nextQuestionCount));
+    setOpenQuestionCount(String(nextOpenCount));
+  }
+
+  function handleOpenQuestionCountChange(value: string) {
+    clearGeneratedPreview();
+
+    const currentQuestionCount = normalizeRequestedCount(questionCount, {
+      fallback: 10,
+      max: MAX_SINGLE_CHOICE_COUNT,
+      min: 1,
+    });
+    const nextOpenCount = normalizeRequestedCount(value, {
+      fallback: 0,
+      max: Math.min(MAX_OPEN_QUESTION_COUNT, MAX_TOTAL_QUESTION_COUNT - currentQuestionCount),
+      min: 0,
+    });
+
+    setOpenQuestionCount(String(nextOpenCount));
+  }
+
   function updateSectionSelection(sectionIds: string[], checked: boolean) {
     clearGeneratedPreview();
     setSelectedNodeIds((current) => {
@@ -541,6 +660,9 @@ export function TextbookProcessingSection({
     }
 
     setIsGenerating(true);
+    setLocalStatusMessage("Сонгосон бодлогуудыг шалгаж, тест боловсруулж байна...");
+    const generationStartedAtMs = Date.now();
+    const minimumGenerateDurationMs = createGenerateDurationTargetMs();
 
     try {
       let generationDetail = materialDetail;
@@ -572,6 +694,7 @@ export function TextbookProcessingSection({
       const { result: fallbackTest, selectedSectionTitles } =
         generateTextbookTestFromMaterial(generationDetail, selectedNodeIds, {
           fallbackDifficulty: "hard",
+          grade,
           questionCount: Number(questionCount) || 0,
           openQuestionCount: Number(openQuestionCount) || 0,
           totalScore: Number(totalScore) || 0,
@@ -594,6 +717,7 @@ export function TextbookProcessingSection({
         );
         result = await requestAiEnhancedTextbookTest({
           fallbackTest,
+          grade,
           selectedSectionTitles,
           sourceProblems: generationSource.sourceProblems,
           visiblePages: generationSource.visiblePages.map((page) => ({
@@ -615,12 +739,21 @@ export function TextbookProcessingSection({
         );
       }
 
+      setLocalStatusMessage("Асуултуудын чанар, хариултуудыг шалгаж байна...");
+      await ensureMinimumGenerateDuration(
+        generationStartedAtMs,
+        minimumGenerateDurationMs,
+      );
       setGeneratedTest(result);
       setLocalStatusMessage(
         `${result.questionCountGenerated} сонголтот, ${result.openQuestionCountGenerated} задгай даалгавар бэлэн боллоо.`,
       );
       toast.success("Шалгалтын материал үүсгэлээ.");
     } catch (error) {
+      await ensureMinimumGenerateDuration(
+        generationStartedAtMs,
+        minimumGenerateDurationMs,
+      );
       setLocalStatusMessage("");
       toast.error(
         error instanceof Error
@@ -632,12 +765,228 @@ export function TextbookProcessingSection({
     }
   }
 
+  const displayTitle = getTextbookDisplayTitle({
+    fallback: material?.title || material?.fileName || "Сурах бичиг",
+    grade,
+    subject,
+  });
+  const compactInputClassName =
+    "!h-[40px] rounded-[12px] border-[#dfe5ef] bg-[#f5f7fb] text-[15px] text-slate-900 shadow-none";
+  const compactPillInputClassName =
+    "!h-[32px] w-[48px] rounded-[10px] border-[#d4dae5] bg-white text-center text-[14px] text-slate-900 shadow-none";
+  const canGenerate =
+    !isGenerating &&
+    !isUploading &&
+    !isProcessing &&
+    materialReady &&
+    selection.effectiveNodeIds.length > 0;
+
+  if (embedded) {
+    return (
+      <section className="space-y-0">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_392px]">
+          <div className="rounded-[20px] border border-[#e6ebf2] bg-white p-5">
+            <h3 className="text-[17px] font-semibold text-[#0b5cab]">
+              {displayTitle}
+            </h3>
+
+            <div className="relative mt-4">
+              <Input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Хичээлийн сэдвээр хайх"
+                className="!h-[42px] rounded-[12px] border-[#e2e7f0] bg-white pr-10 text-[14px] text-slate-800 shadow-none"
+              />
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            </div>
+
+            <div className="mt-4 h-[30rem] overflow-hidden rounded-[18px] border border-[#e6ebf2] bg-white">
+              <ScrollArea className="h-full px-4 py-4">
+                {material?.errorMessage ? (
+                  <div className="flex h-full items-center justify-center px-4 text-center text-[14px] leading-6 text-[#8a5a13]">
+                    {material.errorMessage}
+                  </div>
+                ) : materialNeedsOcr ? (
+                  <div className="flex h-full items-center justify-center px-4 text-center text-[14px] leading-6 text-[#8a5a13]">
+                    {material.unsupportedReason ||
+                      "PDF-ийн зарим хуудас скан зурагтай тул OCR хэрэгтэй байна."}
+                  </div>
+                ) : !materialDetail || !materialReady ? (
+                  <div className="flex h-full flex-col items-center justify-center px-5 text-center">
+                    <p className="text-[15px] font-medium text-slate-900">
+                      {bannerMessage || "Сурах бичгийг боловсруулж байна..."}
+                    </p>
+                    {(isUploading || isProcessing || progressValue > 0) && (
+                      <div className="mt-4 w-full max-w-[18rem] space-y-2">
+                        <Progress value={progressValue} className="h-2 bg-[#dbe7ff]" />
+                        <p className="text-[12px] text-slate-500">{progressMetaLabel}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : visibleTree.length === 0 ? (
+                  <div className="flex h-full items-center justify-center px-4 text-center text-[14px] leading-6 text-slate-500">
+                    Хайлтад тохирох хэсэг олдсонгүй.
+                  </div>
+                ) : (
+                  <SectionTree
+                    compact
+                    expandedIds={expandedChapterIds}
+                    nodes={visibleTree}
+                    onSelectionChange={updateSectionSelection}
+                    onToggleExpanded={toggleExpanded}
+                    selectedIdSet={selectedIdSet}
+                  />
+                )}
+              </ScrollArea>
+            </div>
+          </div>
+
+          <div className="rounded-[20px] border border-[#e6ebf2] bg-white p-5">
+            <h3 className="text-[17px] font-semibold text-[#0b5cab]">
+              {displayTitle}
+            </h3>
+
+            <div className="mt-4 space-y-5">
+              <div className="space-y-2">
+                <p className="text-[15px] font-medium text-slate-900">Тестийн тоо</p>
+                <Input
+                  type="number"
+                  min={1}
+                  max={MAX_SINGLE_CHOICE_COUNT}
+                  value={questionCount}
+                  onChange={(event) => handleQuestionCountChange(event.target.value)}
+                  className={compactInputClassName}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[15px] font-medium text-slate-900">Тестийн төрлүүд</p>
+                <div className="space-y-3">
+                  <label className="flex min-h-[38px] items-center justify-between gap-3 rounded-[12px] border border-[#dfe5ef] bg-[#f5f7fb] px-4 text-[14px] text-slate-900">
+                    <span>Нэг сонголттой</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={MAX_SINGLE_CHOICE_COUNT}
+                      value={questionCount}
+                      onChange={(event) => handleQuestionCountChange(event.target.value)}
+                      className={compactPillInputClassName}
+                    />
+                  </label>
+                  <div className="flex min-h-[38px] items-center justify-between gap-3 rounded-[12px] border border-[#dfe5ef] bg-[#f5f7fb] px-4 text-[14px] text-slate-900">
+                    <span>Олон сонголттой</span>
+                    <span className="inline-flex h-[32px] min-w-[48px] items-center justify-center rounded-[10px] border border-[#d4dae5] bg-white px-3 text-[14px] text-slate-700">
+                      0
+                    </span>
+                  </div>
+                  <div className="flex min-h-[38px] items-center justify-between gap-3 rounded-[12px] border border-[#dfe5ef] bg-[#f5f7fb] px-4 text-[14px] text-slate-900">
+                    <span>Дараалал</span>
+                    <span className="inline-flex h-[32px] min-w-[48px] items-center justify-center rounded-[10px] border border-[#d4dae5] bg-white px-3 text-[14px] text-slate-700">
+                      0
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[15px] font-medium text-slate-900">
+                  Задгай даалгаврын тоо
+                </p>
+                <Input
+                  type="number"
+                  min={0}
+                  max={Math.min(
+                    MAX_OPEN_QUESTION_COUNT,
+                    MAX_TOTAL_QUESTION_COUNT -
+                      normalizeRequestedCount(questionCount, {
+                        fallback: 10,
+                        max: MAX_SINGLE_CHOICE_COUNT,
+                        min: 1,
+                      }),
+                  )}
+                  value={openQuestionCount}
+                  onChange={(event) =>
+                    handleOpenQuestionCountChange(event.target.value)
+                  }
+                  className={compactInputClassName}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[15px] font-medium text-slate-900">Нийт оноо</p>
+                <Input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={totalScore}
+                  onChange={(event) => {
+                    clearGeneratedPreview();
+                    setTotalScore(event.target.value);
+                  }}
+                  className={compactInputClassName}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[15px] font-medium text-slate-900">Хүндрэлийн зэрэг</p>
+                <div className="space-y-3">
+                  {([
+                    ["easy", "Энгийн"],
+                    ["medium", "Дунд"],
+                    ["hard", "Хүнд"],
+                  ] as const).map(([key, label]) => (
+                    <label
+                      key={key}
+                      className="flex min-h-[38px] items-center justify-between gap-3 rounded-[12px] border border-[#dfe5ef] bg-[#f5f7fb] px-4 text-[14px] text-slate-900"
+                    >
+                      <span>{label}</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={40}
+                        value={difficultyCounts[key]}
+                        onChange={(event) => {
+                          clearGeneratedPreview();
+                          setDifficultyCounts((current) => ({
+                            ...current,
+                            [key]: event.target.value,
+                          }));
+                        }}
+                        className={compactPillInputClassName}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                onClick={() => void handleGenerate()}
+                disabled={!canGenerate}
+                className="!mt-6 !h-[48px] w-full rounded-[12px] bg-[#0b5cab] text-[19px] font-semibold hover:bg-[#0a4f96]"
+              >
+                {isGenerating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {isGenerating ? "Үүсгэж байна..." : "Шалгалт үүсгэх"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section className="mt-5 space-y-4">
-      <div className="flex items-center gap-3 text-[15px] font-semibold text-slate-900">
-        <BookOpen className="h-5 w-5 text-[#2563eb]" />
-        Сурах бичиг
-      </div>
+    <section className={embedded ? "space-y-4" : "mt-5 space-y-4"}>
+      {!embedded ? (
+        <div className="flex items-center gap-3 text-[15px] font-semibold text-slate-900">
+          <BookOpen className="h-5 w-5 text-[#2563eb]" />
+          Сурах бичиг
+        </div>
+      ) : null}
 
       <div className="grid items-start gap-5 xl:grid-cols-[404px_minmax(0,1fr)]">
         <aside className="space-y-4 rounded-[24px] border border-[#e3e9f4] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
@@ -896,10 +1245,21 @@ export function TextbookProcessingSection({
           </ScrollArea>
 
           <div className="space-y-4 rounded-[18px] border border-[#edf2fb] bg-[#fbfdff] p-4">
-            <TextbookStatField
-              label="Тестийн тоо"
-              value={requestedTotalQuestionCount}
-            />
+            <div className="space-y-2">
+              <p className="text-[15px] font-medium text-slate-900">Тестийн тоо</p>
+              <Input
+                type="number"
+                min={1}
+                max={MAX_SINGLE_CHOICE_COUNT}
+                value={questionCount}
+                onChange={(event) => handleQuestionCountChange(event.target.value)}
+                className="!h-[44px] rounded-[12px] border-[#dbe4f3] bg-[#eef3ff]"
+              />
+              <p className="text-[12px] text-slate-500">
+                Generate болох сонголтот тестийн тоо. Нийт асуулт:{" "}
+                {requestedTotalQuestionCount}
+              </p>
+            </div>
 
             <div className="space-y-2">
               <p className="text-[15px] font-medium text-slate-900">Тестийн төрлүүд</p>
@@ -909,12 +1269,9 @@ export function TextbookProcessingSection({
                   <Input
                     type="number"
                     min={1}
-                    max={40}
+                    max={MAX_SINGLE_CHOICE_COUNT}
                     value={questionCount}
-                    onChange={(event) => {
-                      clearGeneratedPreview();
-                      setQuestionCount(event.target.value);
-                    }}
+                    onChange={(event) => handleQuestionCountChange(event.target.value)}
                     className="!h-[34px] w-[74px] rounded-[10px] border-[#c7d3e7] bg-white text-center"
                   />
                 </label>
@@ -923,12 +1280,19 @@ export function TextbookProcessingSection({
                   <Input
                     type="number"
                     min={0}
-                    max={20}
+                    max={Math.min(
+                      MAX_OPEN_QUESTION_COUNT,
+                      MAX_TOTAL_QUESTION_COUNT -
+                        normalizeRequestedCount(questionCount, {
+                          fallback: 10,
+                          max: MAX_SINGLE_CHOICE_COUNT,
+                          min: 1,
+                        }),
+                    )}
                     value={openQuestionCount}
-                    onChange={(event) => {
-                      clearGeneratedPreview();
-                      setOpenQuestionCount(event.target.value);
-                    }}
+                    onChange={(event) =>
+                      handleOpenQuestionCountChange(event.target.value)
+                    }
                     className="!h-[34px] w-[74px] rounded-[10px] border-[#c7d3e7] bg-white text-center"
                   />
                 </label>

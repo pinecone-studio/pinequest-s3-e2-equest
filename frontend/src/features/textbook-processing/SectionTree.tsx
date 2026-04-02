@@ -5,11 +5,13 @@ import type { TextbookSectionTreeNode } from "./types";
 
 function SelectionCheckbox({
   checked,
+  compact = false,
   disabled = false,
   indeterminate = false,
   onChange,
 }: {
   checked: boolean;
+  compact?: boolean;
   disabled?: boolean;
   indeterminate?: boolean;
   onChange: (next: boolean) => void;
@@ -25,7 +27,11 @@ function SelectionCheckbox({
       }}
       disabled={disabled}
       onChange={(event) => onChange(event.target.checked)}
-      className="mt-1 h-4 w-4 shrink-0 cursor-pointer rounded-[5px] border border-[#dbe4f3] accent-[#0b5cab] disabled:cursor-not-allowed disabled:opacity-50"
+      className={
+        compact
+          ? "mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded-[4px] border border-[#dbe4f3] accent-[#0b5cab] disabled:cursor-not-allowed disabled:opacity-50"
+          : "mt-1 h-4 w-4 shrink-0 cursor-pointer rounded-[5px] border border-[#dbe4f3] accent-[#0b5cab] disabled:cursor-not-allowed disabled:opacity-50"
+      }
     />
   );
 }
@@ -50,12 +56,14 @@ function getSelectionState(
 }
 
 function SectionTreeNodeView({
+  compact = false,
   node,
   expandedIds,
   onSelectionChange,
   onToggleExpanded,
   selectedIdSet,
 }: {
+  compact?: boolean;
   node: TextbookSectionTreeNode;
   expandedIds: Set<string>;
   onSelectionChange: (sectionIds: string[], checked: boolean) => void;
@@ -68,14 +76,17 @@ function SectionTreeNodeView({
 
   return (
     <div
-      className={`rounded-[12px] border border-[#e6edf7] bg-white ${
-        node.depth > 0 ? "ml-5" : ""
-      }`}
+      className={
+        compact
+          ? `${node.depth > 0 ? "ml-5" : ""}`
+          : `rounded-[12px] border border-[#e6edf7] bg-white ${node.depth > 0 ? "ml-5" : ""}`
+      }
     >
-      <div className="flex items-start gap-2 px-3 py-3">
+      <div className={compact ? "flex items-start gap-2 px-1 py-1.5" : "flex items-start gap-2 px-3 py-3"}>
         {selectionState.selectableIds.length > 0 ? (
           <SelectionCheckbox
             checked={selectionState.allSelected}
+            compact={compact}
             indeterminate={selectionState.partiallySelected}
             onChange={(checked) =>
               onSelectionChange(selectionState.selectableIds, checked)
@@ -92,17 +103,31 @@ function SectionTreeNodeView({
             className="flex w-full items-start justify-between gap-3 text-left"
           >
             <div className="min-w-0">
-              <p className="text-[14px] font-semibold leading-6 text-slate-900">
+              <p
+                className={
+                  compact
+                    ? `leading-6 text-slate-900 ${
+                        node.nodeType === "chapter"
+                          ? "text-[14px] font-semibold"
+                          : "text-[14px] font-medium"
+                      }`
+                    : "text-[14px] font-semibold leading-6 text-slate-900"
+                }
+              >
                 {node.title}
               </p>
-              <p className="text-[12px] text-slate-500">
-                {node.startPage ?? "-"} - {node.endPage ?? "-"} хуудас
-                {hasChildren ? ` · ${node.children.length} дэд хэсэг` : ""}
-              </p>
+              {!compact ? (
+                <p className="text-[12px] text-slate-500">
+                  {node.startPage ?? "-"} - {node.endPage ?? "-"} хуудас
+                  {hasChildren ? ` · ${node.children.length} дэд хэсэг` : ""}
+                </p>
+              ) : null}
             </div>
             {hasChildren ? (
               <ChevronDown
-                className={`mt-1 h-4 w-4 shrink-0 text-slate-500 transition ${
+                className={`${
+                  compact ? "mt-1 h-4 w-4" : "mt-1 h-4 w-4"
+                } shrink-0 text-slate-500 transition ${
                   isExpanded ? "rotate-180" : ""
                 }`}
               />
@@ -112,10 +137,17 @@ function SectionTreeNodeView({
       </div>
 
       {hasChildren && isExpanded ? (
-        <div className="space-y-2 border-t border-[#edf2fb] px-3 py-3">
+        <div
+          className={
+            compact
+              ? "space-y-1.5 pl-5 pt-1"
+              : "space-y-2 border-t border-[#edf2fb] px-3 py-3"
+          }
+        >
           {node.children.map((child) => (
             <SectionTreeNodeView
               key={child.id}
+              compact={compact}
               node={child}
               expandedIds={expandedIds}
               onSelectionChange={onSelectionChange}
@@ -130,12 +162,14 @@ function SectionTreeNodeView({
 }
 
 export function SectionTree({
+  compact = false,
   expandedIds,
   nodes,
   onSelectionChange,
   onToggleExpanded,
   selectedIdSet,
 }: {
+  compact?: boolean;
   expandedIds: string[];
   nodes: TextbookSectionTreeNode[];
   onSelectionChange: (sectionIds: string[], checked: boolean) => void;
@@ -143,10 +177,11 @@ export function SectionTree({
   selectedIdSet: Set<string>;
 }) {
   return (
-    <div className="space-y-3">
+    <div className={compact ? "space-y-1.5" : "space-y-3"}>
       {nodes.map((node) => (
         <SectionTreeNodeView
           key={node.id}
+          compact={compact}
           node={node}
           expandedIds={new Set(expandedIds)}
           onSelectionChange={onSelectionChange}
