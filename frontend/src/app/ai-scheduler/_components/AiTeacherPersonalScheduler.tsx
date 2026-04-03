@@ -111,6 +111,7 @@ import {
   Triangle,
   Sparkles,
   WandSparklesIcon,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -922,10 +923,10 @@ export function AiTeacherPersonalScheduler({
               <button
                 type="button"
                 onClick={() => toast.dismiss(id)}
-                className="text-xs text-zinc-400 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+                className="shrink-0 rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:text-zinc-500 dark:hover:text-zinc-200"
                 aria-label="Мэдэгдэл хаах"
               >
-                Хаах
+                <X className="size-4" strokeWidth={2} aria-hidden />
               </button>
             </div>
 
