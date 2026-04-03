@@ -1,5 +1,5 @@
 const HTML_LIKE_TAG_PATTERN =
-  /<\/?(?:p|br|strong|b|em|i|ul|ol|li|div|span)(?:\s[^>]*)?>/i;
+  /<\/?(?:p|br|strong|b|em|i|ul|ol|li|div|span|sup|sub)(?:\s[^>]*)?>/i;
 
 function decodeHtmlEntities(value: string) {
   return value
@@ -28,6 +28,25 @@ export function normalizeStructuredContent(value: string) {
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\s*\/p\s*>/gi, "\n\n")
     .replace(/<\s*p(?:\s[^>]*)?>/gi, "")
+    .replace(
+      /<\s*sup(?:\s[^>]*)?>([\s\S]*?)<\s*\/sup\s*>/gi,
+      (_full, content: string) => {
+        const trimmed = String(content).trim();
+        if (!trimmed) return "";
+        if (/^[∘°]$/u.test(trimmed)) {
+          return "^\\circ";
+        }
+        return `^{${trimmed}}`;
+      },
+    )
+    .replace(
+      /<\s*sub(?:\s[^>]*)?>([\s\S]*?)<\s*\/sub\s*>/gi,
+      (_full, content: string) => {
+        const trimmed = String(content).trim();
+        if (!trimmed) return "";
+        return `_{${trimmed}}`;
+      },
+    )
     .replace(/<\s*\/div\s*>/gi, "\n")
     .replace(/<\s*div(?:\s[^>]*)?>/gi, "")
     .replace(/<\s*(?:strong|b|em|i|span)(?:\s[^>]*)?>/gi, "")

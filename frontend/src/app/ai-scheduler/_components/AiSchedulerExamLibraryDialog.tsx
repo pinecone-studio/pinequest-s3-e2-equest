@@ -29,6 +29,7 @@ import {
   ListNewMathExamsDocument,
 } from "@/gql/create-exam-documents";
 import { MathExamQuestionType, type NewMathExam } from "@/gql/graphql";
+import MathPreviewText from "@/components/math-preview-text";
 import { cn } from "@/lib/utils";
 
 type ExamSummaryRow = {
@@ -57,6 +58,79 @@ type Props = {
   /** Сонгосон шалгалт (examId + гарчиг UI-д харуулахад) */
   onPick: (exam: ExamSummaryRow) => void;
 };
+
+// `create-exam-service/drizzle/seed/users_seed.sql`-ийн seed нэршлээс.
+const SEEDED_TEACHER_NAME_BY_ID: Record<string, string> = {
+  MATH_09: "Б.Батбаяр",
+};
+
+const SUBJECT_NAME_BY_ID: Record<string, string> = {
+  math: "Математик",
+};
+
+function getSeededTeacherDisplayName(teacherId: string | null | undefined) {
+  const trimmed = String(teacherId ?? "").trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return SEEDED_TEACHER_NAME_BY_ID[trimmed] ?? trimmed;
+}
+
+function getSubjectDisplayName(subject: string | null | undefined) {
+  const trimmed = String(subject ?? "").trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return SUBJECT_NAME_BY_ID[trimmed.toLowerCase()] ?? trimmed;
+}
+
+function collapseRepeatedPreviewContent(value: string | null | undefined) {
+  const trimmed = String(value ?? "").trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const compact = trimmed.replace(/\s+/g, " ");
+  const repeatedLeadSentence = compact.match(/^(.{10,80}?[.?!])/u)?.[1]?.trim() ?? "";
+
+  if (repeatedLeadSentence.length >= 10) {
+    const secondIndex = compact.indexOf(
+      repeatedLeadSentence,
+      repeatedLeadSentence.length,
+    );
+
+    if (secondIndex > 0) {
+      return compact.slice(0, secondIndex).trim();
+    }
+  }
+
+  const midpoint = Math.floor(compact.length / 2);
+  const candidateStart = Math.max(1, midpoint - 3);
+  const candidateEnd = Math.min(compact.length - 1, midpoint + 3);
+
+  for (let splitIndex = candidateStart; splitIndex <= candidateEnd; splitIndex += 1) {
+    const left = compact.slice(0, splitIndex).trim();
+    const right = compact.slice(splitIndex).trim();
+
+    if (!left || !right) {
+      continue;
+    }
+
+    const normalizedLeft = left.replace(/\s+/g, " ");
+    const normalizedRight = right.replace(/\s+/g, " ");
+
+    if (normalizedLeft === normalizedRight) {
+      return left;
+    }
+  }
+
+  return compact;
+}
 
 export function AiSchedulerExamLibraryDialog({
   open,
@@ -174,7 +248,7 @@ export function AiSchedulerExamLibraryDialog({
               label:
                 teacherFilter === "unknown"
                   ? "Тодорхойгүй багш"
-                  : teacherFilter,
+                  : getSeededTeacherDisplayName(teacherFilter),
               onRemove: () => setTeacherFilter("all"),
             }
           : null,
@@ -282,7 +356,7 @@ export function AiSchedulerExamLibraryDialog({
                         className="shrink-0 cursor-pointer rounded-[12px] border-[#dbe4f3] bg-[#f7faff] text-slate-700 hover:border-[#c9d9ef] hover:bg-[#f2f7ff]"
                       >
                         <Filter className="mr-2 h-4 w-4" />
-                        Filters
+                        Шүүлтүүр
                         {activeFilterChips.length > 0 ? (
                           <span className="ml-2 rounded-full bg-[#0b5cab] px-1.5 py-0.5 text-[11px] text-white">
                             {activeFilterChips.length}
@@ -294,15 +368,7 @@ export function AiSchedulerExamLibraryDialog({
                       align="end"
                       className="w-[min(92vw,28rem)] rounded-[18px] border border-[#dbe4f3] p-4 shadow-[0_18px_45px_rgba(15,23,42,0.12)]"
                     >
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[14px] font-semibold text-slate-900">
-                            Нэмэлт filter
-                          </p>
-                          <p className="text-[12px] text-slate-500">
-                            Жагсаалтыг нарийвчлан шүүнэ
-                          </p>
-                        </div>
+                      <div className="mb-3 flex items-center justify-end gap-3">
                         <Button
                           type="button"
                           variant="ghost"
@@ -378,7 +444,7 @@ export function AiSchedulerExamLibraryDialog({
                                 >
                                   {value === "unknown"
                                     ? "Тодорхойгүй"
-                                    : value}
+                                    : getSeededTeacherDisplayName(value)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -448,7 +514,7 @@ export function AiSchedulerExamLibraryDialog({
                         type="button"
                         onClick={() => setDetailExam(exam)}
                         className={cn(
-                          "rounded-[16px] border border-[#dbe4f3] bg-white p-4 text-left transition",
+                          "cursor-pointer rounded-[16px] border border-[#dbe4f3] bg-white p-4 text-left transition",
                           "hover:-translate-y-0.5 hover:border-[#b8ccef] hover:bg-[#fbfdff] hover:shadow-[0_10px_22px_rgba(148,163,184,0.14)]",
                         )}
                       >
@@ -460,24 +526,29 @@ export function AiSchedulerExamLibraryDialog({
                         </p>
                         {(exam.firstQuestionPreview || exam.secondQuestionPreview) && (
                           <div className="mt-3 space-y-2 rounded-[12px] border border-[#e8eef8] bg-[#f9fbff] p-3">
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                              Урьдчилгаа
-                            </p>
                             {exam.firstQuestionPreview ? (
-                              <p className="line-clamp-3 text-[12px] leading-snug text-slate-700">
-                                <span className="font-medium text-[#0b5cab]">
-                                  1.
-                                </span>{" "}
-                                {exam.firstQuestionPreview}
-                              </p>
+                              <div className="line-clamp-3 text-[12px] leading-snug text-slate-700">
+                                <span className="font-medium text-[#0b5cab]">1.</span>{" "}
+                                <MathPreviewText
+                                  content={collapseRepeatedPreviewContent(
+                                    exam.firstQuestionPreview,
+                                  )}
+                                  contentSource="backend"
+                                  className="inline text-[12px] leading-snug text-inherit [&_.katex]:text-inherit"
+                                />
+                              </div>
                             ) : null}
                             {exam.secondQuestionPreview ? (
-                              <p className="line-clamp-3 text-[12px] leading-snug text-slate-700">
-                                <span className="font-medium text-[#0b5cab]">
-                                  2.
-                                </span>{" "}
-                                {exam.secondQuestionPreview}
-                              </p>
+                              <div className="line-clamp-3 text-[12px] leading-snug text-slate-700">
+                                <span className="font-medium text-[#0b5cab]">2.</span>{" "}
+                                <MathPreviewText
+                                  content={collapseRepeatedPreviewContent(
+                                    exam.secondQuestionPreview,
+                                  )}
+                                  contentSource="backend"
+                                  className="inline text-[12px] leading-snug text-inherit [&_.katex]:text-inherit"
+                                />
+                              </div>
                             ) : null}
                           </div>
                         )}
@@ -488,8 +559,18 @@ export function AiSchedulerExamLibraryDialog({
                           {typeof exam.questionCount === "number" ? (
                             <p>Асуулт: {exam.questionCount}</p>
                           ) : null}
+                          {exam.withVariants ? (
+                            <p>
+                              Хувилбар:{" "}
+                              {typeof exam.variantCount === "number" && exam.variantCount > 0
+                                ? `${exam.variantCount} хувилбар`
+                                : "Хувилбартай"}
+                            </p>
+                          ) : null}
                           {exam.teacherId ? (
-                            <p className="truncate">Багш: {exam.teacherId}</p>
+                            <p className="truncate">
+                              Багш: {getSeededTeacherDisplayName(exam.teacherId)}
+                            </p>
                           ) : null}
                         </div>
                         <p className="mt-3 text-[11px] text-[#0b5cab]">
@@ -542,7 +623,7 @@ function ExamDetailBody({ exam }: { exam: NewMathExam }) {
             {meta.subject ? (
               <li>
                 <span className="text-slate-500">Хичээл: </span>
-                {meta.subject}
+                {getSubjectDisplayName(meta.subject)}
               </li>
             ) : null}
             {meta.grade != null ? (
@@ -556,6 +637,14 @@ function ExamDetailBody({ exam }: { exam: NewMathExam }) {
               <li>
                 <span className="text-slate-500">Хугацаа: </span>
                 {meta.durationMinutes} мин
+              </li>
+            ) : null}
+            {meta.withVariants ? (
+              <li>
+                <span className="text-slate-500">Хувилбар: </span>
+                {typeof meta.variantCount === "number" && meta.variantCount > 0
+                  ? `${meta.variantCount} хувилбар`
+                  : "Хувилбартай"}
               </li>
             ) : null}
             {meta.description ? (
@@ -590,18 +679,26 @@ function ExamDetailBody({ exam }: { exam: NewMathExam }) {
                       : "bg-violet-100 text-violet-900",
                   )}
                 >
-                  {q.type === MathExamQuestionType.Mcq ? "MCQ" : "Тоо"}
+                  {q.type === MathExamQuestionType.Mcq ? "Тест" : "Нээлттэй"}
                 </span>
                 <span className="text-[11px] text-slate-500">{q.points} оноо</span>
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-800">
-                {q.prompt}
-              </p>
+              <div className="mt-2 text-[13px] leading-relaxed text-slate-800">
+                <MathPreviewText
+                  content={collapseRepeatedPreviewContent(q.prompt)}
+                  contentSource="backend"
+                  className="text-[13px] leading-relaxed text-inherit [&_.katex]:text-inherit"
+                />
+              </div>
               {q.options && q.options.length > 0 ? (
                 <ol className="mt-3 list-decimal space-y-1 pl-5 text-[12px] text-slate-700">
                   {q.options.map((opt, i) => (
-                    <li key={i} className="whitespace-pre-wrap pl-1">
-                      {opt}
+                    <li key={i} className="pl-1">
+                      <MathPreviewText
+                        content={collapseRepeatedPreviewContent(opt)}
+                        contentSource="backend"
+                        className="text-[12px] leading-relaxed text-inherit [&_.katex]:text-inherit"
+                      />
                     </li>
                   ))}
                 </ol>

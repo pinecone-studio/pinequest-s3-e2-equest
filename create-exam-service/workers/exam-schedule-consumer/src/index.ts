@@ -10,6 +10,7 @@ import {
   newExams,
   periods,
   schoolEvents,
+  teacherAvailability,
   users,
   groups,
 } from "../../../src/db/schema";
@@ -33,7 +34,7 @@ const DEFAULT_EXAM_DURATION_MINUTES = 90;
 function bumpIsoUntilOnOrAfter(iso: string, floor: Date): string | null {
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return null;
-  let d = new Date(t.getTime());
+  const d = new Date(t.getTime());
   for (let i = 0; i < 200; i++) {
     if (d.getTime() >= floor.getTime()) return d.toISOString();
     d.setUTCDate(d.getUTCDate() + 7);
@@ -191,6 +192,251 @@ type SchedulerMessageBody = {
   testId: string;
 };
 
+type PeriodRow = {
+  id: number;
+  startTime: string;
+  endTime: string;
+  periodNumber?: number | null;
+};
+
+type TeacherAvailabilityConstraint = {
+  dayOfWeek: number;
+  periodId: number;
+  status: string;
+  reason: string | null;
+  startTime: string;
+  endTime: string;
+};
+
+type TeacherScheduleConstraint = {
+  classroomId: string | null;
+  dayOfWeek: number;
+  endTime: string;
+  groupId: string;
+  periodId: number;
+  startTime: string;
+  subjectId: string | null;
+};
+
+type ConfirmedExamConstraint = {
+  classId: string;
+  endTime: Date | null;
+  id: string;
+  roomId: string | null;
+  startTime: Date;
+  teacherId: string | null;
+};
+
+type VariantValidationContext = {
+  availableRoomIds: Set<string>;
+  classId: string;
+  confirmedExams: ConfirmedExamConstraint[];
+  examDurationMinutes: number;
+  periods: PeriodRow[];
+  schoolEventBlockers: Array<{
+    endDate: Date;
+    id: string;
+    repeatPattern: string | null;
+    startDate: Date;
+    title: string;
+  }>;
+  teacherAvailabilityBusy: TeacherAvailabilityConstraint[];
+  teacherOtherSchedules: TeacherScheduleConstraint[];
+  teacherPreferred: TeacherAvailabilityConstraint[];
+  teacherId: string | null;
+};
+
+function isExamEligibleRoom(room: {
+  id?: string | null;
+  name?: string | null;
+  roomNumber?: string | null;
+}) {
+  const id = String(room.id ?? "")
+    .trim()
+    .toUpperCase();
+  const name = String(room.name ?? "")
+    .trim()
+    .toLowerCase();
+  const roomNumber = String(room.roomNumber ?? "")
+    .trim()
+    .toUpperCase();
+
+  if (id.startsWith("CLOAK_") || roomNumber.startsWith("CLOAK_")) {
+    return false;
+  }
+
+  if (name.includes("өлгүүр")) {
+    return false;
+  }
+
+  return true;
+}
+
+function parseClockParts(hhmm: string): { h: number; m: number } | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm ?? "").trim());
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return { h, m };
+}
+
+function buildUbWindowForDate(
+  anchorMs: number,
+  startClock: string,
+  endClock: string,
+): { end: Date; start: Date } | null {
+  const startParts = parseClockParts(startClock);
+  const endParts = parseClockParts(endClock);
+  if (!startParts || !endParts) return null;
+  const { y, M, D } = ubYmdFromMs(anchorMs);
+  const startMs = ubYmdHmToUtcMs(y, M, D, startParts.h, startParts.m);
+  const endMs = ubYmdHmToUtcMs(y, M, D, endParts.h, endParts.m);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) {
+    return null;
+  }
+  return {
+    start: new Date(startMs),
+    end: new Date(endMs),
+  };
+}
+
+function rangesOverlap(
+  startA: Date,
+  endA: Date,
+  startB: Date,
+  endB: Date,
+): boolean {
+  return startA.getTime() < endB.getTime() && endA.getTime() > startB.getTime();
+}
+
+function eventOverlapsVariant(
+  event: { endDate: Date; repeatPattern: string | null; startDate: Date },
+  variantStart: Date,
+  variantEnd: Date,
+): boolean {
+  if (Number.isNaN(event.startDate.getTime()) || Number.isNaN(event.endDate.getTime())) {
+    return false;
+  }
+  const repeat = String(event.repeatPattern ?? "NONE").toUpperCase();
+  const durationMs = event.endDate.getTime() - event.startDate.getTime();
+  if (durationMs <= 0) return false;
+
+  if (repeat === "NONE") {
+    return rangesOverlap(variantStart, variantEnd, event.startDate, event.endDate);
+  }
+
+  let cursor = new Date(event.startDate.getTime());
+  for (let i = 0; i < 400; i += 1) {
+    const occurrenceEnd = new Date(cursor.getTime() + durationMs);
+    if (rangesOverlap(variantStart, variantEnd, cursor, occurrenceEnd)) {
+      return true;
+    }
+    if (cursor.getTime() > variantEnd.getTime()) {
+      return false;
+    }
+    if (repeat === "DAILY") {
+      cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+    } else if (repeat === "WEEKLY") {
+      cursor = new Date(cursor.getTime() + 7 * 24 * 60 * 60 * 1000);
+    } else if (repeat === "MONTHLY") {
+      const next = new Date(cursor.getTime());
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      cursor = next;
+    } else {
+      return false;
+    }
+  }
+  return false;
+}
+
+function collectVariantConflictReasons(
+  variant: ExamVariantRow,
+  ctx: VariantValidationContext,
+): string[] {
+  const reasons: string[] = [];
+  const start = new Date(variant.startTime);
+  if (Number.isNaN(start.getTime())) {
+    return ["Эхлэх цаг буруу байна."];
+  }
+  const end = new Date(start.getTime() + ctx.examDurationMinutes * 60 * 1000);
+  const isoDay = isoDowMon1Sun7Ub(start.getTime());
+
+  if (!ctx.availableRoomIds.has(variant.roomId)) {
+    reasons.push(`Өрөө тохирохгүй: ${variant.roomId}`);
+  }
+
+  for (const slot of ctx.teacherAvailabilityBusy) {
+    if (slot.dayOfWeek !== isoDay) continue;
+    const window = buildUbWindowForDate(
+      start.getTime(),
+      slot.startTime,
+      slot.endTime,
+    );
+    if (!window) continue;
+    if (rangesOverlap(start, end, window.start, window.end)) {
+      reasons.push(
+        `Багш завгүй цагтай давхцаж байна${
+          slot.reason ? ` (${slot.reason})` : ""
+        }`,
+      );
+      break;
+    }
+  }
+
+  for (const row of ctx.teacherOtherSchedules) {
+    if (row.dayOfWeek !== isoDay) continue;
+    const window = buildUbWindowForDate(
+      start.getTime(),
+      row.startTime,
+      row.endTime,
+    );
+    if (!window) continue;
+    if (rangesOverlap(start, end, window.start, window.end)) {
+      reasons.push(`Багшийн өөр ангийн хичээлтэй давхцаж байна (${row.groupId})`);
+      break;
+    }
+  }
+
+  for (const exam of ctx.confirmedExams) {
+    if (!exam.endTime || Number.isNaN(exam.endTime.getTime())) continue;
+    if (!rangesOverlap(start, end, exam.startTime, exam.endTime)) continue;
+    if (exam.classId === ctx.classId) {
+      reasons.push(`Энэ ангийн баталгаажсан шалгалттай давхцаж байна (${exam.id})`);
+      break;
+    }
+    if (exam.roomId && exam.roomId === variant.roomId) {
+      reasons.push(`Өрөө давхцаж байна (${variant.roomId})`);
+      break;
+    }
+    if (ctx.teacherId && exam.teacherId === ctx.teacherId) {
+      reasons.push(`Багшийн баталгаажсан өөр шалгалттай давхцаж байна (${exam.classId})`);
+      break;
+    }
+  }
+
+  return reasons;
+}
+
+function sanitizeVariantsAgainstConstraints(
+  variants: ExamVariantRow[],
+  ctx: VariantValidationContext,
+): { rejected: string[]; valid: ExamVariantRow[] } {
+  const valid: ExamVariantRow[] = [];
+  const rejected: string[] = [];
+
+  for (const variant of variants) {
+    const reasons = collectVariantConflictReasons(variant, ctx);
+    if (reasons.length === 0) {
+      valid.push(variant);
+      continue;
+    }
+    rejected.push(`${variant.id}: ${reasons.join("; ")}`);
+  }
+
+  return { valid, rejected };
+}
+
 function extractJsonObject(text: string): Record<string, unknown> {
   const trimmed = text.trim();
   const start = trimmed.indexOf("{");
@@ -261,6 +507,35 @@ function isRetryableGeminiError(err: unknown): boolean {
 
 function formatGeminiFailureMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+
+  if (
+    lower.includes("api key") &&
+    (lower.includes("not valid") ||
+      lower.includes("invalid") ||
+      lower.includes("not found") ||
+      lower.includes("configured") ||
+      lower.includes("unauthorized"))
+  ) {
+    return `Gemini API түлхүүр буруу эсвэл тохируулагдаагүй байна. exam-schedule-consumer worker дээрх GOOGLE_AI_API_KEY / GEMINI_API_KEY secret-ээ шалгана уу. Техникийн дэлгэрэнгүй: ${raw.slice(0, 1200)}`;
+  }
+
+  if (lower.includes("reported as leaked") || lower.includes("api key was reported as leaked")) {
+    return `Gemini API түлхүүрийг Google блоклосон байна. Шинэ API key үүсгээд exam-schedule-consumer worker-ийн secret-ийг шинэчилнэ үү. Техникийн дэлгэрэнгүй: ${raw.slice(0, 1200)}`;
+  }
+
+  if (
+    lower.includes("model not found") ||
+    (lower.includes("404") && lower.includes("models/")) ||
+    lower.includes("not found for api version")
+  ) {
+    return `Gemini model тохирохгүй байна. exam-schedule-consumer-ийн GEMINI_MODEL-ийг шалгана уу. Техникийн дэлгэрэнгүй: ${raw.slice(0, 1200)}`;
+  }
+
+  if (lower.includes("403") || lower.includes("permission denied")) {
+    return `Gemini руу хандах эрхгүй байна. API key, project permission, billing-ээ шалгана уу. Техникийн дэлгэрэнгүй: ${raw.slice(0, 1200)}`;
+  }
+
   if (
     raw.includes("503") ||
     raw.includes("Service Unavailable") ||
@@ -467,10 +742,10 @@ async function runScheduler(
 
   const allPeriods = await db.select().from(periods).orderBy(asc(periods.id));
 
-  const rooms = await db
+  const rooms = (await db
     .select()
     .from(classrooms)
-    .where(eq(classrooms.status, "AVAILABLE"));
+    .where(eq(classrooms.status, "AVAILABLE"))).filter(isExamEligibleRoom);
 
   if (rooms.length === 0) {
     const now = new Date().toISOString();
@@ -478,7 +753,8 @@ async function runScheduler(
       .update(examSchedules)
       .set({
         status: "failed",
-        aiReasoning: "Танхимын мэдээлэл (classrooms) хоосон байна.",
+        aiReasoning:
+          "Шалгалтад тохирох танхим олдсонгүй (өлгүүр зэрэг шалгалтын бус өрөөнүүдийг хассан).",
         updatedAt: now,
       })
       .where(eq(examSchedules.id, examId));
@@ -500,8 +776,8 @@ async function runScheduler(
     return;
   }
 
-  const primaryModel = env.GEMINI_MODEL?.trim() || "gemini-flash-latest";
-  const fallbackModel = env.GEMINI_MODEL_FALLBACK?.trim();
+  const primaryModel = env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  const fallbackModel = env.GEMINI_MODEL_FALLBACK?.trim() || "gemini-2.0-flash";
   const genAI = new GoogleGenerativeAI(apiKey);
 
   const roomIds = rooms.map((r) => r.id).join(", ");
@@ -518,6 +794,7 @@ async function runScheduler(
 
   const [teacherRow] = await db
     .select({
+      id: users.id,
       shortName: users.shortName,
       workLoadLimit: users.workLoadLimit,
     })
@@ -525,6 +802,7 @@ async function runScheduler(
     .innerJoin(users, eq(users.id, curriculum.teacherId))
     .where(eq(curriculum.groupId, classId))
     .limit(1);
+  const teacherId = teacherRow?.id ? String(teacherRow.id) : null;
 
   const availableRooms = rooms.filter(
     (r) => Number(r.capacity ?? 0) >= Number(group?.studentCount ?? 30),
@@ -561,6 +839,134 @@ async function runScheduler(
       (a, b) =>
         a.dayOfWeek - b.dayOfWeek || a.periodNumber - b.periodNumber,
     );
+
+  const teacherAvailabilityRows = teacherId
+    ? await db
+        .select({
+          dayOfWeek: teacherAvailability.dayOfWeek,
+          periodId: teacherAvailability.periodId,
+          reason: teacherAvailability.reason,
+          startTime: periods.startTime,
+          endTime: periods.endTime,
+          status: teacherAvailability.status,
+        })
+        .from(teacherAvailability)
+        .innerJoin(periods, eq(periods.id, teacherAvailability.periodId))
+        .where(eq(teacherAvailability.teacherId, teacherId))
+    : [];
+
+  const teacherOtherSchedules = teacherId
+    ? await db
+        .select({
+          classroomId: masterSchedules.classroomId,
+          dayOfWeek: masterSchedules.dayOfWeek,
+          endTime: periods.endTime,
+          groupId: curriculum.groupId,
+          periodId: masterSchedules.periodId,
+          startTime: periods.startTime,
+          subjectId: curriculum.subjectId,
+        })
+        .from(masterSchedules)
+        .innerJoin(curriculum, eq(curriculum.id, masterSchedules.curriculumId))
+        .innerJoin(periods, eq(periods.id, masterSchedules.periodId))
+        .where(
+          and(
+            eq(curriculum.teacherId, teacherId),
+            eq(masterSchedules.isDraft, false),
+          ),
+        )
+    : [];
+
+  const confirmedExamRows = await db
+    .select({
+      classId: examSchedules.classId,
+      endTime: examSchedules.endTime,
+      id: examSchedules.id,
+      roomId: examSchedules.roomId,
+      startTime: examSchedules.startTime,
+      teacherId: curriculum.teacherId,
+    })
+    .from(examSchedules)
+    .leftJoin(curriculum, eq(curriculum.groupId, examSchedules.classId))
+    .where(eq(examSchedules.status, "confirmed"));
+
+  const validationContext: VariantValidationContext = {
+    availableRoomIds: new Set(rooms.map((room) => String(room.id))),
+    classId,
+    confirmedExams: confirmedExamRows
+      .filter((row) => row.id !== examId)
+      .map((row) => ({
+        classId: String(row.classId),
+        endTime: row.endTime instanceof Date ? row.endTime : row.endTime ? new Date(row.endTime as unknown as string) : null,
+        id: String(row.id),
+        roomId: row.roomId ? String(row.roomId) : null,
+        startTime:
+          row.startTime instanceof Date
+            ? row.startTime
+            : new Date(row.startTime as unknown as string),
+        teacherId: row.teacherId ? String(row.teacherId) : null,
+      }))
+      .filter((row) => !Number.isNaN(row.startTime.getTime())),
+    examDurationMinutes,
+    periods: allPeriods.map((row) => ({
+      id: Number(row.id),
+      startTime: String(row.startTime),
+      endTime: String(row.endTime),
+      periodNumber: Number(row.periodNumber),
+    })),
+    schoolEventBlockers: schoolEventBlockers
+      .map((row) => ({
+        endDate:
+          row.endDate instanceof Date
+            ? row.endDate
+            : new Date(row.endDate as unknown as string),
+        id: String(row.id),
+        repeatPattern: row.repeatPattern ?? null,
+        startDate:
+          row.startDate instanceof Date
+            ? row.startDate
+            : new Date(row.startDate as unknown as string),
+        title: String(row.title ?? "Эвент"),
+      }))
+      .filter(
+        (row) =>
+          !Number.isNaN(row.startDate.getTime()) &&
+          !Number.isNaN(row.endDate.getTime()) &&
+          row.endDate.getTime() > row.startDate.getTime(),
+      ),
+    teacherAvailabilityBusy: teacherAvailabilityRows
+      .filter((row) => String(row.status).toUpperCase() === "BUSY")
+      .map((row) => ({
+        dayOfWeek: Number(row.dayOfWeek),
+        periodId: Number(row.periodId),
+        reason: row.reason ? String(row.reason) : null,
+        startTime: String(row.startTime),
+        endTime: String(row.endTime),
+        status: String(row.status),
+      })),
+    teacherOtherSchedules: teacherOtherSchedules
+      .filter((row) => String(row.groupId) !== classId)
+      .map((row) => ({
+        classroomId: row.classroomId ? String(row.classroomId) : null,
+        dayOfWeek: Number(row.dayOfWeek),
+        endTime: String(row.endTime),
+        groupId: String(row.groupId),
+        periodId: Number(row.periodId),
+        startTime: String(row.startTime),
+        subjectId: row.subjectId ? String(row.subjectId) : null,
+      })),
+    teacherPreferred: teacherAvailabilityRows
+      .filter((row) => String(row.status).toUpperCase() === "PREFERENCE")
+      .map((row) => ({
+        dayOfWeek: Number(row.dayOfWeek),
+        periodId: Number(row.periodId),
+        reason: row.reason ? String(row.reason) : null,
+        startTime: String(row.startTime),
+        endTime: String(row.endTime),
+        status: String(row.status),
+      })),
+    teacherId,
+  };
 
   /** AI алдаа / буруу JSON үед 3 хувилбарыг эвэрүүдээр хадгална. Амжилтгүй бол false. */
   const saveHeuristicFallback = async (failureDetail: string): Promise<boolean> => {
@@ -600,6 +1006,20 @@ async function runScheduler(
     normalized = hard.variants;
     const clampNotes = [...c1.clampNotes, ...hard.notes];
 
+    const validated = sanitizeVariantsAgainstConstraints(
+      normalized,
+      validationContext,
+    );
+    normalized = validated.valid;
+    const validationNotes =
+      validated.rejected.length > 0
+        ? [`[Сервер: зөрчилтэй хувилбар хасагдсан] ${validated.rejected.join("; ")}`]
+        : [];
+
+    if (normalized.length < 2) {
+      return false;
+    }
+
     for (const v of normalized) {
       if (!rooms.some((r) => r.id === v.roomId)) return false;
       if (Number.isNaN(new Date(v.startTime).getTime())) return false;
@@ -610,6 +1030,7 @@ async function runScheduler(
       (clampNotes.length > 0
         ? `[Сервер: доод хязгаар/он тохируулга] ${clampNotes.join("; ")}\n\n`
         : "") +
+      (validationNotes.length > 0 ? `${validationNotes.join("\n")}\n\n` : "") +
       `A — ангийн үндсэн хичээлийн slot; B — хүсэлт үүсгэснээс 1 цагийн дараа; C — сонгосон өдрийн эхний period-ийн эхлэл (UB).`;
 
     const now = new Date().toISOString();
@@ -713,6 +1134,25 @@ async function runScheduler(
 
 ДАВХАРГА 1 — master_schedules (JSON, constraint): ${JSON.stringify(timetable)}
 ANCHOR SLOT-ууд (яг энэ ангийн өөрийн үндсэн хичээлийн slot-ууд): ${JSON.stringify(primaryAnchorSlots)}
+БАГШИЙН ЗАВГҮЙ ЦАГ (teacher_availability BUSY, hard block): ${JSON.stringify(
+    validationContext.teacherAvailabilityBusy,
+  )}
+БАГШИЙН ДУРТАЙ ЦАГ (teacher_availability PREFERENCE, soft signal): ${JSON.stringify(
+    validationContext.teacherPreferred,
+  )}
+БАГШИЙН БУСАД АНГИЙН ХУВААРЬ (teacher other classes, hard block): ${JSON.stringify(
+    validationContext.teacherOtherSchedules,
+  )}
+БАТАЛГААЖСАН ШАЛГАЛТУУД (room/class/teacher conflict шалгана): ${JSON.stringify(
+    validationContext.confirmedExams.map((row) => ({
+      id: row.id,
+      classId: row.classId,
+      roomId: row.roomId,
+      startTime: row.startTime.toISOString(),
+      endTime: row.endTime?.toISOString() ?? null,
+      teacherId: row.teacherId,
+    })),
+  )}
 ДАВХАРГА 3 — school_events blockers (JSON): ${JSON.stringify(schoolEventBlockers)}
 Periods (JSON): ${JSON.stringify(allPeriods)}
 Боломжит танхимууд (JSON): ${JSON.stringify(rooms)}
@@ -726,9 +1166,14 @@ Periods (JSON): ${JSON.stringify(allPeriods)}
 6. ЗААВАЛ: 3 хувилбарын дор хаяж 1 нь ANCHOR SLOT-уудын НЭГ дээр яг таарсан байх ёстой.
 7. Ялангуяа Variant A-г ANCHOR SLOT дээр тавь. Өөрөөр хэлбэл Variant A-ийн periodId / startTime нь дээрх anchor slot-ийн аль нэгтэй таарах ёстой.
 8. Үлдсэн Variant B/C нь anchor slot байж болно, эсвэл өөр оновчтой хувилбар байж болно.
+8.1. Тухайн ангийн өөрийн ХИЧЭЭЛИЙН ӨРӨӨ болон өөрийн ХИЧЭЭЛИЙН ЦАГ дээр шалгалт авах нь ЗӨВШӨӨРӨГДӨНӨ, боломжтой бол үүнийг давуу сонго.
 9. startTime нь ДЭЭРХ ДООД ХЯЗГААРААС (${scheduleFloorIso}) ӨМНӨ байж БОЛОХГҮЙ. Долоо хоногийн Даваагаас автоматаар бүү эхлэ — зөвхөн энэ доод хязгаараас хойш slot сонго.
 10. startTime нь ЗААВАЛ ${preferredYear} он дотор байх ёстой. 2024/2025 гэх мэт өөр он руу БИТГИЙ төлөвлө.
 11. Хэрэв эргэлзээтэй бол доод хязгаартай хамгийн ойр, түүнээс хойших боломжит slot-уудыг сонго.
+12. teacher_availability.status = "BUSY" мөрүүдтэй давхцахыг ХАТУУ ХОРИГЛО.
+13. Багшийн бусад ангийн үндсэн хичээлтэй давхцахыг ХАТУУ ХОРИГЛО.
+14. Баталгаажсан шалгалтын room/class/teacher overlap-оос ХАТУУ зайлсхий.
+15. teacher_availability.status = "PREFERENCE" байвал тэдгээрийг боломжит хувилбаруудад давуу үз.
 
 Хариултыг ЗӨВХӨН нэг JSON объектоор:
 {
@@ -953,14 +1398,49 @@ ${JSON.stringify(parsedRoot).slice(0, 12000)}`;
     }
   }
 
+  const validated = sanitizeVariantsAgainstConstraints(
+    normalized,
+    validationContext,
+  );
+  normalized = validated.valid;
+  if (normalized.length < 2) {
+    if (
+      await saveHeuristicFallback(
+        `AI санал серверийн conflict шалгалтаар унасан: ${validated.rejected.join("; ")}`,
+      )
+    )
+      return;
+    const now = new Date().toISOString();
+    await db
+      .update(examSchedules)
+      .set({
+        status: "failed",
+        aiReasoning: `AI санал серверийн conflict шалгалтаар унасан: ${validated.rejected.join("; ")}`.slice(
+          0,
+          4000,
+        ),
+        updatedAt: now,
+      })
+      .where(eq(examSchedules.id, examId));
+    return;
+  }
+
   const summaryBase =
     typeof parsedRoot.summary === "string"
       ? parsedRoot.summary.slice(0, 4000)
       : "AI 3 хувилбар санал болголоо. Багш нэгийг сонгож батална.";
   const summary =
-    clampNotesForSummary.length > 0
-      ? `[Сервер: доод хязгаар/он тохируулга] ${clampNotesForSummary.join("; ")}\n\n${summaryBase}`
-      : summaryBase;
+    [
+      clampNotesForSummary.length > 0
+        ? `[Сервер: доод хязгаар/он тохируулга] ${clampNotesForSummary.join("; ")}`
+        : null,
+      validated.rejected.length > 0
+        ? `[Сервер: зөрчилтэй хувилбар хасагдсан] ${validated.rejected.join("; ")}`
+        : null,
+      summaryBase,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
 
   const now = new Date().toISOString();
 

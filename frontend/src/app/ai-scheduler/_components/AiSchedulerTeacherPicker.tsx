@@ -16,15 +16,46 @@ import { toast } from "sonner";
 
 const TEACHER_SELECTION_STORAGE_KEY = "ai-scheduler-teacher:selectedTeacherId";
 
+const DEPARTMENT_LABELS: Record<string, string> = {
+  FOREIGN_LANG: "Гадаад хэл",
+  IT: "Мэдээлэл зүй",
+  MATH: "Математик",
+  SCIENCE: "Байгалийн ухаан",
+};
+
+const TEACHING_LEVEL_LABELS: Record<string, string> = {
+  ALL: "Бүх түвшин",
+  ELEM: "Бага",
+  HIGH: "Ахлах",
+  MIDDLE: "Дунд",
+};
+
 function teacherDisplayName(t: Teacher): string {
   const short = t.shortName?.trim();
   if (short) return short;
   return `${t.lastName ?? ""} ${t.firstName ?? ""}`.trim() || t.id;
 }
 
+function localizeDepartment(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  return DEPARTMENT_LABELS[trimmed] ?? trimmed;
+}
+
+function localizeTeachingLevel(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+
+  return trimmed
+    .split(",")
+    .map((part) => TEACHING_LEVEL_LABELS[part.trim()] ?? part.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
 function teacherRoleNote(t: Teacher): string {
-  const dept = t.department?.trim();
-  const lvl = t.teachingLevel?.trim();
+  const dept = localizeDepartment(t.department);
+  const lvl = localizeTeachingLevel(t.teachingLevel);
   if (dept && lvl) return `${dept} · ${lvl}`;
   return dept || lvl || "";
 }

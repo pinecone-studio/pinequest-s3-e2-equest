@@ -17,4 +17,4 @@ max_batch_size = 1
 max_batch_timeout = 2
 
 [vars]
-GEMINI_MODEL = "gemini-flash-latest"
+GEMINI_MODEL = "gemini-2.5-flash"

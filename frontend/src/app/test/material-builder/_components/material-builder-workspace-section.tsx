@@ -130,6 +130,8 @@ const mathAssistFieldContentClassName =
   "pl-3 font-sans text-[14px] leading-[1.6] font-normal tracking-normal text-slate-800 [&_.katex]:text-inherit";
 const DOCX_MIME_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const DOC_IMPORT_ACCEPT =
+  ".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const acceptedImportFormats = ".pdf,.doc,.docx,.txt,.md,.xls,.xlsx";
 
 function normalizeGeneratedExplanationText(value: string) {
@@ -210,36 +212,6 @@ function resolvePreviewQuestionSourceType(
   return "shared-library";
 }
 
-type ImportedDocument = {
-  fileName: string;
-  questions: PreviewQuestion[];
-  selectedIds: string[];
-};
-
-function summarizeImportFileNames(files: File[]) {
-  if (files.length === 0) {
-    return "attachment";
-  }
-
-  if (files.length === 1) {
-    return files[0]?.name ?? "attachment";
-  }
-
-  return `${files[0]?.name ?? "attachment"} +${files.length - 1} файл`;
-}
-
-function shouldUseFastImport(files: File[]) {
-  return files.every((file) => {
-    const fileName = file.name.toLowerCase();
-
-    return (
-      file.type === DOCX_MIME_TYPE ||
-      file.type.startsWith("text/") ||
-      /\.(docx|txt|md|markdown|csv|json)$/i.test(fileName)
-    );
-  });
-}
-
 function sanitizeImportedText(value?: string | null) {
   return String(value ?? "")
     .replace(/^q\s*\d+\s*[\.:]?\s*/i, "")
@@ -253,58 +225,6 @@ function sanitizeImportedText(value?: string | null) {
     .replace(/\$/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
-}
-
-function buildImportedQuestions(
-  exam: Awaited<ReturnType<typeof requestExtractedExam>>,
-  sourceName: string,
-): PreviewQuestion[] {
-  const rawQuestions = Array.isArray(exam.questions) ? exam.questions : [];
-
-  return rawQuestions.reduce<PreviewQuestion[]>((result, question, index) => {
-    const prompt = sanitizeImportedText(question.prompt);
-
-    if (!prompt.trim()) {
-      return result;
-    }
-
-    const options = (question.options ?? [])
-      .map((option) => sanitizeImportedText(option))
-      .filter(Boolean)
-      .slice(0, 6);
-    const writtenAnswer =
-      sanitizeImportedText(question.answerLatex) ||
-      sanitizeImportedText(question.responseGuide) ||
-      "";
-    const baseOptions =
-      options.length > 0 ? options : writtenAnswer ? [writtenAnswer] : [];
-    const normalizedOptions =
-      baseOptions.length >= 4
-        ? baseOptions
-        : [...baseOptions, ...Array(4 - baseOptions.length).fill("")];
-
-    const correct =
-      typeof question.correctOption === "number" &&
-      question.correctOption >= 0 &&
-      question.correctOption < normalizedOptions.length
-        ? question.correctOption
-        : 0;
-
-    result.push({
-      id: `import-${Date.now()}-${index + 1}`,
-      index: index + 1,
-      question: prompt,
-      answers: normalizedOptions,
-      correct,
-      explanation: sanitizeImportedText(question.responseGuide) || undefined,
-      points: question.points ?? 1,
-      questionType: "single-choice",
-      source: sourceName,
-      sourceType: "import",
-    });
-
-    return result;
-  }, []);
 }
 
 type QueuedTextbookImport = {
@@ -326,11 +246,6 @@ type ImportedDocument = {
   questions: ImportedQuestion[];
   selectedIds: string[];
 };
-
-const DOCX_MIME_TYPE =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const DOC_IMPORT_ACCEPT =
-  ".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 function isDocImportFile(file: File) {
   const fileName = file.name.toLowerCase();

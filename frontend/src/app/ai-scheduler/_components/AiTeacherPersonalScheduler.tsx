@@ -279,6 +279,11 @@ const TEACHING_LEVEL_LABELS: Record<string, string> = {
   ALL: "Бүх түвшин",
 };
 
+const ROOM_LABELS: Record<string, string> = {
+  ACT: "Урлаг заал (Актовый зал)",
+  CLOAK_1: "Өлгүүр 1",
+};
+
 function teacherDepartmentLabel(value?: string | null) {
   const key = String(value ?? "")
     .trim()
@@ -291,6 +296,13 @@ function teacherTeachingLevelLabel(value?: string | null) {
     .trim()
     .toUpperCase();
   return TEACHING_LEVEL_LABELS[key] ?? value ?? "Түвшин";
+}
+
+function roomDisplayLabel(value?: string | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const key = raw.toUpperCase();
+  return ROOM_LABELS[key] ?? raw;
 }
 
 function parseClockHHMM(s: string): { h: number; m: number } | null {
@@ -527,6 +539,110 @@ function formatVariantWhen(iso: string) {
   }
 }
 
+function formatClockRangeOnly(
+  startHour: number,
+  startMinute: number,
+  endHour: number,
+  endMinute: number,
+) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(startHour)}:${pad(startMinute)}–${pad(endHour)}:${pad(endMinute)}`;
+}
+
+function formatAiVariantLabel(label: string) {
+  const trimmed = label.trim();
+  if (!trimmed) return "Хувилбар";
+  const match = trimmed.match(/^(Хувилбар\s*[A-ZА-Я])/u);
+  if (match) {
+    return match[1];
+  }
+  return trimmed;
+}
+
+function formatAiVariantWhy(reason: string | null | undefined) {
+  const trimmed = String(reason ?? "").trim();
+  if (!trimmed) {
+    return "Энэ ангийн хуваарь, боломжит өрөө, сонгосон өдөртэй тулгаж санал болгосон.";
+  }
+
+  const normalizeReasonDates = (value: string) =>
+    value.replace(
+      /\b(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d{1,3})?)?\s*UB-аас хойш/gu,
+      (_full, datePart: string, timePart: string) =>
+        `${datePart} ${timePart} (УБ)-аас хойш`,
+    );
+
+  return normalizeReasonDates(trimmed)
+    .replace(/^Серверийн эвэр:\s*/iu, "")
+    .replace(/^AI\s*[—:-]\s*/iu, "")
+    .replace(
+      /Хамгийн эрт боломжит цаг\s*\(preferredDate-д хамгийн ойр\)/giu,
+      "Сонгосон өдөрт хамгийн ойр боломжит цаг",
+    )
+    .replace(
+      /\bpreferredDate\b/giu,
+      "сонгосон өдөр",
+    )
+    .replace(
+      /\bstartTime\b/giu,
+      "эхлэх цаг",
+    )
+    .replace(
+      /\broomId\b/giu,
+      "өрөө",
+    )
+    .replace(
+      /\bperiodId\b/giu,
+      "цагийн үе",
+    )
+    .replace(
+      /\banchor slot\b/giu,
+      "үндсэн хичээлийн цаг",
+    )
+    .replace(
+      /\bteacher availability\b/giu,
+      "багшийн боломжит цаг",
+    )
+    .replace(
+      /\bmaster_schedules\b/giu,
+      "үндсэн хуваарь",
+    )
+    .replace(
+      /\bexam_schedules\b/giu,
+      "шалгалтын хуваарь",
+    )
+    .replace(
+      /\bperiod\.start_time\b/giu,
+      "цагийн эхлэх мөч",
+    )
+    .replace(
+      /тухайн ангийн anchor slot \(master_schedules\)\.?/giu,
+      "Тухайн ангийн үндсэн хичээлийн хуваарьтай тааруулж санал болгосон.",
+    )
+    .replace(
+      /exam_schedules\.created_at \+ 1 цаг\.?/giu,
+      "Таны товлох хүсэлт үүссэн мөчөөс хойших хамгийн ойрын боломжит цонх руу ойртуулж санал болгосон.",
+    )
+    .replace(
+      /сонгосон өдрийн хамгийн эрт period\.start_time \(UB\)\.?/giu,
+      "Сонгосон өдрийн хамгийн эрт боломжит цагийн үеэс тооцоолж санал болгосон.",
+    )
+    .replace(
+      /Тухайн ангийн үндсэн хичээлийн slot дээр суурилуулсан anchor хувилбар\.?/giu,
+      "Тухайн ангийн үндсэн хичээлийн тогтмол цаг дээр тулгуурлан санал болгосон.",
+    )
+    .replace(
+      /\[Сервер: зөрчилтэй хувилбар хасагдсан\]\s*/giu,
+      "Зөрчилтэй хувилбаруудыг сервер талд шүүж хассан. ",
+    )
+    .replace(
+      /\[Сервер: доод хязгаар\/он тохируулга\]\s*/giu,
+      "Сонгосон өдөр болон хичээлийн жилийн хүрээнд автоматаар тохируулсан. ",
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function parseStart(iso: string | null | undefined) {
   if (!iso) return null;
   try {
@@ -535,6 +651,10 @@ function parseStart(iso: string | null | undefined) {
   } catch {
     return null;
   }
+}
+
+function datesOverlap(startA: Date, endA: Date, startB: Date, endB: Date) {
+  return startA.getTime() < endB.getTime() && endA.getTime() > startB.getTime();
 }
 
 type AiVariantCalendarLayout = {
@@ -807,10 +927,11 @@ function userFacingAiSchedulerReasoning(
     /service unavailable/i.test(s) ||
     /high demand/i.test(s) ||
     s.includes("429") ||
-    /resource exhausted/i.test(s) ||
-    s.includes("generateContent")
+    /resource exhausted/i.test(s)
   ) {
-    return "AI үйлчилгээ түр ачаалалтай байна. Түр хүлээгээд дахин «Товлох» дарна уу.";
+    const techIdx = s.search(/Техникийн дэлгэрэнгүй:/i);
+    const head = techIdx !== -1 ? s.slice(0, techIdx).trim() : "";
+    return head || "Хуваарь товлоход алдаа гарлаа. Дахин оролдоно уу.";
   }
   const techIdx = s.search(/Техникийн дэлгэрэнгүй:/i);
   if (techIdx !== -1) {
@@ -894,82 +1015,88 @@ export function AiTeacherPersonalScheduler({
 
   useEffect(() => {
     if (!pollExamId) {
+      if (aiProgressToastIdRef.current != null) {
+        toast.dismiss(aiProgressToastIdRef.current);
+      }
       aiProgressToastIdRef.current = null;
       aiProgressStepRef.current = 0;
       setAiProgressStep(0);
       return;
     }
 
-    // Step-by-step toast while polling (simulated progress).
+    const renderToastContent = (id: string | number) => {
+      const stepIdx = Math.max(0, Math.min(2, aiProgressStepRef.current));
+      return (
+        <div className="w-[min(92vw,26rem)] rounded-2xl border border-blue-100 bg-white px-4 py-3 font-sans shadow-lg shadow-blue-100/40 dark:border-blue-500/20 dark:bg-zinc-900 dark:shadow-black/30">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                AI Тооцоолол: [Step {stepIdx + 1}/3]
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                {AI_TOAST_STEPS[stepIdx]?.title ?? "Тооцоолж байна..."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => toast.dismiss(id)}
+              className="shrink-0 rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:text-zinc-500 dark:hover:text-zinc-200"
+              aria-label="Мэдэгдэл хаах"
+            >
+              <X className="size-4" strokeWidth={2} aria-hidden />
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {AI_TOAST_STEPS.map((s, i) => {
+              const done = i < stepIdx;
+              const active = i === stepIdx;
+              return (
+                <div key={s.title} className="flex items-center gap-2">
+                  {done ? (
+                    <CheckCircle2
+                      className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                      aria-hidden
+                    />
+                  ) : active ? (
+                    <span className="inline-flex size-4 shrink-0 items-center justify-center">
+                      <span className="inline-block size-2.5 rounded-full bg-blue-500 animate-pulse dark:bg-blue-400" />
+                    </span>
+                  ) : (
+                    <span className="inline-flex size-4 shrink-0 items-center justify-center">
+                      <span className="inline-block size-2.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      "text-[11px] leading-snug",
+                      done
+                        ? "text-emerald-700 dark:text-emerald-300"
+                        : active
+                          ? "text-zinc-800 dark:text-zinc-100"
+                          : "text-zinc-500 dark:text-zinc-400",
+                    )}
+                  >
+                    {s.title}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    };
+
     const toastId =
       aiProgressToastIdRef.current ??
-      toast.custom(() => <div />, { duration: Infinity });
+      toast.custom((id) => renderToastContent(id), { duration: Infinity });
     aiProgressToastIdRef.current = toastId;
 
     const render = () => {
-      const stepIdx = Math.max(0, Math.min(2, aiProgressStepRef.current));
-      toast.custom(
-        (id) => (
-          <div className="w-[min(92vw,26rem)] rounded-2xl border border-blue-100 bg-white px-4 py-3 font-sans shadow-lg shadow-blue-100/40 dark:border-blue-500/20 dark:bg-zinc-900 dark:shadow-black/30">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                  AI Тооцоолол: [Step {stepIdx + 1}/3]
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                  {AI_TOAST_STEPS[stepIdx]?.title ?? "Тооцоолж байна..."}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => toast.dismiss(id)}
-                className="shrink-0 rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:text-zinc-500 dark:hover:text-zinc-200"
-                aria-label="Мэдэгдэл хаах"
-              >
-                <X className="size-4" strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-2">
-              {AI_TOAST_STEPS.map((s, i) => {
-                const done = i < stepIdx;
-                const active = i === stepIdx;
-                return (
-                  <div key={s.title} className="flex items-center gap-2">
-                    {done ? (
-                      <CheckCircle2
-                        className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                        aria-hidden
-                      />
-                    ) : active ? (
-                      <span className="inline-flex size-4 shrink-0 items-center justify-center">
-                        <span className="inline-block size-2.5 rounded-full bg-blue-500 animate-pulse dark:bg-blue-400" />
-                      </span>
-                    ) : (
-                      <span className="inline-flex size-4 shrink-0 items-center justify-center">
-                        <span className="inline-block size-2.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
-                      </span>
-                    )}
-                    <span
-                      className={cn(
-                        "text-[11px] leading-snug",
-                        done
-                          ? "text-emerald-700 dark:text-emerald-300"
-                          : active
-                            ? "text-zinc-800 dark:text-zinc-100"
-                            : "text-zinc-500 dark:text-zinc-400",
-                      )}
-                    >
-                      {s.title}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ),
-        { id: toastId, duration: Infinity },
-      );
+      toast.custom((id) => renderToastContent(id), {
+        id: toastId,
+        duration: Infinity,
+      });
     };
 
     render();
@@ -1125,7 +1252,14 @@ export function AiTeacherPersonalScheduler({
     setTestId((prev) => {
       const trimmed = prev.trim();
       if (trimmed && opts.some((o) => o.examId === trimmed)) return prev;
-      return opts[0].examId;
+      return "";
+    });
+    setPickedExamTitle((prev) => {
+      if (!prev.trim()) {
+        return "";
+      }
+      const stillExists = opts.some((o) => o.title?.trim() === prev.trim());
+      return stillExists ? prev : "";
     });
   }, [examTemplateLoading, examTemplateOptions]);
 
@@ -1681,25 +1815,6 @@ export function AiTeacherPersonalScheduler({
       }
     }
 
-    /** Mock: энэ 7 хоногийн баасан (5-р өдөр) 14:00–16:00 сурагчдын зөвлөлийн хурал */
-    const friday = addDays(ws, 4);
-    const mockCouncilStart = new Date(friday);
-    mockCouncilStart.setHours(14, 0, 0, 0);
-    const mockCouncilEnd = new Date(friday);
-    mockCouncilEnd.setHours(16, 0, 0, 0);
-    if (
-      mockCouncilStart.getTime() < we.getTime() &&
-      mockCouncilEnd.getTime() > ws.getTime()
-    ) {
-      out.push({
-        id: "mock-student-council-friday",
-        title: "Сурагчдын зөвлөлийн хурал",
-        startAt: mockCouncilStart.toISOString(),
-        endAt: mockCouncilEnd.toISOString(),
-        allDay: false,
-      });
-    }
-
     return out;
   }, [teacherSchoolEventData?.getSchoolEvents, weekStart]);
 
@@ -1718,6 +1833,35 @@ export function AiTeacherPersonalScheduler({
   const suggested = liveSchedule?.status === "suggested";
   const showJob =
     liveSchedule && liveSchedule.id === lastQueuedExamId ? liveSchedule : null;
+  const aiVariantSchoolEventWarnings = useMemo(() => {
+    const out = new Map<string, string[]>();
+    if (!showJob?.aiVariants?.length) {
+      return out;
+    }
+
+    for (const variant of showJob.aiVariants) {
+      const startAt = parseStart(variant.startTime);
+      if (!startAt) continue;
+      const endAt = new Date(
+        startAt.getTime() + selectedExamDurationMinutes * 60 * 1000,
+      );
+      const overlaps = teacherSchoolCalendarEvents
+        .filter((event) => {
+          const eventStart = parseStart(event.startAt);
+          const eventEnd = parseStart(event.endAt);
+          if (!eventStart || !eventEnd) return false;
+          return datesOverlap(startAt, endAt, eventStart, eventEnd);
+        })
+        .map((event) => event.title.trim())
+        .filter(Boolean);
+
+      if (overlaps.length > 0) {
+        out.set(variant.id, overlaps);
+      }
+    }
+
+    return out;
+  }, [showJob, selectedExamDurationMinutes, teacherSchoolCalendarEvents]);
   const confirmedExamSchedules = useMemo(() => {
     const persisted =
       confirmedSchedulesData?.listTeacherConfirmedExamSchedules ?? [];
@@ -1988,22 +2132,22 @@ export function AiTeacherPersonalScheduler({
           <aside
             id="scheduler-calendar-sidebar"
             className={cn(
-              "shrink-0 overflow-hidden  bg-white/50 transition-[width] duration-300 ease-in-out will-change-[width] xl:bg-white/40 dark:bg-zinc-950/60 xl:dark:bg-zinc-950/50",
+              "shrink-0 overflow-hidden bg-white/50 transition-[width,max-width] duration-300 ease-in-out will-change-[width] xl:bg-white/40 dark:bg-zinc-950/60 xl:dark:bg-zinc-950/50",
               calendarSidebarOpen
                 ? shellMode
-                  ? "w-[min(100vw,272px)] sm:w-[272px]"
-                  : "w-[min(calc(100vw-68px),272px)] sm:w-[272px]"
-                : "w-0 min-w-0 ",
+                  ? "w-[min(100vw,272px)] max-w-[min(100vw,272px)] sm:w-[272px] sm:max-w-[272px]"
+                  : "w-[min(calc(100vw-68px),272px)] max-w-[min(calc(100vw-68px),272px)] sm:w-[272px] sm:max-w-[272px]"
+                : "w-0 min-w-0 max-w-0",
             )}
           >
             <div
               className={cn(
-                "flex h-full w-full max-w-[272px] flex-col gap-4 overflow-y-auto bg-[#F1F4FA] p-4 py-8",
+                "flex h-full max-w-[272px] flex-col gap-4 overflow-y-auto bg-[#F1F4FA] transition-[opacity,transform,padding] duration-300 ease-in-out",
                 calendarSidebarOpen
                   ? shellMode
-                    ? "min-w-[min(100vw,272px)] sm:min-w-[272px]"
-                    : "min-w-[min(calc(100vw-68px),272px)] sm:min-w-[272px]"
-                  : "min-w-0 overflow-hidden",
+                    ? "w-[min(100vw,272px)] translate-x-0 px-4 py-8 opacity-100 sm:w-[272px]"
+                    : "w-[min(calc(100vw-68px),272px)] translate-x-0 px-4 py-8 opacity-100 sm:w-[272px]"
+                  : "pointer-events-none w-0 translate-x-2 overflow-hidden px-0 py-0 opacity-0",
               )}
             >
               <div className="flex justify-center rounded-xl bg-white p-2 dark:bg-zinc-900">
@@ -2031,7 +2175,6 @@ export function AiTeacherPersonalScheduler({
                 {CALENDAR_LAYERS.filter((x) => x.id !== "conflict").map(
                   (layer) => {
                     const on = layerOn[layer.id];
-                    const constraintKind = CALENDAR_LAYER_CONSTRAINT[layer.id];
                     return (
                       <button
                         key={layer.id}
@@ -2496,16 +2639,20 @@ export function AiTeacherPersonalScheduler({
                                       minHeight: "52px",
                                     }}
                                   >
-                                    {v.label}
+                                    {formatAiVariantLabel(v.label)}
                                     <span className="mt-0.5 block font-normal text-violet-700 dark:text-violet-300">
-                                      {formatBlockDuration(
+                                      {formatClockRangeOnly(
                                         startAt.getHours(),
                                         startAt.getMinutes(),
                                         endAt.getHours(),
                                         endAt.getMinutes(),
                                       )}
-                                      {v.roomId ? ` · Өрөө ${v.roomId}` : ""}
                                     </span>
+                                    {v.roomId ? (
+                                      <span className="mt-0.5 block font-normal text-violet-700 dark:text-violet-300">
+                                        Өрөө {roomDisplayLabel(v.roomId)}
+                                      </span>
+                                    ) : null}
                                   </div>
                                 );
                               })}
@@ -2519,7 +2666,7 @@ export function AiTeacherPersonalScheduler({
                                   <div
                                     key={`confirmed-exam-${row.id}`}
                                     className={cn(
-                                      "absolute left-1 right-1 rounded-xl border px-2 py-1.5 text-[10px] font-medium leading-tight shadow-sm",
+                                      "absolute left-1 right-1 z-20 rounded-xl border px-2 py-1.5 text-[10px] font-medium leading-tight shadow-sm",
                                       "border-indigo-200 bg-indigo-50 text-indigo-950 dark:border-indigo-700/60 dark:bg-indigo-950/35 dark:text-indigo-50",
                                     )}
                                     style={{
@@ -2533,21 +2680,22 @@ export function AiTeacherPersonalScheduler({
                                       minHeight: "56px",
                                     }}
                                   >
-                                    Баталгаажсан шалгалт
+                                    <span className="block text-[10px] font-semibold text-indigo-950 dark:text-indigo-50">
+                                      Анги {row.classId}
+                                    </span>
                                     <span className="mt-0.5 block font-normal text-indigo-700 dark:text-indigo-200">
-                                      {formatBlockDuration(
+                                      {formatClockRangeOnly(
                                         row.startAt.getHours(),
                                         row.startAt.getMinutes(),
                                         row.endAt.getHours(),
                                         row.endAt.getMinutes(),
                                       )}
-                                      {row.roomId
-                                        ? ` · Өрөө ${row.roomId}`
-                                        : ""}
                                     </span>
-                                    <span className="mt-0.5 block text-[9px] font-normal text-indigo-600/90 dark:text-indigo-200/70">
-                                      {row.classId} · Баталгаажсан
-                                    </span>
+                                    {row.roomId ? (
+                                      <span className="mt-0.5 block font-normal text-indigo-700 dark:text-indigo-200">
+                                        Өрөө {roomDisplayLabel(row.roomId)}
+                                      </span>
+                                    ) : null}
                                   </div>
                                 ))
                             : null}
@@ -2805,7 +2953,9 @@ export function AiTeacherPersonalScheduler({
                               </ul>
                             </div>
                           ) : null}
-                          {showJob.aiReasoning ? (
+                          {showJob.aiReasoning &&
+                          (showJob.status === "failed" ||
+                            showJob.status === "rejected") ? (
                             <p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
                               {userFacingAiSchedulerReasoning(
                                 showJob.aiReasoning,
@@ -2828,14 +2978,32 @@ export function AiTeacherPersonalScheduler({
                             >
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                  {v.label}
+                                  {formatAiVariantLabel(v.label)}
                                 </p>
                                 <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
                                   {formatVariantWhen(v.startTime)}
+                                  {v.roomId
+                                    ? ` · Өрөө ${roomDisplayLabel(v.roomId)}`
+                                    : ""}
                                 </p>
-                                {v.reason ? (
-                                  <p className="mt-1 text-[11px] leading-snug text-zinc-700 dark:text-zinc-300">
-                                    {v.reason}
+                                <p className="mt-1 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+                                  <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                                    Яагаад:
+                                  </span>{" "}
+                                  {formatAiVariantWhy(v.reason)}
+                                </p>
+                                {aiVariantSchoolEventWarnings.has(v.id) ? (
+                                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-100">
+                                    <span className="font-semibold">
+                                      Анхааруулга:
+                                    </span>{" "}
+                                    Энэ хувилбар сургуулийн эвенттэй давхцаж
+                                    байна:{" "}
+                                    {aiVariantSchoolEventWarnings
+                                      .get(v.id)
+                                      ?.join(", ")}
+                                    . Хэрэв баталбал батлагдсан шалгалт нь
+                                    calendar дээр эвентийн дээр харагдана.
                                   </p>
                                 ) : null}
                               </div>

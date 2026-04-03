@@ -19,13 +19,19 @@ export function normalizePreviewMathText(raw: string): string {
 }
 
 export function normalizeBackendMathText(raw: string): string {
-  const normalizedRaw = normalizeSystemSeparators(raw);
+  const normalizedRaw = normalizeBrokenMathSpacing(
+    normalizeSystemSeparators(raw),
+  );
 
   if (containsExplicitMathDelimiters(normalizedRaw)) {
-    return normalizeBackendDelimitedMathText(normalizedRaw);
+    return normalizeCommonMathSyntax(
+      normalizeBackendDelimitedMathText(normalizedRaw),
+    );
   }
 
-  return restoreInlineMathDelimiters(normalizeBackendLatexArtifacts(normalizedRaw));
+  return restoreInlineMathDelimiters(
+    normalizeCommonMathSyntax(normalizeBackendLatexArtifacts(normalizedRaw)),
+  );
 }
 
 /**
@@ -128,7 +134,8 @@ function normalizeBackendLatexArtifacts(raw: string): string {
   // Seen examples: "\\$cdot" -> "\\cdot", "\\$right" -> "\\right"
   let next = raw
     .replace(/\\\$(?=[A-Za-z])/g, "\\")
-    .replace(/\\\$(?=\{)/g, "\\");
+    .replace(/\\\$(?=\{)/g, "\\")
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "");
 
   // 2) Fix double escaping before LaTeX commands: "\\\\sqrt" -> "\\sqrt"
   // Keep literal linebreaks ("\\\\") intact by only touching when a command follows.
@@ -139,6 +146,15 @@ function normalizeBackendLatexArtifacts(raw: string): string {
 
   // 4) Convert common inline spacing commands that should not surface in plain text.
   next = next.replace(/\\,/g, ", ");
+
+  // 4.1) Repair broken degree notations that were split by HTML/OCR formatting.
+  next = next
+    .replace(/(\d+)\s*\^\s*(?:\{?\s*[∘°]\s*\}?)/gu, "$1^\\circ")
+    .replace(/(\d+)\s*(?:[∘°])/gu, "$1^\\circ")
+    .replace(/\^\s*\\circ/gu, "^\\circ");
+
+  // 4.2) Add a separator when two prompts were concatenated without whitespace.
+  next = next.replace(/([?!.])(?=[А-Яа-яӨөҮүЁё])/gu, "$1 ");
 
   // 5) Strip ALL remaining dollars. Our app stores delimiter-free text in DB, and
   // incoming backend text frequently contains stray '$' artifacts.
@@ -151,13 +167,44 @@ function normalizeCommonMathSyntax(value: string): string {
   if (!value) return value;
 
   return value
+    .replace(/\s*\^\s*\\circ/gu, "^\\circ")
+    .replace(/\\left\s+([\{\[\(\|])/g, "\\left$1")
+    .replace(/\\right\s+([\}\]\)\|])/g, "\\right$1")
     .replace(/\\left\{/g, "\\left(")
     .replace(/\\right\}/g, "\\right)")
+    .replace(/([|∣])\s+([A-Za-z0-9\\])/g, "$1$2")
+    .replace(/([A-Za-z0-9\\])\s+([|∣])/g, "$1$2")
+    .replace(/(\d)\s+([A-Za-z])/g, "$1$2")
+    .replace(/([A-Za-z])\s+(\d)/g, "$1$2")
+    .replace(
+      /(^|[\s{[(,])(-?)\s*(\d+)\s+(\d+)\s+\4\s+\3(?=$|[\s}\]),.;:])/g,
+      (_full, prefix: string, sign: string, numerator: string, denominator: string) =>
+        `${prefix}${sign}\\frac{${numerator}}{${denominator}}`,
+    )
     .replace(
       /(^|[=+\-*/,(]\s*)(\d+)\s+(\d+)\/(\d+)(?=(?:\s|[+)=,.;:]|\\right|$))/g,
       (_full, prefix: string, whole: string, numerator: string, denominator: string) =>
         `${prefix}${whole}\\frac{${numerator}}{${denominator}}`,
     );
+}
+
+function normalizeBrokenMathSpacing(raw: string): string {
+  if (!raw) return raw;
+
+  return raw
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(/\u000B/g, " ")
+    .replace(/([\\{}()[\]|∣=+\-−*/,:;<>^])\s*[\r\n]+\s*/g, "$1")
+    .replace(/\s*[\r\n]+\s*([\\{}()[\]|∣=+\-−*/,:;<>^])/g, "$1")
+    .replace(/(-?)\s*(\d)\s*[\r\n]+\s*(\d)\s*[\r\n]+\s*\3\s*[\r\n]+\s*\2/g, "$1$2 $3 $3 $2")
+    .replace(/(\\[A-Za-z]+)\s+([\[{(|])/g, "$1$2")
+    .replace(/([\])}|])\s+(\\[A-Za-z]+)/g, "$1$2")
+    .replace(/(\d)\s+([A-Za-z])/g, "$1$2")
+    .replace(/([A-Za-z])\s+(\d)/g, "$1$2")
+    .replace(/([|∣])\s+/g, "$1")
+    .replace(/\s+([|∣])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function restoreInlineMathDelimiters(value: string): string {
@@ -170,6 +217,14 @@ function restoreInlineMathDelimiters(value: string): string {
   );
   if (withWrappedEnvironments !== value) {
     return withWrappedEnvironments;
+  }
+
+  const withWrappedDegreeExpressions = value.replace(
+    /(\d+\^\\circ(?:\s*[,;]\s*\d+\^\\circ)+|\d+\^\\circ)/g,
+    (full) => `$${full.trim()}$`,
+  );
+  if (withWrappedDegreeExpressions !== value) {
+    return wrapTrailingLatexRuns(withWrappedDegreeExpressions);
   }
 
   // Wrap obvious LaTeX commands inline.

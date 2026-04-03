@@ -23,6 +23,6 @@ max_batch_size = 1
 max_batch_timeout = 2
 
 [vars]
-GEMINI_MODEL = "gemini-flash-latest"
+GEMINI_MODEL = "gemini-2.5-flash"
 # Сонголттой: 503 их гарвал нөөц загвар (wrangler secret биш, vars эсвэл dashboard-аас)
-# GEMINI_MODEL_FALLBACK = "gemini-2.0-flash"
+GEMINI_MODEL_FALLBACK = "gemini-2.0-flash"

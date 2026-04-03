@@ -302,7 +302,7 @@ async function runVariantGeneration(
     throw new Error("GOOGLE_AI_API_KEY эсвэл GEMINI_API_KEY тохируулаагүй.");
   }
 
-  const modelName = env.GEMINI_MODEL?.trim() || "gemini-flash-latest";
+  const modelName = env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
 
   const sourceQuestions =
     questions.length > 0

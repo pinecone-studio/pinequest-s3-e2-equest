@@ -66,6 +66,7 @@ const FILTER_TRIGGER_CLASS =
 type TeacherExamGalleryProps = {
   error?: string | null;
   exams: Exam[];
+  onScheduleExam: (exam: Exam) => void;
   onSelectExam: (exam: Exam) => void;
 };
 
@@ -115,6 +116,7 @@ type PrintJobState = {
 export function TeacherExamGallery({
   error,
   exams,
+  onScheduleExam,
   onSelectExam,
 }: TeacherExamGalleryProps) {
   const client = useApolloClient();
@@ -312,13 +314,13 @@ export function TeacherExamGallery({
       }
 
       if (action === "schedule") {
-        toast.info("Шалгалт товлох action дараагийн алхмаар холбоно.");
+        onScheduleExam(exam);
         return;
       }
 
       setDeleteTargetExam(exam);
     },
-    [handlePrintExam, openExamDialog],
+    [handlePrintExam, onScheduleExam, openExamDialog],
   );
 
   return (

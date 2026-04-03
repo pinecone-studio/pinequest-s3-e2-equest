@@ -670,6 +670,7 @@ export default function ExamMonitoringApp() {
         <TeacherExamGallery
           exams={createdExams}
           error={createdExamsError}
+          onScheduleExam={() => router.push("/test/ai-scheduler")}
           onSelectExam={(exam) =>
             router.push(
               `/test/material-builder?examId=${encodeURIComponent(exam.id)}`,

@@ -79,6 +79,17 @@ export const approveAiExamScheduleMutation = {
 			})
 			.where(eq(examSchedules.id, examId));
 
+		await ctx.db
+			.update(newExams)
+			.set({
+				roomId: chosen.roomId,
+				examDate: start.toISOString().slice(0, 10),
+				startTime: start.toISOString(),
+				endTime: end.toISOString(),
+				updatedAt: now,
+			})
+			.where(eq(newExams.id, row.testId));
+
 		const [updated] = await ctx.db
 			.select()
 			.from(examSchedules)
