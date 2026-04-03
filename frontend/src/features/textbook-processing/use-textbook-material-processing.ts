@@ -221,10 +221,15 @@ function finalizeLocalMaterialDetail(
     return scope;
   };
 
-  const chapterCount = payload.sections.filter((item) => item.nodeType === "chapter").length;
-  const sectionCount = payload.sections.filter((item) => item.nodeType === "section").length;
-  const subchapterCount =
-    payload.sections.filter((item) => item.nodeType === "subchapter").length;
+  const chapterCount = payload.sections.filter(
+    (item) => item.nodeType === "chapter",
+  ).length;
+  const sectionCount = payload.sections.filter(
+    (item) => item.nodeType === "section",
+  ).length;
+  const subchapterCount = payload.sections.filter(
+    (item) => item.nodeType === "subchapter",
+  ).length;
 
   return {
     ...detail,
@@ -253,7 +258,12 @@ function finalizeLocalMaterialDetail(
     ),
     chunks: payload.chunks.map((chunk) => {
       resolveScope(chunk.sectionId);
-      return toStoredChunkRecord(detail.material.id, chunk, now, scopeBySectionId);
+      return toStoredChunkRecord(
+        detail.material.id,
+        chunk,
+        now,
+        scopeBySectionId,
+      );
     }),
   };
 }
@@ -311,8 +321,10 @@ function getUploadFallbackMessage(error: unknown) {
   }
 
   return {
-    status: "R2 upload service түр ажиллахгүй байна. Локал горимоор боловсруулж байна...",
-    toast: "R2 upload service түр ажиллахгүй байна. Локал горимоор үргэлжлүүллээ.",
+    status:
+      "R2 upload service түр ажиллахгүй байна. Локал горимоор боловсруулж байна...",
+    toast:
+      "R2 upload service түр ажиллахгүй байна. Локал горимоор үргэлжлүүллээ.",
   };
 }
 
@@ -335,12 +347,10 @@ export function useTextbookMaterialProcessing({
   subject: MaterialBuilderSubject;
 }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [materialDetail, setMaterialDetail] = useState<TextbookMaterialDetail | null>(
-    null,
-  );
-  const [uploadedAsset, setUploadedAsset] = useState<TextbookUploadedAsset | null>(
-    null,
-  );
+  const [materialDetail, setMaterialDetail] =
+    useState<TextbookMaterialDetail | null>(null);
+  const [uploadedAsset, setUploadedAsset] =
+    useState<TextbookUploadedAsset | null>(null);
   const [r2Candidates, setR2Candidates] = useState<R2TextbookCandidate[]>([]);
   const [selectedR2Key, setSelectedR2Key] = useState("");
   const [r2Error, setR2Error] = useState(remoteTextbookR2UnavailableReason);
@@ -542,7 +552,9 @@ export function useTextbookMaterialProcessing({
     activeJobRef.current = "";
     terminateWorker();
     if (detail.material.status === "ready") {
-      toast.success(options.successMessage || "Сурах бичгийн бүтэц бэлэн боллоо.");
+      toast.success(
+        options.successMessage || "Сурах бичгийн бүтэц бэлэн боллоо.",
+      );
     } else {
       toast.warning(
         detail.material.unsupportedReason ||
@@ -556,17 +568,14 @@ export function useTextbookMaterialProcessing({
     materialId: string,
     localOnly: boolean,
   ) {
-    setTransientStatusMessage("Browser parser гацсан тул сервер parser-р үргэлжлүүлж байна...");
-    const result = await parseTextbookPdfByServer(file);
-    await finalizeProcessedResult(
-      materialId,
-      result.pages,
-      result.payload,
-      {
-        localOnly,
-        successMessage: "Сурах бичгийг fallback parser-р амжилттай боловсруулав.",
-      },
+    setTransientStatusMessage(
+      "Browser parser гацсан тул сервер parser-р үргэлжлүүлж байна...",
     );
+    const result = await parseTextbookPdfByServer(file);
+    await finalizeProcessedResult(materialId, result.pages, result.payload, {
+      localOnly,
+      successMessage: "Сурах бичгийг fallback parser-р амжилттай боловсруулав.",
+    });
   }
 
   async function runWorkerProcessing(
@@ -721,12 +730,9 @@ export function useTextbookMaterialProcessing({
           void (async () => {
             try {
               await saveQueueRef.current;
-              await finalizeProcessedResult(
-                materialId,
-                [],
-                payload,
-                { localOnly },
-              );
+              await finalizeProcessedResult(materialId, [], payload, {
+                localOnly,
+              });
             } catch (error) {
               applyMaterialPatchLocally(materialId, {
                 status: "error",
@@ -876,14 +882,16 @@ export function useTextbookMaterialProcessing({
       return false;
     }
 
-    setTransientStatusMessage("Сурах бичгийн хадгалсан бүтцийг ачаалж байна...");
+    setTransientStatusMessage(
+      "Сурах бичгийн хадгалсан бүтцийг ачаалж байна...",
+    );
 
     try {
-      const structuredDetail = await getTextbookMaterialStructureById(
-        normalizedMaterialId,
-      );
-      const detail =
-        structuredDetail ? createDetailFromStructure(structuredDetail) : null;
+      const structuredDetail =
+        await getTextbookMaterialStructureById(normalizedMaterialId);
+      const detail = structuredDetail
+        ? createDetailFromStructure(structuredDetail)
+        : null;
 
       if (!detail) {
         const fullDetail = await getTextbookMaterialById(normalizedMaterialId, {
@@ -979,7 +987,10 @@ export function useTextbookMaterialProcessing({
     let created: TextbookMaterialDetail | null = null;
     let localOnly = false;
 
-    if (remoteTextbookR2UnavailableReason && !hasConfiguredTextbookPresignUpload()) {
+    if (
+      remoteTextbookR2UnavailableReason &&
+      !hasConfiguredTextbookPresignUpload()
+    ) {
       asset = createLocalUploadedAsset(file);
       created = createLocalMaterialDetail({
         asset,
@@ -997,64 +1008,32 @@ export function useTextbookMaterialProcessing({
       setIsUploading(false);
     } else {
       try {
-      try {
-        asset = await uploadTextbookPdfToR2(file, {
-          onProgress: (snapshot) => {
-            const nextPercent = Math.max(1, snapshot.percent);
-            setUploadProgressPercent(nextPercent);
-            setTransientStatusMessage(`PDF файлыг R2-д хадгалж байна... ${nextPercent}%`);
-          },
-        });
-      } catch (error) {
-        if (!shouldFallbackToLocalMode(error)) {
-          setTransientStatusMessage("");
-          setUploadProgressPercent(0);
-          toast.error(
-            error instanceof Error ? error.message : "PDF upload хийх үед алдаа гарлаа.",
-          );
-          return;
-        }
-
-        disableRemoteTextbookR2(
-          "R2 upload service одоогоор ажиллахгүй байна. Локал горим руу шилжлээ.",
-        );
-        asset = createLocalUploadedAsset(file);
-        created = createLocalMaterialDetail({
-          asset,
-          file,
-          grade,
-          subject,
-        });
-        localOnly = true;
-        setMaterialDetail(created);
-        setUploadedAsset(asset);
-        setUploadProgressPercent(100);
-        const fallbackMessage = getUploadFallbackMessage(error);
-        setTransientStatusMessage(fallbackMessage.status);
-        toast.warning(fallbackMessage.toast);
-      }
-
-      if (!localOnly && asset) {
         try {
-          setTransientStatusMessage("Материалын бүртгэл үүсгэж байна...");
-          created = await createTextbookMaterialRecord({
-            asset,
-            grade,
-            subject,
+          asset = await uploadTextbookPdfToR2(file, {
+            onProgress: (snapshot) => {
+              const nextPercent = Math.max(1, snapshot.percent);
+              setUploadProgressPercent(nextPercent);
+              setTransientStatusMessage(
+                `PDF файлыг мэдээллийн санд хадгалж байна... ${nextPercent}%`,
+              );
+            },
           });
-          setMaterialDetail(created);
         } catch (error) {
-          if (!shouldFallbackToLocalMaterialMode(error)) {
+          if (!shouldFallbackToLocalMode(error)) {
             setTransientStatusMessage("");
             setUploadProgressPercent(0);
             toast.error(
               error instanceof Error
                 ? error.message
-                : "Материалын бүртгэл үүсгэх үед алдаа гарлаа.",
+                : "PDF upload хийх үед алдаа гарлаа.",
             );
             return;
           }
 
+          disableRemoteTextbookR2(
+            "R2 upload service одоогоор ажиллахгүй байна. Локал горим руу шилжлээ.",
+          );
+          asset = createLocalUploadedAsset(file);
           created = createLocalMaterialDetail({
             asset,
             file,
@@ -1069,7 +1048,43 @@ export function useTextbookMaterialProcessing({
           setTransientStatusMessage(fallbackMessage.status);
           toast.warning(fallbackMessage.toast);
         }
-      }
+
+        if (!localOnly && asset) {
+          try {
+            setTransientStatusMessage("Материалын бүртгэл үүсгэж байна...");
+            created = await createTextbookMaterialRecord({
+              asset,
+              grade,
+              subject,
+            });
+            setMaterialDetail(created);
+          } catch (error) {
+            if (!shouldFallbackToLocalMaterialMode(error)) {
+              setTransientStatusMessage("");
+              setUploadProgressPercent(0);
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Материалын бүртгэл үүсгэх үед алдаа гарлаа.",
+              );
+              return;
+            }
+
+            created = createLocalMaterialDetail({
+              asset,
+              file,
+              grade,
+              subject,
+            });
+            localOnly = true;
+            setMaterialDetail(created);
+            setUploadedAsset(asset);
+            setUploadProgressPercent(100);
+            const fallbackMessage = getUploadFallbackMessage(error);
+            setTransientStatusMessage(fallbackMessage.status);
+            toast.warning(fallbackMessage.toast);
+          }
+        }
       } finally {
         setIsUploading(false);
       }
@@ -1080,11 +1095,15 @@ export function useTextbookMaterialProcessing({
     }
 
     try {
-      await runWorkerProcessing(file, asset, created.material.id, { localOnly });
+      await runWorkerProcessing(file, asset, created.material.id, {
+        localOnly,
+      });
     } catch (error) {
       setTransientStatusMessage("");
       toast.error(
-        error instanceof Error ? error.message : "PDF боловсруулах үед алдаа гарлаа.",
+        error instanceof Error
+          ? error.message
+          : "PDF боловсруулах үед алдаа гарлаа.",
       );
     }
   }
@@ -1114,7 +1133,10 @@ export function useTextbookMaterialProcessing({
     );
 
     try {
-      const existing = await getTextbookMaterialByR2(candidate.bucketName, candidate.key);
+      const existing = await getTextbookMaterialByR2(
+        candidate.bucketName,
+        candidate.key,
+      );
 
       const asset: TextbookUploadedAsset = {
         bucketName: candidate.bucketName,
@@ -1125,10 +1147,18 @@ export function useTextbookMaterialProcessing({
         uploadedAt: candidate.lastModified || new Date().toISOString(),
       };
 
-      if (existing?.material.status === "ready" || existing?.material.status === "ocr_needed") {
-        const structuredDetail = await getTextbookMaterialStructureById(existing.material.id);
+      if (
+        existing?.material.status === "ready" ||
+        existing?.material.status === "ocr_needed"
+      ) {
+        const structuredDetail = await getTextbookMaterialStructureById(
+          existing.material.id,
+        );
         if (structuredDetail?.sections.length) {
-          await hydrateStoredMaterial(createDetailFromStructure(structuredDetail), asset);
+          await hydrateStoredMaterial(
+            createDetailFromStructure(structuredDetail),
+            asset,
+          );
           return true;
         }
       }
@@ -1205,8 +1235,12 @@ export function useTextbookMaterialProcessing({
         setR2Candidates(payload.items);
         const exactMatch =
           payload.items.find(
-            (item) => item.fileName.toLowerCase() === payload.expectedFileName.toLowerCase(),
-          ) || payload.items[0] || null;
+            (item) =>
+              item.fileName.toLowerCase() ===
+              payload.expectedFileName.toLowerCase(),
+          ) ||
+          payload.items[0] ||
+          null;
         setSelectedR2Key(exactMatch?.key || "");
       } catch (error) {
         if (cancelled) {

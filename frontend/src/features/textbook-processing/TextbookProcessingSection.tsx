@@ -214,6 +214,89 @@ function getTextbookDisplayTitle(input: {
   return input.fallback?.trim() || "Сурах бичиг";
 }
 
+type ReadableProgressCopy = {
+  description: string;
+  nextStep: string;
+  title: string;
+};
+
+function getReadableProgressCopy(input: {
+  fileName: string | null;
+  isUploading: boolean;
+  material: TextbookMaterial | null;
+  message: string;
+  uploadProgressPercent: number;
+}) : ReadableProgressCopy {
+  const fileLabel = input.fileName?.trim() || "Сурах бичгийн PDF";
+  const safeUploadPercent = Math.max(0, input.uploadProgressPercent || 0);
+
+  if (input.isUploading) {
+    return {
+      title: `${safeUploadPercent}% хадгаллаа`,
+      description: `${fileLabel} файлыг системд ачаалж байна.`,
+      nextStep:
+        "Үүний дараа хуудас бүрийн текстийг уншаад бүлэг, сэдвүүдийг автоматаар ялгана.",
+    };
+  }
+
+  switch (input.material?.stage) {
+    case "processing_pages": {
+      const total = input.material.progressTotal || 0;
+      const current = input.material.progressCurrent || 0;
+      const remaining = Math.max(total - current, 0);
+
+      return {
+        title:
+          total > 0
+            ? `${current}/${total} хуудас боловсрууллаа`
+            : "Хуудас бүрийн текстийг уншиж байна",
+        description:
+          input.message || `${fileLabel} доторх текстийг хуудас бүрээр нь уншиж байна.`,
+        nextStep:
+          remaining > 0
+            ? `${remaining} хуудас үлдээд байна. Дараа нь бүлэг, сэдвийг ялгана.`
+            : "Хуудасны уншилт дуусмагц бүлэг, сэдвийн бүтцийг гаргана.",
+      };
+    }
+    case "detecting_chapters":
+      return {
+        title: "Бүлэг, сэдвүүдийг ялгаж байна",
+        description:
+          input.message ||
+          `${fileLabel}-ийн агуулгыг chapter, section бүтэц болгон ангилж байна.`,
+        nextStep: "Дуусмагц бүлгүүдээ сонгоод шууд шалгалт үүсгэж болно.",
+      };
+    case "ready":
+      return {
+        title: "Сурах бичиг бэлэн боллоо",
+        description:
+          input.message || "Одоо бүлэг, сэдвээ сонгоод шалгалт үүсгэхэд бэлэн байна.",
+        nextStep: "Зүүн талаас хэрэгтэй хэсгүүдээ сонгоод “Шалгалт үүсгэх” дээр дарна уу.",
+      };
+    case "ocr_needed":
+      return {
+        title: "PDF-д OCR хэрэгтэй байна",
+        description:
+          input.message ||
+          "Энэ файл зурагтай эсвэл текст багатай тул шууд задлан унших боломжгүй байна.",
+        nextStep: "Илүү цэвэр тексттэй PDF сонгох эсвэл OCR-той хувилбар ашиглана уу.",
+      };
+    case "error":
+      return {
+        title: "Боловсруулах үед алдаа гарлаа",
+        description: input.message || "Сурах бичгийг боловсруулах явцад алдаа гарсан байна.",
+        nextStep: "Файлаа дахин шалгаад дахин ачаалж үзнэ үү.",
+      };
+    case "uploaded":
+    default:
+      return {
+        title: "Материалыг бэлтгэж байна",
+        description: input.message || `${fileLabel} файлын мэдээллийг шалгаж байна.`,
+        nextStep: "Дараагийн алхамд хуудас бүрийн текстийг уншиж эхэлнэ.",
+      };
+  }
+}
+
 const WORKFLOW_STEPS = [
   "uploading",
   "processing_pages",
@@ -419,6 +502,13 @@ export function TextbookProcessingSection({
     Boolean(material) ||
     Boolean(selectedFile);
   const bannerMessage = localStatusMessage || statusMessage;
+  const progressCopy = getReadableProgressCopy({
+    fileName: material?.fileName || selectedFile?.name || uploadedAsset?.fileName || null,
+    isUploading,
+    material,
+    message: bannerMessage,
+    uploadProgressPercent,
+  });
 
   const generatedState = useMemo<TextbookGeneratedState | null>(() => {
     if (!generatedTest || !material || !uploadedAsset) {
@@ -813,15 +903,52 @@ export function TextbookProcessingSection({
                   </div>
                 ) : !materialDetail || !materialReady ? (
                   <div className="flex h-full flex-col items-center justify-center px-5 text-center">
-                    <p className="text-[15px] font-medium text-slate-900">
-                      {bannerMessage || "Сурах бичгийг боловсруулж байна..."}
-                    </p>
-                    {(isUploading || isProcessing || progressValue > 0) && (
-                      <div className="mt-4 w-full max-w-[18rem] space-y-2">
-                        <Progress value={progressValue} className="h-2 bg-[#dbe7ff]" />
-                        <p className="text-[12px] text-slate-500">{progressMetaLabel}</p>
+                    <div
+                      aria-atomic="true"
+                      aria-live="polite"
+                      className="w-full max-w-[22rem] rounded-[18px] border border-[#dbe4f3] bg-[#f7faff] p-4 text-left"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="rounded-full border border-[#dbe4f3] bg-white px-3 py-1 text-[11px] font-semibold text-[#0b5cab]">
+                          {isUploading
+                            ? getStageLabel("uploading")
+                            : getStageLabel(material?.stage || "uploaded")}
+                        </span>
+                        {progressMetaLabel ? (
+                          <span className="text-[12px] font-medium text-slate-600">
+                            {progressMetaLabel}
+                          </span>
+                        ) : null}
                       </div>
-                    )}
+
+                      <p className="mt-3 text-[15px] font-semibold text-slate-900">
+                        {progressCopy.title}
+                      </p>
+                      <p className="mt-1 text-[13px] leading-6 text-slate-600">
+                        {progressCopy.description}
+                      </p>
+
+                      {(isUploading || isProcessing || progressValue > 0) && (
+                        <div className="mt-4 space-y-2">
+                          <Progress
+                            value={progressValue}
+                            className="h-2.5 bg-[#dbe7ff]"
+                          />
+                          <div className="flex items-center justify-between gap-3 text-[12px] text-slate-500">
+                            <span>{bannerMessage || "Боловсруулж байна..."}</span>
+                            {progressMetaLabel ? (
+                              <span className="shrink-0 font-medium text-slate-700">
+                                {progressMetaLabel}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
+
+                      <p className="mt-3 text-[12px] leading-5 text-slate-500">
+                        Дараагийн алхам: {progressCopy.nextStep}
+                      </p>
+                    </div>
                   </div>
                 ) : visibleTree.length === 0 ? (
                   <div className="flex h-full items-center justify-center px-4 text-center text-[14px] leading-6 text-slate-500">
@@ -1094,7 +1221,7 @@ export function TextbookProcessingSection({
                     <FileUp className="h-4 w-4" />
                   )}
                   {isUploading
-                    ? `R2-д хадгалж байна ${Math.max(uploadProgressPercent, 0)}%`
+                    ? `Хадгалж байна ${Math.max(uploadProgressPercent, 0)}%`
                     : isProcessing
                       ? "Боловсруулж байна..."
                       : "Сурах бичиг ачаалах"}
@@ -1104,7 +1231,11 @@ export function TextbookProcessingSection({
           ) : null}
 
           {hasVisibleProgress ? (
-            <div className="space-y-4 rounded-[16px] border border-[#dbe4f3] bg-white px-4 py-4 text-[13px] text-slate-700">
+            <div
+              aria-atomic="true"
+              aria-live="polite"
+              className="space-y-4 rounded-[16px] border border-[#dbe4f3] bg-white px-4 py-4 text-[13px] text-slate-700"
+            >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-slate-900">
@@ -1126,6 +1257,18 @@ export function TextbookProcessingSection({
                       ? getStageLabel("uploading")
                       : getStageLabel(material?.stage || "uploaded")}
                   </div>
+                </div>
+
+                <div className="rounded-[14px] border border-[#edf2fb] bg-[#f8fbff] px-3 py-3">
+                  <p className="text-[14px] font-semibold text-slate-900">
+                    {progressCopy.title}
+                  </p>
+                  <p className="mt-1 text-[12px] leading-5 text-slate-600">
+                    {progressCopy.description}
+                  </p>
+                  <p className="mt-2 text-[12px] leading-5 text-slate-500">
+                    Дараагийн алхам: {progressCopy.nextStep}
+                  </p>
                 </div>
 
                 <div className="space-y-2">

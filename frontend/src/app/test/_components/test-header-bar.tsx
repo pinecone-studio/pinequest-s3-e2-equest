@@ -74,7 +74,7 @@ export function TestHeaderBar({
   isTeacherRefreshing = false,
   meta,
   onTeacherRefresh = null,
-  rightSlot,
+  rightSlot: headerRightSlot,
   teacherVariant = "default",
   title,
 }: TestHeaderBarProps) {
@@ -126,8 +126,8 @@ export function TestHeaderBar({
             {actions}
           </div>
         ) : null}
-        {rightSlot ? (
-          rightSlot
+        {headerRightSlot ? (
+          headerRightSlot
         ) : teacherVariant === "none" ? null : (
           <TeacherControl
             isRefreshing={isTeacherRefreshing}
