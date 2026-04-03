@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import type {
 	AttemptReviewPayload,
 	AttemptSummary,
@@ -34,7 +34,12 @@ import {
 	resolveAttemptState,
 	writeJsonToKv,
 } from "./cache";
-import { computeResult, getAttemptAnswerReview, getAttemptResults } from "./results";
+import {
+	computeResult,
+	getAttemptAnswerReviewFromRows,
+	getAttemptResults,
+	getAttemptResultsForAttempts,
+} from "./results";
 
 type ApproveAttemptOptions = {
 	ai?: {
@@ -57,6 +62,22 @@ type ApproveAttemptOptions = {
 
 const clampPoints = (value: number, maxPoints: number) =>
 	Math.max(0, Math.min(Math.round(value), maxPoints));
+
+const MAX_OVERVIEW_ATTEMPTS = 240;
+const MAX_ATTEMPTS_PER_TEST = 120;
+
+const clampAttemptLimit = (value: number | undefined, scopedToTest: boolean) => {
+	const fallback = scopedToTest ? MAX_ATTEMPTS_PER_TEST : MAX_OVERVIEW_ATTEMPTS;
+	const rounded =
+		typeof value === "number" && Number.isFinite(value)
+			? Math.round(value)
+			: fallback;
+
+	return Math.min(
+		Math.max(rounded, 1),
+		scopedToTest ? MAX_ATTEMPTS_PER_TEST : MAX_OVERVIEW_ATTEMPTS,
+	);
+};
 
 const isMissingExternalExamError = (error: unknown) =>
 	error instanceof Error && error.message === "External exam олдсонгүй.";
@@ -133,7 +154,22 @@ const buildReviewedResult = (
 export const listAttempts = async (
 	db: DbClient,
 	kv?: KVNamespace,
+	options?: {
+		includeProvisionalTeacherResults?: boolean;
+		limit?: number;
+		testId?: string;
+	},
 ): Promise<AttemptSummary[]> => {
+	if (options?.testId) {
+		const scopedLimit = clampAttemptLimit(options.limit, true);
+		const records = await db.query.attempts.findMany({
+			where: eq(schema.attempts.testId, options.testId),
+			orderBy: [desc(schema.attempts.startedAt)],
+			limit: scopedLimit,
+		});
+		return buildAttemptSummaries(db, records, kv, options);
+	}
+
 	const cachedSummaries = await readJsonFromKv<AttemptSummary[]>(
 		kv,
 		ATTEMPTS_SUMMARY_CACHE_KEY,
@@ -144,10 +180,102 @@ export const listAttempts = async (
 
 	const records = await db.query.attempts.findMany({
 		orderBy: [desc(schema.attempts.startedAt)],
+		limit: clampAttemptLimit(options?.limit, false),
 	});
+	const summaries = await buildAttemptSummaries(db, records, kv, options);
+
+	await writeJsonToKv(
+		kv,
+		ATTEMPTS_SUMMARY_CACHE_KEY,
+		summaries,
+		ATTEMPTS_SUMMARY_CACHE_TTL_SECONDS,
+	);
+
+	return summaries;
+};
+
+const buildAttemptSummaries = async (
+	db: DbClient,
+	records: Awaited<ReturnType<DbClient["query"]["attempts"]["findMany"]>>,
+	kv?: KVNamespace,
+	options?: {
+		includeProvisionalTeacherResults?: boolean;
+	},
+) => {
+	if (records.length === 0) {
+		return [];
+	}
+
+	const attemptIds = records.map((record) => record.id);
+	const testIds = [...new Set(records.map((record) => record.testId))];
 	const monitoringByAttemptId = await getAttemptMonitoringSummaries(
 		db,
-		records.map((record) => record.id),
+		attemptIds,
+	);
+	const tests =
+		testIds.length > 0
+			? await db.query.tests.findMany({
+					where: inArray(schema.tests.id, testIds),
+				})
+			: [];
+	const teacherSyncExports =
+		attemptIds.length > 0
+			? await db.query.teacherSubmissionExports.findMany({
+					where: inArray(schema.teacherSubmissionExports.attemptId, attemptIds),
+				})
+			: [];
+	const answerRows =
+		attemptIds.length > 0
+			? await db.query.answers.findMany({
+					where: inArray(schema.answers.attemptId, attemptIds),
+				})
+			: [];
+	const questions =
+		testIds.length > 0
+			? await db.query.questions.findMany({
+					where: inArray(schema.questions.testId, testIds),
+					columns: {
+						testId: true,
+					},
+				})
+			: [];
+	const testsById = new Map(tests.map((test) => [test.id, test]));
+	const teacherSyncByAttemptId = new Map(
+		teacherSyncExports.map((item) => [item.attemptId, item] as const),
+	);
+	const questionCountsByTestId = new Map<string, number>();
+	for (const question of questions) {
+		questionCountsByTestId.set(
+			question.testId,
+			(questionCountsByTestId.get(question.testId) ?? 0) + 1,
+		);
+	}
+	const answersByAttemptId = new Map<
+		string,
+		Array<(typeof answerRows)[number]>
+	>();
+	for (const answer of answerRows) {
+		const current = answersByAttemptId.get(answer.attemptId) ?? [];
+		current.push(answer);
+		answersByAttemptId.set(answer.attemptId, current);
+	}
+	const attemptsNeedingQuestionRows = records
+		.filter(
+			(record) =>
+				record.status === "processing" ||
+				record.status === "submitted" ||
+				record.status === "approved",
+		)
+		.map((record) => record.id);
+	const resultRowsByAttemptId = await getAttemptResultsForAttempts(
+		db,
+		attemptsNeedingQuestionRows,
+	);
+	const answerReviewByAttemptId = new Map(
+		attemptsNeedingQuestionRows.map((attemptId) => [
+			attemptId,
+			getAttemptAnswerReviewFromRows(resultRowsByAttemptId.get(attemptId) ?? []),
+		] as const),
 	);
 
 	const summaries: AttemptSummary[] = [];
@@ -157,26 +285,40 @@ export const listAttempts = async (
 	>();
 
 	for (const record of records) {
-		const test = await db.query.tests.findFirst({
-			where: eq(schema.tests.id, record.testId),
-		});
-		const teacherSyncExport = await db.query.teacherSubmissionExports.findFirst({
-			where: eq(schema.teacherSubmissionExports.attemptId, record.id),
-		});
-		const attemptState = await resolveAttemptState(db, record.id, kv);
+		const test = testsById.get(record.testId);
+		const teacherSyncExport = teacherSyncByAttemptId.get(record.id);
+		const attemptAnswerRows = answersByAttemptId.get(record.id) ?? [];
+		const totalQuestions = questionCountsByTestId.get(record.testId) ?? 0;
+		const attemptState = {
+			answers: Object.fromEntries(
+				attemptAnswerRows.map((answer) => [
+					answer.questionId,
+					answer.selectedOptionId,
+				]),
+			),
+			attemptId: record.id,
+			expiresAt: record.expiresAt,
+			startedAt: record.startedAt,
+			status: record.status,
+			studentId: record.studentId,
+			studentName: record.studentName,
+			submittedAt: record.submittedAt ?? undefined,
+			testId: record.testId,
+			totalQuestions,
+		};
 		const answeredQuestions = Object.values(attemptState.answers).filter(Boolean).length;
 		const answerKeySource = test?.answerKeySource ?? "local";
 		const teacherCheckedResult = parseStoredTeacherResult(record.teacherResultJson);
 		const hasReviewableAnswers =
 			answerKeySource === "local" &&
 			(record.status === "submitted" || record.status === "approved");
-		const resultRows = hasReviewableAnswers
-			? await getAttemptResults(db, record.id)
-			: [];
-		let answerReview = await getAttemptAnswerReview(db, record.id);
+		const resultRows =
+			hasReviewableAnswers ? resultRowsByAttemptId.get(record.id) ?? [] : [];
+		let answerReview = answerReviewByAttemptId.get(record.id) ?? [];
 		let provisionalTeacherResult = undefined;
 		let externalExam = undefined;
 		if (
+			options?.includeProvisionalTeacherResults &&
 			answerKeySource === "teacher_service" &&
 			test?.sourceService === "create-exam-service" &&
 			(record.status === "submitted" || record.status === "approved")
@@ -236,9 +378,9 @@ export const listAttempts = async (
 					(hasReviewableAnswers
 						? computeResult(resultRows)
 						: undefined);
-		const isApproved = record.status === "approved";
+			const isApproved = record.status === "approved";
 
-		summaries.push({
+			summaries.push({
 			attemptId: record.id,
 			testId: record.testId,
 			title: test?.title || "Unknown Test",
@@ -273,17 +415,9 @@ export const listAttempts = async (
 							lastError: teacherSyncExport.lastError ?? undefined,
 							sentAt: teacherSyncExport.sentAt ?? undefined,
 						}
-					: undefined,
+						: undefined,
 			});
 	}
-
-	await writeJsonToKv(
-		kv,
-		ATTEMPTS_SUMMARY_CACHE_KEY,
-		summaries,
-		ATTEMPTS_SUMMARY_CACHE_TTL_SECONDS,
-	);
-
 	return summaries;
 };
 

@@ -105,11 +105,11 @@ export default function StudentAppPage() {
     loadDashboardData,
     passRate,
     passedAttemptsCount,
+    resultAttempts,
     resultRows,
     selectedStudent,
     selectedStudentId,
     setSelectedStudentId,
-    visibleApprovedAttempts,
     visibleCompletedAttempts,
   } = useStudentDashboardData({ setError });
   const monitoringUserId =
@@ -243,7 +243,7 @@ export default function StudentAppPage() {
             cooldownMs: 0,
             detail: `${index} дугаар асуултад бичгийн хариу өгч эхэллээ.`,
             severity: "info",
-            title: "Answer activity",
+            title: "Хариулж эхэлсэн",
           });
         }
         return;
@@ -270,7 +270,7 @@ export default function StudentAppPage() {
           cooldownMs: 0,
           detail: `${index} дугаар асуултын хариуг ${current.answerChangeCount} удаа өөрчиллөө.`,
           severity: current.answerChangeCount >= 5 ? "warning" : "info",
-          title: "Answer revised",
+          title: "Хариу өөрчилсөн",
         });
       }
     },
@@ -684,7 +684,7 @@ export default function StudentAppPage() {
           cooldownMs: 0,
           detail: `${index} дугаар асуултад сонголтын хариу өгч эхэллээ.`,
           severity: "info",
-          title: "Answer activity",
+          title: "Хариулж эхэлсэн",
         });
       }
 
@@ -697,7 +697,7 @@ export default function StudentAppPage() {
           cooldownMs: 0,
           detail: `${index} дугаар асуултын хариуг ${current.answerChangeCount} удаа өөрчиллөө.`,
           severity: current.answerChangeCount >= 5 ? "warning" : "info",
-          title: "Answer revised",
+          title: "Хариу өөрчилсөн",
         });
       }
     }
@@ -720,7 +720,9 @@ export default function StudentAppPage() {
           nextFlagState ? "эргэж харахаар тэмдэглэлээ" : "тэмдэглэлээс гаргалаа"
         }.`,
         severity: "info",
-        title: nextFlagState ? "Question flagged" : "Question unflagged",
+        title: nextFlagState
+          ? "Асуулт тэмдэглэсэн"
+          : "Тэмдэглэгээ цуцалсан",
       });
     }
 
@@ -756,7 +758,7 @@ export default function StudentAppPage() {
               payloadAnswers.length
             } асуулт хадгалагдлаа.`,
         severity: "info",
-        title: finalize ? "Final submit" : "Save progress",
+        title: finalize ? "Эцэслэн илгээсэн" : "Явц хадгалсан",
       });
 
       if (finalize) {
@@ -1033,9 +1035,9 @@ export default function StudentAppPage() {
         recordBehaviorEvent({
           code: "autosave-sync",
           cooldownMs: 60_000,
-          detail: "Autosave snapshot сервертэй синк хийгдлээ.",
+          detail: "Автомат хадгалалтын төлөв сервертэй синк хийгдлээ.",
           severity: "info",
-          title: "Autosave",
+          title: "Автомат хадгалалт",
         });
       } catch (err) {
         console.error("Failed to autosave exam answers:", err);
@@ -1186,8 +1188,6 @@ export default function StudentAppPage() {
         <StudentPageShell
           activeSection={activeSection}
           activeTestsCount={activeTestsCount}
-          approvedAttempts={visibleApprovedAttempts}
-          approvedAttemptsCount={visibleApprovedAttempts.length}
           averageScore={averageScore}
           availableStudents={availableStudents}
           completedAttemptsLength={visibleCompletedAttempts.length}
@@ -1202,6 +1202,7 @@ export default function StudentAppPage() {
           pageTitle={pageTitle}
           passRate={passRate}
           passedAttemptsCount={passedAttemptsCount}
+          resultAttempts={resultAttempts}
           resultRows={resultRows}
           selectedStudent={selectedStudent}
           selectedStudentId={selectedStudentId}

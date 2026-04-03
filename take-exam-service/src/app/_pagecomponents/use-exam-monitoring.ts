@@ -237,7 +237,7 @@ export function useExamMonitoring(
           cooldownMs: 15_000,
           detail: `${index}/${totalQuestions} асуулт руу ${nextCount} дахь удаагаа буцаж орлоо.`,
           severity: nextCount >= 5 ? "warning" : "info",
-          title: "Question revisit",
+          title: "Асуулт руу буцсан",
         });
       }
     },
@@ -293,9 +293,9 @@ export function useExamMonitoring(
     void recordAttemptActivity({
       code: "attempt-session-open",
       cooldownMs: 0,
-      detail: "Шалгалтын session энэ tab дээр эхэллээ.",
+      detail: "Шалгалтын сесс энэ таб дээр эхэллээ.",
       severity: "info",
-      title: "Session open",
+      title: "Шалгалтын сесс эхэлсэн",
     });
   }, [
     activeAttempt,
@@ -357,9 +357,9 @@ export function useExamMonitoring(
       void recordAttemptActivity({
         code: "parallel-tab-suspected",
         cooldownMs: 60_000,
-        detail: "Ижил шалгалт өөр tab дээр нээгдсэн байж магадгүй.",
+        detail: "Ижил шалгалт өөр таб дээр нээгдсэн байж магадгүй.",
         severity: "danger",
-        title: "Another tab",
+        title: "Өөр таб нээгдсэн",
       });
 
       if (data.type === "attempt-presence") {
@@ -385,9 +385,9 @@ export function useExamMonitoring(
         void recordAttemptActivity({
           code: "fullscreen-not-active",
           cooldownMs: 60_000,
-          detail: "Fullscreen идэвхжээгүй байна.",
+          detail: "Бүтэн дэлгэц идэвхжээгүй байна.",
           severity: "warning",
-          title: "Fullscreen",
+          title: "Бүтэн дэлгэц",
         });
       }
 
@@ -395,9 +395,9 @@ export function useExamMonitoring(
         void recordAttemptActivity({
           code: "split-view-suspected",
           cooldownMs: 60_000,
-          detail: "Цонх хувааж нээсэн байж магадгүй.",
+          detail: "Цонх хуваасан дэлгэцээр нээгдсэн байж магадгүй.",
           severity: "warning",
-          title: "Split view",
+          title: "Хуваасан дэлгэц",
         });
       }
     }, 900);
@@ -406,15 +406,21 @@ export function useExamMonitoring(
       event.preventDefault();
       const actionLabel =
         event.type === "copy"
-          ? "Copy хийлээ."
+          ? "Хуулах үйлдэл хийлээ."
           : event.type === "cut"
-            ? "Cut хийлээ."
-            : "Paste хийлээ.";
+            ? "Таслах үйлдэл хийлээ."
+            : "Буулгах үйлдэл хийлээ.";
+      const actionTitle =
+        event.type === "copy"
+          ? "Хуулах үйлдэл"
+          : event.type === "cut"
+            ? "Таслах үйлдэл"
+            : "Буулгах үйлдэл";
       void recordAttemptActivity({
         code: `clipboard-${event.type}`,
         detail: actionLabel,
         severity: "warning",
-        title: "Clipboard",
+        title: actionTitle,
       });
     };
 
@@ -422,9 +428,9 @@ export function useExamMonitoring(
       event.preventDefault();
       void recordAttemptActivity({
         code: "context-menu",
-        detail: "Right click дарлаа.",
+        detail: "Баруун товшилт хийлээ.",
         severity: "warning",
-        title: "Context menu",
+        title: "Баруун товшилт",
       });
     };
 
@@ -434,9 +440,9 @@ export function useExamMonitoring(
         void recordAttemptActivity({
           code: "tab_hidden",
           cooldownMs: 2_000,
-          detail: "Tab солилоо.",
+          detail: "Таб солилоо.",
           severity: "warning",
-          title: "Tab hidden",
+          title: "Табаас гарсан",
         });
         return;
       }
@@ -452,9 +458,9 @@ export function useExamMonitoring(
       void recordAttemptActivity({
         code: "tab_visible",
         cooldownMs: 0,
-        detail: `Tab руу ${awaySeconds} сек дараа буцаж орлоо.`,
+        detail: `Таб руу ${awaySeconds} сек дараа буцаж орлоо.`,
         severity: awaySeconds >= 15 ? "warning" : "info",
-        title: "Tab visible",
+        title: "Таб руу буцсан",
       });
     };
 
@@ -465,7 +471,7 @@ export function useExamMonitoring(
         cooldownMs: 2_000,
         detail: "Фокус алдагдлаа.",
         severity: "warning",
-        title: "Window blur",
+        title: "Фокус алдагдсан",
       });
     };
 
@@ -483,7 +489,7 @@ export function useExamMonitoring(
         cooldownMs: 0,
         detail: `Фокус ${awaySeconds} сек алдагдсаны дараа сэргэлээ.`,
         severity: awaySeconds >= 15 ? "warning" : "info",
-        title: "Window focus",
+        title: "Фокус сэргэсэн",
       });
     };
 
@@ -492,9 +498,9 @@ export function useExamMonitoring(
       void recordAttemptActivity({
         code: "fullscreen-exit",
         cooldownMs: 60_000,
-        detail: "Fullscreen-ээс гарлаа.",
+        detail: "Бүтэн дэлгэцээс гарлаа.",
         severity: "danger",
-        title: "Fullscreen",
+        title: "Бүтэн дэлгэцээс гарсан",
       });
     };
 
@@ -518,10 +524,12 @@ export function useExamMonitoring(
       void recordAttemptActivity({
         code: `shortcut-${key}`,
         detail: isInspectShortcut
-          ? "Inspect нээх гэж оролдлоо."
-          : "Shortcut дарлаа.",
+          ? "Хөгжүүлэгчийн хэрэгслийг нээх гэж оролдлоо."
+          : "Товчлол дарлаа.",
         severity: isInspectShortcut ? "danger" : "warning",
-        title: isInspectShortcut ? "Inspect" : "Shortcut",
+        title: isInspectShortcut
+          ? "Хөгжүүлэгчийн хэрэгсэл"
+          : "Товчлол ашигласан",
       });
     };
 
@@ -533,9 +541,9 @@ export function useExamMonitoring(
         void recordAttemptActivity({
           code: "devtools-suspected",
           cooldownMs: 30_000,
-          detail: "DevTools нээгдсэн байж магадгүй.",
+          detail: "Хөгжүүлэгчийн хэрэгсэл нээгдсэн байж магадгүй.",
           severity: "danger",
-          title: "DevTools",
+          title: "Хөгжүүлэгчийн хэрэгсэл",
         });
       }
     };
@@ -564,7 +572,7 @@ export function useExamMonitoring(
           cooldownMs: 4_000,
           detail: "Цонхны хэмжээ өөрчлөгдлөө.",
           severity: "warning",
-          title: "Viewport",
+          title: "Цонхны хэмжээ",
         });
         return;
       }
@@ -580,7 +588,7 @@ export function useExamMonitoring(
           cooldownMs: 4_000,
           detail: "Цонхны хэмжээ огцом өөрчлөгдлөө.",
           severity: "warning",
-          title: "Window resize",
+          title: "Цонхны хэмжээ огцом өөрчлөгдсөн",
         });
       }
 
@@ -588,9 +596,9 @@ export function useExamMonitoring(
         void recordAttemptActivity({
           code: "split-view-suspected",
           cooldownMs: 60_000,
-          detail: "Цонх хувааж нээсэн байж магадгүй.",
+          detail: "Цонх хуваасан дэлгэцээр нээгдсэн байж магадгүй.",
           severity: "warning",
-          title: "Split view",
+          title: "Хуваасан дэлгэц",
         });
       }
     };
@@ -608,15 +616,15 @@ export function useExamMonitoring(
           cooldownMs: 60_000,
           detail: `${Math.round(idleMs / 1000)} сек идэвхгүй байлаа.`,
           severity: "warning",
-          title: "Idle",
+          title: "Идэвхгүй байдал",
         });
       } else if (idleMs >= 45_000) {
         void recordAttemptActivity({
           code: "idle-45s",
           cooldownMs: 45_000,
-          detail: `${Math.round(idleMs / 1000)} сек interaction хийгээгүй байна.`,
+          detail: `${Math.round(idleMs / 1000)} сек ямар нэг үйлдэл хийгээгүй байна.`,
           severity: "info",
-          title: "Idle",
+          title: "Идэвхгүй байдал",
         });
       }
     }, 15_000);

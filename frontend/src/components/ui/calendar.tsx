@@ -24,6 +24,7 @@ function Calendar({
   classNames,
   showOutsideDays = true,
   captionLayout = "label",
+  hideNavigation = false,
   buttonVariant = "ghost",
   locale,
   formatters,
@@ -31,6 +32,7 @@ function Calendar({
   ...props
 }: React.ComponentProps<typeof DayPicker> & {
   buttonVariant?: React.ComponentProps<typeof Button>["variant"];
+  hideNavigation?: boolean;
 }) {
   const defaultClassNames = getDefaultClassNames();
 
@@ -97,7 +99,9 @@ function Calendar({
         ),
         month: cn("flex w-full flex-col gap-4", defaultClassNames.month),
         nav: cn(
-          "absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1",
+          hideNavigation
+            ? "hidden"
+            : "absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1",
           defaultClassNames.nav,
         ),
         button_previous: cn(
@@ -111,7 +115,9 @@ function Calendar({
           defaultClassNames.button_next,
         ),
         month_caption: cn(
-          "flex h-(--cell-size) w-full items-center justify-center px-(--cell-size)",
+          hideNavigation
+            ? "flex h-(--cell-size) w-full items-center justify-center"
+            : "flex h-(--cell-size) w-full items-center justify-center px-(--cell-size)",
           defaultClassNames.month_caption,
         ),
         dropdowns: cn(
@@ -233,10 +239,10 @@ function CalendarDayButton({
   className,
   day,
   modifiers,
-  locale,
   ...props
 }: React.ComponentProps<typeof DayButton> & { locale?: Partial<Locale> }) {
   const defaultClassNames = getDefaultClassNames();
+  const dayKey = format(day.date, "yyyy-MM-dd");
 
   const ref = React.useRef<HTMLButtonElement>(null);
   React.useEffect(() => {
@@ -248,7 +254,7 @@ function CalendarDayButton({
       ref={ref}
       variant="ghost"
       size="icon"
-      data-day={day.date.toLocaleDateString(locale?.code)}
+      data-day={dayKey}
       data-selected-single={
         modifiers.selected &&
         !modifiers.range_start &&

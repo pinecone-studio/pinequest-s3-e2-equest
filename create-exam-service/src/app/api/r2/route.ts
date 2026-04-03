@@ -20,6 +20,7 @@ type RouteEnv = {
   AWS_ACCESS_KEY_ID?: string;
   AWS_ENDPOINT_URL_S3?: string;
   AWS_SECRET_ACCESS_KEY?: string;
+  BOOK_BUCKET_NAME?: string;
   BOOK_R2_BUCKET_NAME?: string;
   BUCKET_NAME?: string;
   CF_ACCOUNT_ID?: string;
@@ -28,13 +29,26 @@ type RouteEnv = {
   CLOUDFLARE_R2_BUCKET_NAME?: string;
   CLOUDFLARE_R2_ENDPOINT?: string;
   CLOUDFLARE_R2_SECRET_ACCESS_KEY?: string;
+  NEXT_PUBLIC_BOOK_BUCKET_NAME?: string;
+  NEXT_PUBLIC_BOOK_R2_BUCKET_NAME?: string;
+  NEXT_PUBLIC_BUCKET_NAME?: string;
+  NEXT_PUBLIC_R2_BUCKET?: string;
+  NEXT_PUBLIC_R2_BUCKET_NAME?: string;
+  NEXT_PUBLIC_TEXTBOOK_BUCKET?: string;
+  NEXT_PUBLIC_TEXTBOOK_BUCKET_NAME?: string;
+  NEXT_PUBLIC_TEXTBOOK_R2_BUCKET?: string;
+  NEXT_PUBLIC_TEXTBOOK_R2_BUCKET_NAME?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_BUCKET_NAME?: string;
   R2_ENDPOINT?: string;
   R2_S3_API?: string;
   R2_SECRET_ACCESS_KEY?: string;
+  R2_TEXTBOOK_BUCKET?: string;
+  R2_TEXTBOOK_BUCKET_NAME?: string;
   S3_ENDPOINT?: string;
+  TEXTBOOK_BUCKET?: string;
   TEXTBOOK_BUCKET_NAME?: string;
+  TEXTBOOK_R2_BUCKET_NAME?: string;
   TEXTBOOK_R2_BUCKET?: string;
 };
 
@@ -274,23 +288,65 @@ async function resolveR2Connection(
   const bucketName = pickFirstNonEmpty(
     bucketNameOverride,
     env.R2_BUCKET_NAME,
+    env.R2_TEXTBOOK_BUCKET,
+    env.R2_TEXTBOOK_BUCKET_NAME,
     env.TEXTBOOK_R2_BUCKET,
+    env.TEXTBOOK_R2_BUCKET_NAME,
     env.BOOK_R2_BUCKET_NAME,
+    env.BOOK_BUCKET_NAME,
+    env.TEXTBOOK_BUCKET,
     env.TEXTBOOK_BUCKET_NAME,
     env.CLOUDFLARE_R2_BUCKET_NAME,
     env.BUCKET_NAME,
+    env.NEXT_PUBLIC_TEXTBOOK_R2_BUCKET,
+    env.NEXT_PUBLIC_TEXTBOOK_R2_BUCKET_NAME,
+    env.NEXT_PUBLIC_TEXTBOOK_BUCKET,
+    env.NEXT_PUBLIC_TEXTBOOK_BUCKET_NAME,
+    env.NEXT_PUBLIC_BOOK_R2_BUCKET_NAME,
+    env.NEXT_PUBLIC_BOOK_BUCKET_NAME,
+    env.NEXT_PUBLIC_R2_BUCKET_NAME,
+    env.NEXT_PUBLIC_R2_BUCKET,
+    env.NEXT_PUBLIC_BUCKET_NAME,
     process.env.R2_BUCKET_NAME,
+    process.env.R2_TEXTBOOK_BUCKET,
+    process.env.R2_TEXTBOOK_BUCKET_NAME,
     process.env.TEXTBOOK_R2_BUCKET,
+    process.env.TEXTBOOK_R2_BUCKET_NAME,
     process.env.BOOK_R2_BUCKET_NAME,
+    process.env.BOOK_BUCKET_NAME,
+    process.env.TEXTBOOK_BUCKET,
     process.env.TEXTBOOK_BUCKET_NAME,
     process.env.CLOUDFLARE_R2_BUCKET_NAME,
     process.env.BUCKET_NAME,
+    process.env.NEXT_PUBLIC_TEXTBOOK_R2_BUCKET,
+    process.env.NEXT_PUBLIC_TEXTBOOK_R2_BUCKET_NAME,
+    process.env.NEXT_PUBLIC_TEXTBOOK_BUCKET,
+    process.env.NEXT_PUBLIC_TEXTBOOK_BUCKET_NAME,
+    process.env.NEXT_PUBLIC_BOOK_R2_BUCKET_NAME,
+    process.env.NEXT_PUBLIC_BOOK_BUCKET_NAME,
+    process.env.NEXT_PUBLIC_R2_BUCKET_NAME,
+    process.env.NEXT_PUBLIC_R2_BUCKET,
+    process.env.NEXT_PUBLIC_BUCKET_NAME,
     localEnv.R2_BUCKET_NAME,
+    localEnv.R2_TEXTBOOK_BUCKET,
+    localEnv.R2_TEXTBOOK_BUCKET_NAME,
     localEnv.TEXTBOOK_R2_BUCKET,
+    localEnv.TEXTBOOK_R2_BUCKET_NAME,
     localEnv.BOOK_R2_BUCKET_NAME,
+    localEnv.BOOK_BUCKET_NAME,
+    localEnv.TEXTBOOK_BUCKET,
     localEnv.TEXTBOOK_BUCKET_NAME,
     localEnv.CLOUDFLARE_R2_BUCKET_NAME,
     localEnv.BUCKET_NAME,
+    localEnv.NEXT_PUBLIC_TEXTBOOK_R2_BUCKET,
+    localEnv.NEXT_PUBLIC_TEXTBOOK_R2_BUCKET_NAME,
+    localEnv.NEXT_PUBLIC_TEXTBOOK_BUCKET,
+    localEnv.NEXT_PUBLIC_TEXTBOOK_BUCKET_NAME,
+    localEnv.NEXT_PUBLIC_BOOK_R2_BUCKET_NAME,
+    localEnv.NEXT_PUBLIC_BOOK_BUCKET_NAME,
+    localEnv.NEXT_PUBLIC_R2_BUCKET_NAME,
+    localEnv.NEXT_PUBLIC_R2_BUCKET,
+    localEnv.NEXT_PUBLIC_BUCKET_NAME,
   );
   const derivedEndpoint = buildDerivedR2Endpoint(
     pickFirstNonEmpty(
@@ -345,13 +401,13 @@ async function resolveR2Connection(
 
   if (!bucketName) {
     throw new Error(
-      "R2 bucket нэр тохируулаагүй байна. `R2_BUCKET_NAME`, `TEXTBOOK_R2_BUCKET`, эсвэл `BOOK_R2_BUCKET_NAME` тохируулна уу.",
+      "R2 bucket нэр тохируулаагүй байна. `R2_BUCKET_NAME`, `TEXTBOOK_R2_BUCKET`, `TEXTBOOK_R2_BUCKET_NAME`, эсвэл `BOOK_R2_BUCKET_NAME` тохируулна уу.",
     );
   }
 
   if (!endpoint || !accessKeyId || !secretAccessKey) {
     throw new Error(
-      "R2 credentials дутуу байна. `R2_S3_API`/`R2_ENDPOINT`, `R2_ACCESS_KEY_ID`/`AWS_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`/`AWS_SECRET_ACCESS_KEY`-аа шалгана уу.",
+      "R2 credentials дутуу байна. Энэ route нь S3-compatible R2 key pair ашигладаг тул `r2accesstoken` дангаараа хүрэхгүй. `R2_S3_API`/`R2_ENDPOINT`, `R2_ACCESS_KEY_ID`/`AWS_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`/`AWS_SECRET_ACCESS_KEY`-аа шалгана уу.",
     );
   }
 

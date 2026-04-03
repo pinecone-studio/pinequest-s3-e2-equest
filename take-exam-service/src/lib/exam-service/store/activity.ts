@@ -1,4 +1,4 @@
-import { desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type {
 	AttemptLiveFeedItem,
 	AttemptMonitoringEvent,
@@ -12,6 +12,14 @@ import { createId } from "./common";
 
 const MAX_RECENT_EVENTS = 24;
 const MAX_SCREENSHOT_EVIDENCE_EVENTS = 12;
+const MAX_LIVE_FEED_ITEMS = 60;
+const MAX_RECENT_EVENTS_QUERY_LIMIT = 360;
+const RECENT_EVENTS_QUERY_MULTIPLIER = 8;
+
+const clampLiveFeedLimit = (value: number) => {
+	const rounded = Number.isFinite(value) ? Math.round(value) : 40;
+	return Math.min(Math.max(rounded, 1), MAX_LIVE_FEED_ITEMS);
+};
 
 type LogAttemptActivityInput = {
 	code: string;
@@ -81,17 +89,23 @@ export const getAttemptMonitoringSummaries = async (
 		return new Map();
 	}
 
-	const rows = await db.query.proctoringEvents.findMany({
-		where: inArray(schema.proctoringEvents.attemptId, attemptIds),
-		orderBy: [
-			desc(schema.proctoringEvents.occurredAt),
-			desc(schema.proctoringEvents.createdAt),
-		],
-	});
+	const aggregatedRows = await db
+		.select({
+			attemptId: schema.proctoringEvents.attemptId,
+			count: sql<number>`count(*)`,
+			lastEventAt: sql<string>`max(${schema.proctoringEvents.occurredAt})`,
+			severity: schema.proctoringEvents.severity,
+		})
+		.from(schema.proctoringEvents)
+		.where(inArray(schema.proctoringEvents.attemptId, attemptIds))
+		.groupBy(
+			schema.proctoringEvents.attemptId,
+			schema.proctoringEvents.severity,
+		);
 
 	const grouped = new Map<string, AttemptMonitoringSummary>();
 
-	for (const row of rows) {
+	for (const row of aggregatedRows) {
 		const summary = grouped.get(row.attemptId) ?? {
 			totalEvents: 0,
 			infoCount: 0,
@@ -100,15 +114,48 @@ export const getAttemptMonitoringSummaries = async (
 			lastEventAt: undefined,
 			recentEvents: [],
 		};
+		const nextCount = Number(row.count) || 0;
 
-		summary.totalEvents += 1;
+		summary.totalEvents += nextCount;
 		if (row.severity === "danger") {
-			summary.dangerCount += 1;
+			summary.dangerCount += nextCount;
 		} else if (row.severity === "warning") {
-			summary.warningCount += 1;
+			summary.warningCount += nextCount;
 		} else {
-			summary.infoCount = (summary.infoCount ?? 0) + 1;
+			summary.infoCount = (summary.infoCount ?? 0) + nextCount;
 		}
+
+		if (
+			row.lastEventAt &&
+			(!summary.lastEventAt || row.lastEventAt > summary.lastEventAt)
+		) {
+			summary.lastEventAt = row.lastEventAt;
+		}
+
+		grouped.set(row.attemptId, summary);
+	}
+
+	const recentRows = await db.query.proctoringEvents.findMany({
+		where: inArray(schema.proctoringEvents.attemptId, attemptIds),
+		orderBy: [
+			desc(schema.proctoringEvents.occurredAt),
+			desc(schema.proctoringEvents.createdAt),
+		],
+		limit: Math.min(
+			Math.max(attemptIds.length * RECENT_EVENTS_QUERY_MULTIPLIER, MAX_RECENT_EVENTS),
+			MAX_RECENT_EVENTS_QUERY_LIMIT,
+		),
+	});
+
+	for (const row of recentRows) {
+		const summary = grouped.get(row.attemptId) ?? {
+			totalEvents: 0,
+			infoCount: 0,
+			warningCount: 0,
+			dangerCount: 0,
+			lastEventAt: undefined,
+			recentEvents: [],
+		};
 
 		if (!summary.lastEventAt) {
 			summary.lastEventAt = row.occurredAt;
@@ -138,14 +185,37 @@ export const getAttemptMonitoringSummaries = async (
 export const listLiveMonitoringFeed = async (
 	db: DbClient,
 	limit = 40,
+	options?: {
+		testId?: string;
+	},
 ): Promise<AttemptLiveFeedItem[]> => {
+	const safeLimit = clampLiveFeedLimit(limit);
+	const scopedAttempts = options?.testId
+		? await db.query.attempts.findMany({
+				where: eq(schema.attempts.testId, options.testId),
+				columns: {
+					id: true,
+				},
+			})
+		: null;
+	const scopedAttemptIds = scopedAttempts?.map((attempt) => attempt.id) ?? null;
+
+	if (scopedAttemptIds && scopedAttemptIds.length === 0) {
+		return [];
+	}
+
 	const rows = await db.query.proctoringEvents.findMany({
-		where: ne(schema.proctoringEvents.severity, "info"),
+		where: scopedAttemptIds
+			? and(
+					ne(schema.proctoringEvents.severity, "info"),
+					inArray(schema.proctoringEvents.attemptId, scopedAttemptIds),
+				)
+			: ne(schema.proctoringEvents.severity, "info"),
 		orderBy: [
 			desc(schema.proctoringEvents.occurredAt),
 			desc(schema.proctoringEvents.createdAt),
 		],
-		limit,
+		limit: safeLimit,
 	});
 
 	if (rows.length === 0) {

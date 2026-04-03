@@ -17,10 +17,14 @@ import {
   AlertTriangle,
   AlertOctagon,
   User,
-  Camera,
 } from "lucide-react";
 
+import {
+  formatMonitoringEventDetail,
+  formatMonitoringModeLabel,
+} from "@/lib/format-monitoring-event-detail";
 import { cn } from "@/lib/utils";
+import { MonitoringScreenshotPreview } from "./monitoring-screenshot-preview";
 import {
   MonitoringEvent,
   MonitoringState,
@@ -297,7 +301,13 @@ function TimelineEvent({ event }: { event: MonitoringEvent }) {
             })}
           </span>
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">{event.detail}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {formatMonitoringEventDetail({
+            code: event.code,
+            detail: event.detail,
+            mode: event.mode,
+          })}
+        </p>
         {event.mode || event.screenshotUrl ? (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {event.mode ? (
@@ -314,15 +324,18 @@ function TimelineEvent({ event }: { event: MonitoringEvent }) {
               </span>
             ) : null}
             {event.screenshotUrl ? (
-              <a
-                className="inline-flex items-center gap-1 text-[10px] font-medium text-foreground underline-offset-4 hover:underline"
-                href={event.screenshotUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                <Camera className="h-3 w-3" />
-                Screenshot
-              </a>
+              <MonitoringScreenshotPreview
+                screenshotUrl={event.screenshotUrl}
+                title={`${event.title} — дэлгэцийн зураг`}
+                capturedAtLabel={event.screenshotCapturedAt?.toLocaleTimeString(
+                  "en-US",
+                  {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  },
+                )}
+                triggerClassName="border-transparent px-0 py-0 text-[10px] underline-offset-4 hover:bg-transparent hover:underline"
+              />
             ) : null}
           </div>
         ) : null}
@@ -332,14 +345,5 @@ function TimelineEvent({ event }: { event: MonitoringEvent }) {
 }
 
 function formatMonitoringMode(mode: NonNullable<MonitoringEvent["mode"]>) {
-  switch (mode) {
-    case "screen-capture-enabled":
-      return "Screen capture";
-    case "fallback-dom-capture":
-      return "Fallback capture";
-    case "limited-monitoring":
-      return "Limited monitoring";
-    default:
-      return mode;
-  }
+  return formatMonitoringModeLabel(mode) ?? mode;
 }

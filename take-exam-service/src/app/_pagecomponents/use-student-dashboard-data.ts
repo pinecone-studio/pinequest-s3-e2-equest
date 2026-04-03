@@ -22,6 +22,14 @@ type UseStudentDashboardDataArgs = {
   setError: (value: string | null) => void;
 };
 
+function hasPublishedAttemptResult(attempt: AttemptSummary) {
+  return (
+    typeof attempt.score === "number" ||
+    typeof attempt.percentage === "number" ||
+    Boolean(attempt.result)
+  );
+}
+
 export function useStudentDashboardData({
   enabled = true,
   setError,
@@ -76,6 +84,14 @@ export function useStudentDashboardData({
   const visibleCompletedAttempts = useMemo(
     () => completedAttempts.filter((attempt) => testsById.has(attempt.testId)),
     [completedAttempts, testsById],
+  );
+
+  const resultAttempts = useMemo(
+    () =>
+      visibleCompletedAttempts.filter((attempt) =>
+        hasPublishedAttemptResult(attempt),
+      ),
+    [visibleCompletedAttempts],
   );
 
   const hasPendingApprovalAttempts = useMemo(
@@ -162,35 +178,6 @@ export function useStudentDashboardData({
     (test) => !completedByTestId.has(test.id),
   ).length;
 
-  const completionRate = visibleApprovedAttempts.length
-    ? Math.round(
-        (visibleApprovedAttempts.length /
-          Math.max(1, visibleCompletedAttempts.length)) *
-          100,
-      )
-    : 0;
-
-  const averageScore = visibleApprovedAttempts.length
-    ? Math.round(
-        visibleApprovedAttempts.reduce(
-          (sum, attempt) => sum + (attempt.percentage ?? 0),
-          0,
-        ) / visibleApprovedAttempts.length,
-      )
-    : 0;
-
-  const passedAttemptsCount = useMemo(
-    () =>
-      visibleApprovedAttempts.filter(
-        (attempt) => (attempt.percentage ?? 0) >= 60,
-      ).length,
-    [visibleApprovedAttempts],
-  );
-
-  const passRate = visibleCompletedAttempts.length
-    ? Math.round((passedAttemptsCount / visibleCompletedAttempts.length) * 100)
-    : 0;
-
   const resultRows = useMemo(
     (): ResultRow[] =>
       visibleCompletedAttempts.flatMap((attempt) => {
@@ -200,18 +187,23 @@ export function useStudentDashboardData({
         }
 
         const scoreText =
-          attempt.score != null && attempt.maxScore != null
-            ? `${attempt.score}/${attempt.maxScore}`
-            : attempt.percentage != null
-              ? `${attempt.percentage}%`
-              : "-";
+          attempt.score != null &&
+          (attempt.maxScore != null || attempt.result?.maxScore != null)
+            ? `${attempt.score}/${attempt.maxScore ?? attempt.result?.maxScore ?? 0}`
+            : attempt.result?.score != null && attempt.result?.maxScore != null
+              ? `${attempt.result.score}/${attempt.result.maxScore}`
+              : attempt.percentage != null
+                ? `${attempt.percentage}%`
+                : attempt.result?.percentage != null
+                  ? `${attempt.result.percentage}%`
+                  : "-";
 
         return [{
           attemptId: attempt.attemptId,
           examName: attempt.title,
           subject: mappedTest.criteria.subject,
           className: selectedStudent?.className ?? "-",
-          isApproved: attempt.status === "approved",
+          hasResult: hasPublishedAttemptResult(attempt),
           teacher: "С.Жаргалмаа",
           startedAt: formatDate(attempt.startedAt),
           finishedAt: formatDate(attempt.submittedAt ?? attempt.startedAt),
@@ -220,6 +212,37 @@ export function useStudentDashboardData({
       }),
     [selectedStudent, testsById, visibleCompletedAttempts],
   );
+
+  const averageScore = resultAttempts.length
+    ? Math.round(
+        resultAttempts.reduce((sum, attempt) => {
+          const resolvedPercentage =
+            attempt.percentage ?? attempt.result?.percentage ?? 0;
+          return sum + resolvedPercentage;
+        }, 0) / resultAttempts.length,
+      )
+    : 0;
+
+  const passedAttemptsCount = useMemo(
+    () =>
+      resultAttempts.filter((attempt) => {
+        const resolvedPercentage =
+          attempt.percentage ?? attempt.result?.percentage ?? 0;
+        return resolvedPercentage >= 60;
+      }).length,
+    [resultAttempts],
+  );
+
+  const passRate = visibleCompletedAttempts.length
+    ? Math.round((passedAttemptsCount / visibleCompletedAttempts.length) * 100)
+    : 0;
+
+  const completionRate = resultAttempts.length
+    ? Math.round(
+        (resultAttempts.length / Math.max(1, visibleCompletedAttempts.length)) *
+          100,
+      )
+    : 0;
 
   const applyDashboardPayload = useCallback((payload: {
     availableTests: TeacherTestSummary[];
@@ -341,6 +364,7 @@ export function useStudentDashboardData({
     loadDashboardData,
     passRate,
     passedAttemptsCount,
+    resultAttempts,
     resultRows,
     selectedStudent,
     selectedStudentId,

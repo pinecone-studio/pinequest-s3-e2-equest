@@ -4,14 +4,15 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fetchRuntimeJson } from "@/lib/runtime-api";
-import { fetchTakeExamDashboard } from "@/lib/take-exam-dashboard-api";
+import { buildAblyAuthUrl, fetchRuntimeJson } from "@/lib/runtime-api";
+import { fetchTakeExamLiveDashboardExam } from "@/lib/take-exam-dashboard-api";
 import { TestShell } from "../_components/test-shell";
 import type { BreadcrumbItem } from "../_components/test-header-bar";
 import { ExamDashboard } from "./_components/exam-dashboard";
 import { TeacherExamGallery } from "./_components/teacher-exam-gallery";
 import {
   buildExamDashboardData,
+  buildExamList,
   type DashboardApiPayload,
 } from "./lib/dashboard-adapters";
 import type {
@@ -21,9 +22,7 @@ import type {
   OllamaConnectionStatus,
 } from "./lib/types";
 
-const POLL_INTERVAL_MS = 15_000;
-const CREATED_EXAMS_CACHE_KEY = "test-live-dashboard-created-exams";
-const CREATED_EXAMS_CACHE_TTL_MS = 2 * 60 * 1000;
+const ACTIVE_POLL_INTERVAL_MS = 4_000;
 const CREATE_EXAM_LIST_QUERY = `
   query FrontendListNewMathExams($limit: Int = 40) {
     listNewMathExams(limit: $limit) {
@@ -97,17 +96,17 @@ export default function ExamMonitoringApp() {
   const createdExamsRequestIdRef = useRef(0);
   const realtimeRefreshTimeoutRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.sessionStorage.removeItem("test-live-dashboard-created-exams");
+  }, []);
+
   const loadCreatedExams = useCallback(async () => {
     const requestId = createdExamsRequestIdRef.current + 1;
     createdExamsRequestIdRef.current = requestId;
-
-    const cachedExams = readCreatedExamsCache();
-    if (cachedExams) {
-      setCreatedExams(cachedExams);
-      setCreatedExamsError(null);
-      setIsCreatedExamsLoading(false);
-      return;
-    }
 
     setIsCreatedExamsLoading(true);
 
@@ -154,14 +153,6 @@ export default function ExamMonitoringApp() {
     }
   }, []);
 
-  useEffect(() => {
-    if (createdExams.length === 0) {
-      return;
-    }
-
-    writeCreatedExamsCache(createdExams);
-  }, [createdExams]);
-
   const loadOllamaStatus = useCallback(async () => {
     try {
       const nextStatus = await fetchRuntimeJson<
@@ -185,8 +176,18 @@ export default function ExamMonitoringApp() {
   }, []);
 
   const loadDashboard = useCallback(
-    async (showLoader = false) => {
+    async ({
+      forceRefresh = false,
+      showLoader = false,
+    }: {
+      forceRefresh?: boolean;
+      showLoader?: boolean;
+    } = {}) => {
       if (!selectedExamId) {
+        setPayload(null);
+        setDashboardError(null);
+        setIsLoading(false);
+        setIsRefreshing(false);
         return;
       }
 
@@ -200,7 +201,16 @@ export default function ExamMonitoringApp() {
       }
 
       try {
-        const nextPayload = await fetchTakeExamDashboard(40, selectedExamId);
+        const nextPayload = await fetchTakeExamLiveDashboardExam(
+          40,
+          selectedExamId,
+          undefined,
+          {
+            fallbackExam:
+              createdExams.find((exam) => exam.id === selectedExamId) ?? null,
+            forceRefresh,
+          },
+        );
 
         setPayload(nextPayload);
         setDashboardError(null);
@@ -216,7 +226,7 @@ export default function ExamMonitoringApp() {
         setIsRefreshing(false);
       }
     },
-    [selectedExamId],
+    [createdExams, selectedExamId],
   );
 
   useEffect(() => {
@@ -225,27 +235,40 @@ export default function ExamMonitoringApp() {
 
   useEffect(() => {
     if (!selectedExamId) {
+      setOllamaStatus(null);
       setPayload(null);
       setDashboardError(null);
       setIsLoading(false);
       setIsRefreshing(false);
-      setLastUpdated(null);
-      setOllamaStatus(null);
       return;
     }
 
-    void loadDashboard(true);
+    void loadDashboard({ forceRefresh: true, showLoader: true });
     void loadOllamaStatus();
 
     const intervalId = window.setInterval(() => {
-      void loadDashboard(false);
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      void loadDashboard();
       void loadOllamaStatus();
-    }, POLL_INTERVAL_MS);
+    }, ACTIVE_POLL_INTERVAL_MS);
 
     return () => {
       window.clearInterval(intervalId);
     };
   }, [loadDashboard, loadOllamaStatus, selectedExamId]);
+
+  const liveExams = useMemo(
+    () => (payload ? buildExamList(payload) : []),
+    [payload],
+  );
+
+  const exams = useMemo(
+    () => mergeCreatedExamsWithLiveData(createdExams, liveExams),
+    [createdExams, liveExams],
+  );
 
   const selectedExamData = useMemo(
     () =>
@@ -275,8 +298,8 @@ export default function ExamMonitoringApp() {
   }, [payload, selectedExamId]);
 
   const selectedCreatedExam = useMemo(
-    () => createdExams.find((exam) => exam.id === selectedExamId) ?? null,
-    [createdExams, selectedExamId],
+    () => exams.find((exam) => exam.id === selectedExamId) ?? null,
+    [exams, selectedExamId],
   );
 
   const focusAnalysisKey = useMemo(() => {
@@ -337,7 +360,7 @@ export default function ExamMonitoringApp() {
       return;
     }
 
-    const authUrl = process.env.NEXT_PUBLIC_ABLY_AUTH_URL || "/api/ably/auth";
+    const authUrl = buildAblyAuthUrl();
     let isActive = true;
     let cleanup: (() => void) | null = null;
     setAblyStatus({
@@ -352,7 +375,8 @@ export default function ExamMonitoringApp() {
 
       realtimeRefreshTimeoutRef.current = window.setTimeout(() => {
         realtimeRefreshTimeoutRef.current = null;
-        void loadDashboard(false);
+        void loadDashboard({ forceRefresh: true });
+        void loadCreatedExams();
       }, 350);
     };
 
@@ -368,9 +392,7 @@ export default function ExamMonitoringApp() {
           authUrl,
           authMethod: "POST",
         });
-        const channel = realtime.channels.get(
-          `exam-monitoring:${selectedExamId}`,
-        );
+        const channel = realtime.channels.get(`exam-monitoring:${selectedExamId}`);
         const subscribedEvents = [
           "attempt.started",
           "attempt.saved",
@@ -464,10 +486,9 @@ export default function ExamMonitoringApp() {
           }
         };
 
+        cleanup = disposeRealtime;
+
         try {
-          for (const eventName of subscribedEvents) {
-            channel.subscribe(eventName, handleRealtimeMessage);
-          }
           realtime.connection.on(handleConnectionState);
           handleConnectionState({
             current: realtime.connection.state,
@@ -486,7 +507,28 @@ export default function ExamMonitoringApp() {
           return;
         }
 
-        cleanup = disposeRealtime;
+        void channel
+          .subscribe([...subscribedEvents], handleRealtimeMessage)
+          .then(() => {
+            if (!isActive) {
+              disposeRealtime();
+            }
+          })
+          .catch((error) => {
+            if (!isActive || didDisposeRealtime) {
+              return;
+            }
+
+            setAblyStatus({
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Ably realtime subscription эхлүүлж чадсангүй.",
+              lastCheckedAt: new Date().toISOString(),
+              state: "failed",
+            });
+            disposeRealtime();
+          });
       })
       .catch((error) => {
         setAblyStatus({
@@ -508,7 +550,7 @@ export default function ExamMonitoringApp() {
       }
       cleanup?.();
     };
-  }, [loadDashboard, selectedExamId]);
+  }, [loadCreatedExams, loadDashboard, selectedExamId]);
 
   useEffect(() => {
     if (!focusAnalysisRequestBody || !focusAnalysisKey) {
@@ -562,18 +604,23 @@ export default function ExamMonitoringApp() {
   }, [focusAnalysisKey, focusAnalysisRequestBody]);
 
   const handleRefresh = useCallback(() => {
-    if (!selectedExamId) {
-      return;
-    }
+    void loadCreatedExams();
 
-    void loadDashboard(false);
-    void loadOllamaStatus();
-  }, [loadDashboard, loadOllamaStatus, selectedExamId]);
+    if (selectedExamId) {
+      void loadDashboard({ forceRefresh: true });
+      void loadOllamaStatus();
+    }
+  }, [loadCreatedExams, loadDashboard, loadOllamaStatus, selectedExamId]);
 
   const headerTitle =
     selectedExamData?.exam?.title ??
     selectedCreatedExam?.title ??
     "Шууд хяналтын самбар";
+  const overviewHeaderBreadcrumb = (
+    <div className="text-[18px] font-bold tracking-tight text-slate-900 sm:text-[20px]">
+      Миний шалгалтууд
+    </div>
+  );
   const headerDescription = selectedExamData?.exam
     ? `${selectedExamData.exam.subject} • ${selectedExamData.exam.topic} • ${selectedExamData.exam.class}`
     : selectedCreatedExam
@@ -645,6 +692,7 @@ export default function ExamMonitoringApp() {
   if (isCreatedExamsLoading) {
     return (
       <TestShell
+        breadcrumb={overviewHeaderBreadcrumb}
         breadcrumbItems={breadcrumbItems}
         title="Миний шалгалтууд"
         sidebarCollapsible
@@ -662,20 +710,17 @@ export default function ExamMonitoringApp() {
   if (!selectedExamId) {
     return (
       <TestShell
+        breadcrumb={overviewHeaderBreadcrumb}
         breadcrumbItems={breadcrumbItems}
         title="Миний шалгалтууд"
         sidebarCollapsible
         teacherVariant="switcher"
       >
         <TeacherExamGallery
-          exams={createdExams}
+          exams={exams}
           error={createdExamsError}
           onScheduleExam={() => router.push("/test/ai-scheduler")}
-          onSelectExam={(exam) =>
-            router.push(
-              `/test/material-builder?examId=${encodeURIComponent(exam.id)}`,
-            )
-          }
+          onSelectExam={(exam) => setSelectedExamId(exam.id)}
         />
       </TestShell>
     );
@@ -745,6 +790,36 @@ export default function ExamMonitoringApp() {
   );
 }
 
+function mergeCreatedExamsWithLiveData(
+  createdExams: Exam[],
+  liveExams: Exam[],
+): Exam[] {
+  const examsById = new Map<string, Exam>();
+
+  for (const exam of createdExams) {
+    examsById.set(exam.id, exam);
+  }
+
+  for (const liveExam of liveExams) {
+    const existing = examsById.get(liveExam.id);
+    examsById.set(liveExam.id, {
+      ...existing,
+      ...liveExam,
+      class: liveExam.class || existing?.class || "",
+      endTime: liveExam.endTime ?? existing?.endTime,
+      questionCount: liveExam.questionCount || existing?.questionCount || 0,
+      startTime: liveExam.startTime ?? existing?.startTime ?? new Date(),
+      subject: liveExam.subject || existing?.subject || "",
+      title: liveExam.title || existing?.title || "",
+      topic: liveExam.topic || existing?.topic || "",
+    });
+  }
+
+  return [...examsById.values()].sort(
+    (left, right) => right.startTime.getTime() - left.startTime.getTime(),
+  );
+}
+
 function formatTimeAgo(date: Date): string {
   const now = new Date();
   const diffSecs = Math.floor((now.getTime() - date.getTime()) / 1000);
@@ -793,21 +868,21 @@ function normalizeAblyConnectionState(
 
 function formatAblyStatusLabel(status: AblyConnectionStatus | null): string {
   if (!status) {
-    return "Ably шалгаж байна";
+    return "Шууд холболтыг шалгаж байна";
   }
 
   switch (status.state) {
     case "connected":
-      return "Ably realtime холбогдсон";
+      return "Шууд холболт идэвхтэй";
     case "connecting":
     case "checking":
-      return "Ably realtime холбогдож байна";
+      return "Шууд холболт тогтоож байна";
     case "disconnected":
-      return "Ably realtime тасарсан";
+      return "Шууд холболт тасарсан";
     case "failed":
-      return "Ably realtime холбогдоогүй";
+      return "Шууд холболт тогтсонгүй";
     default:
-      return "Ably realtime шалгаж байна";
+      return "Шууд холболтыг шалгаж байна";
   }
 }
 
@@ -976,62 +1051,4 @@ function parseExamDate(value?: string | null): Date {
 
 function sortCreatedExamsByStartTime(left: Exam, right: Exam) {
   return right.startTime.getTime() - left.startTime.getTime();
-}
-
-function readCreatedExamsCache(): Exam[] | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.sessionStorage.getItem(CREATED_EXAMS_CACHE_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as {
-      expiresAt?: number;
-      exams?: Array<
-        Omit<Exam, "startTime" | "endTime"> & {
-          endTime?: string;
-          startTime: string;
-        }
-      >;
-    };
-
-    if (!parsed.expiresAt || parsed.expiresAt < Date.now() || !parsed.exams) {
-      window.sessionStorage.removeItem(CREATED_EXAMS_CACHE_KEY);
-      return null;
-    }
-
-    return parsed.exams.map((exam) => ({
-      ...exam,
-      endTime: exam.endTime ? new Date(exam.endTime) : undefined,
-      startTime: new Date(exam.startTime),
-    }));
-  } catch {
-    return null;
-  }
-}
-
-function writeCreatedExamsCache(exams: Exam[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.sessionStorage.setItem(
-      CREATED_EXAMS_CACHE_KEY,
-      JSON.stringify({
-        exams: exams.map((exam) => ({
-          ...exam,
-          endTime: exam.endTime?.toISOString(),
-          startTime: exam.startTime.toISOString(),
-        })),
-        expiresAt: Date.now() + CREATED_EXAMS_CACHE_TTL_MS,
-      }),
-    );
-  } catch {
-    // Ignore storage failures.
-  }
 }

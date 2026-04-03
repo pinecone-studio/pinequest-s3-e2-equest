@@ -21,6 +21,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
+import MathPreviewText from "@/components/math-preview-text";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,6 +30,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import { formatMonitoringEventDetail } from "@/lib/format-monitoring-event-detail";
+import { isMathQuestionType } from "@/lib/is-math-question-type";
+import { localizeMonitoringEventTitle } from "@/lib/monitoring-event-localization";
 import { cn } from "@/lib/utils";
 import type {
   Exam,
@@ -41,8 +50,10 @@ import type {
 type ExamProgressMonitoringProps = {
   exam: Exam;
   events: MonitoringEvent[];
+  isApprovingAttemptId?: string | null;
   lastUpdated: Date | null;
   onBack: () => void;
+  onApproveAttempt?: (attempt: SubmittedAttempt) => Promise<void>;
   reviewAttempts: SubmittedAttempt[];
   students: Student[];
 };
@@ -97,6 +108,21 @@ type StudentRow = {
   screenshots: EventScreenshot[];
   statusLabel: string;
   statusTone: StudentStatusTone;
+};
+
+type KpiCardKey = (typeof KPI_CARD_CONFIG)[number]["key"];
+
+type KpiHoverItem = {
+  id: string;
+  label: string;
+  meta: string;
+};
+
+type KpiHoverDetail = {
+  description: string;
+  emptyMessage: string;
+  items: KpiHoverItem[];
+  title: string;
 };
 
 const KPI_CARD_CONFIG = [
@@ -157,9 +183,16 @@ function isSuspiciousEventCode(code?: string) {
   );
 }
 
+function sumEventCounts<T extends { count?: number }>(events: T[]) {
+  return events.reduce((total, event) => total + (event.count ?? 1), 0);
+}
+
 export function ExamProgressMonitoring({
   exam,
   events,
+  isApprovingAttemptId = null,
+  onBack,
+  onApproveAttempt,
   reviewAttempts,
   students,
 }: ExamProgressMonitoringProps) {
@@ -170,6 +203,8 @@ export function ExamProgressMonitoring({
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     null,
   );
+  const [selectedScreenshot, setSelectedScreenshot] =
+    useState<EventScreenshot | null>(null);
   const [selectedReviewAttemptId, setSelectedReviewAttemptId] = useState<
     string | null
   >(reviewAttempts[0]?.id ?? null);
@@ -285,9 +320,6 @@ export function ExamProgressMonitoring({
   const selectedAttemptScoreLabel = selectedAttempt
     ? formatAttemptPoints(selectedAttempt)
     : "Хүлээгдэж байна";
-  const canEditSelectedQuestionScore = Boolean(
-    selectedQuestion && canManuallyScoreQuestion(selectedQuestion),
-  );
 
   const totalStudentCount = Math.max(exam.totalStudentCount, students.length);
   const activeStudentCount = students.filter(
@@ -295,78 +327,251 @@ export function ExamProgressMonitoring({
       student.status === "in-progress" || student.status === "processing",
   ).length;
   const submittedCount = localReviewAttempts.length;
-  const warningCount = stackedMonitoringEvents.filter(
-    (event) => event.severity === "warning",
-  ).length;
-  const totalMonitoringEventCount = stackedMonitoringEvents.length;
+  const suspiciousMonitoringEvents = useMemo(
+    () =>
+      stackedMonitoringEvents.filter((event) => isSuspiciousEventCode(event.code)),
+    [stackedMonitoringEvents],
+  );
+  const suspiciousAttemptCount = useMemo(
+    () => sumEventCounts(suspiciousMonitoringEvents),
+    [suspiciousMonitoringEvents],
+  );
+  const totalMonitoringEventCount = useMemo(
+    () => sumEventCounts(stackedMonitoringEvents),
+    [stackedMonitoringEvents],
+  );
   const offlineCount = students.filter(
     (student) => student.monitoringState === "offline",
   ).length;
+  const activeStudents = useMemo(
+    () =>
+      [...students]
+        .filter(
+          (student) =>
+            student.status === "in-progress" || student.status === "processing",
+        )
+        .sort((left, right) => right.lastActivity.getTime() - left.lastActivity.getTime()),
+    [students],
+  );
+  const suspiciousStudents = useMemo(() => {
+    const counts = new Map<string, { count: number; name: string }>();
+
+    for (const event of suspiciousMonitoringEvents) {
+      const existing = counts.get(event.studentId);
+      if (existing) {
+        existing.count += event.count;
+        continue;
+      }
+
+      counts.set(event.studentId, {
+        count: event.count,
+        name: event.studentName,
+      });
+    }
+
+    return [...counts.entries()]
+      .map(([studentId, value]) => ({
+        count: value.count,
+        studentId,
+        studentName: value.name,
+      }))
+      .sort((left, right) => right.count - left.count);
+  }, [suspiciousMonitoringEvents]);
+  const offlineStudents = useMemo(
+    () =>
+      [...students]
+        .filter((student) => student.monitoringState === "offline")
+        .sort((left, right) => right.lastActivity.getTime() - left.lastActivity.getTime()),
+    [students],
+  );
 
   const kpiValues = {
     active: `${activeStudentCount}/${Math.max(totalStudentCount, activeStudentCount)}`,
     offline: padCount(offlineCount),
     submitted: String(submittedCount),
-    warnings: padCount(warningCount),
+    warnings: padCount(suspiciousAttemptCount),
   };
-  const remainingTimeSummaryLabel = "30 минут";
+  const kpiHoverDetails = useMemo<Record<KpiCardKey, KpiHoverDetail>>(
+    () => ({
+      active: {
+        description: `Нийт ${Math.max(totalStudentCount, activeStudentCount)} сурагчаас ${activeStudentCount} нь одоо шалгалт өгч байна.`,
+        emptyMessage: "Одоогоор идэвхтэй шалгалт өгч буй сурагч алга байна.",
+        items: activeStudents.map((student) => ({
+          id: student.id,
+          label: student.name,
+          meta: `${formatStudentStatus(student.status)} • Явц ${student.progress}%`,
+        })),
+        title: "Шалгалт өгч буй сурагчид",
+      },
+      offline: {
+        description: `${offlineCount} сурагчийн холболт одоогоор тасарсан байна.`,
+        emptyMessage: "Одоогоор холболт тасарсан сурагч алга байна.",
+        items: offlineStudents.map((student) => ({
+          id: student.id,
+          label: student.name,
+          meta: `${formatStudentStatus(student.status)} • Сүүлд ${formatDateTime(student.lastActivity)}`,
+        })),
+        title: "Холболт тасарсан сурагчид",
+      },
+      submitted: {
+        description: `${submittedCount} сурагчийн илгээсэн ажил review хэсэгт орж ирсэн байна.`,
+        emptyMessage: "Одоогоор илгээсэн шалгалт алга байна.",
+        items: [...localReviewAttempts]
+          .sort(
+            (left, right) =>
+              right.submissionTime.getTime() - left.submissionTime.getTime(),
+          )
+          .map((attempt) => ({
+            id: attempt.id,
+            label: attempt.studentName,
+            meta: `${formatShortTime(attempt.submissionTime)} • ${formatReviewStatusLabel(attempt.status)}`,
+          })),
+        title: "Шалгалт илгээсэн сурагчид",
+      },
+      warnings: {
+        description: `${suspiciousAttemptCount} сэжигтэй үйлдэл бүртгэгдсэн бөгөөд доор сурагчаар нь харуулж байна.`,
+        emptyMessage: "Одоогоор сэжигтэй үйлдэл бүртгэгдээгүй байна.",
+        items: suspiciousStudents.map((student) => ({
+          id: student.studentId,
+          label: student.studentName,
+          meta: `${student.count} сэжигтэй бүртгэл`,
+        })),
+        title: "Анхааруулгатай сурагчид",
+      },
+    }),
+    [
+      activeStudentCount,
+      activeStudents,
+      localReviewAttempts,
+      offlineCount,
+      offlineStudents,
+      submittedCount,
+      suspiciousAttemptCount,
+      suspiciousStudents,
+      totalStudentCount,
+    ],
+  );
+  const showRemainingTime = activeStudentCount > 0 && !exam.endTime;
   const remainingTimeCountdownLabel =
-    formatRemainingTime(mockRemainingEndTime, currentTime) ?? "00:30:00";
+    showRemainingTime
+      ? formatRemainingTime(mockRemainingEndTime, currentTime) ?? "00:30:00"
+      : null;
 
   return (
     <section className="min-h-full space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-5">
-        <div className="flex flex-wrap items-end gap-11">
-          <button
+        <div className="space-y-3">
+          <Button
             type="button"
-            onClick={() => setActiveTab("monitoring")}
-            className={tabClassName(activeTab === "monitoring")}
+            variant="ghost"
+            onClick={onBack}
+            className="h-10 rounded-[14px] px-3 text-[14px] font-semibold text-slate-600 hover:bg-white hover:text-slate-900"
           >
-            Шалгалтын явцын хяналт
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("performance")}
-            className={tabClassName(activeTab === "performance")}
-          >
-            Гүйцэтгэлийн хяналт
-          </button>
+            <ChevronLeft className="mr-1 h-4 w-4" />
+            Шалгалтын явц руу буцах
+          </Button>
+
+          <div className="flex flex-wrap items-end gap-11">
+            <button
+              type="button"
+              onClick={() => setActiveTab("monitoring")}
+              className={tabClassName(activeTab === "monitoring")}
+            >
+              Шалгалтын явцын хяналт
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("performance")}
+              className={tabClassName(activeTab === "performance")}
+            >
+              Гүйцэтгэлийн хяналт
+            </button>
+          </div>
         </div>
 
-        <div className="flex min-w-42 flex-col rounded-[12px] border border-[#0b5cab] bg-white px-4 py-2 text-right text-slate-900">
-          <span className="text-[13px] font-semibold leading-none">
-            Үлдсэн хугацаа:
-          </span>
-          <span className="mt-1 text-[18px] font-bold leading-none tracking-[0.02em] text-[#0b5cab]">
-            {remainingTimeCountdownLabel}
-          </span>
-        </div>
+        {showRemainingTime ? (
+          <div className="flex min-w-42 flex-col rounded-[12px] border border-[#0b5cab] bg-white px-4 py-2 text-right text-slate-900">
+            <span className="text-[13px] font-semibold leading-none">
+              Үлдсэн хугацаа:
+            </span>
+            <span className="mt-1 text-[18px] font-bold leading-none tracking-[0.02em] text-[#0b5cab]">
+              {remainingTimeCountdownLabel}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {activeTab === "monitoring" ? (
         <>
           <div className="grid gap-5 xl:grid-cols-4">
             {KPI_CARD_CONFIG.map((card) => (
-              <article
-                key={card.key}
-                className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-white px-7 py-6 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
-              >
-                <span
-                  className={`absolute inset-y-0 left-0 w-[5px] rounded-l-[24px] ${card.accent}`}
-                  aria-hidden="true"
-                />
-                <div className="flex items-start justify-between gap-4">
-                  <p className="text-[17px] font-bold text-slate-700">
-                    {card.title}
-                  </p>
-                  <card.icon className={`h-6 w-6 ${card.tone}`} />
-                </div>
-                <p
-                  className={`mt-10 text-[42px] font-bold leading-none ${card.tone}`}
+              <HoverCard key={card.key} closeDelay={120} openDelay={120}>
+                <HoverCardTrigger asChild>
+                  <article
+                    tabIndex={0}
+                    aria-label={`${card.title} дэлгэрэнгүйг харах`}
+                    className="group relative overflow-hidden rounded-[24px] border border-slate-200 bg-white px-7 py-6 shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition-all duration-200 ease-out hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_18px_40px_rgba(15,23,42,0.12)] focus-visible:ring-2 focus-visible:ring-[#0b5cab]/20"
+                  >
+                    <span
+                      className={`absolute inset-y-0 left-0 w-[5px] rounded-l-[24px] ${card.accent} transition-all duration-200 group-hover:w-[7px]`}
+                      aria-hidden="true"
+                    />
+                    <span
+                      className={`pointer-events-none absolute -right-7 -top-7 h-24 w-24 rounded-full ${card.accent} opacity-[0.08] blur-2xl transition-all duration-200 group-hover:scale-110 group-hover:opacity-[0.14]`}
+                      aria-hidden="true"
+                    />
+                    <div className="flex items-start justify-between gap-4">
+                      <p className="text-[17px] font-bold text-slate-700 transition-colors duration-200 group-hover:text-slate-900">
+                        {card.title}
+                      </p>
+                      <card.icon
+                        className={`h-6 w-6 ${card.tone} transition-transform duration-200 group-hover:scale-110 group-hover:-translate-y-0.5`}
+                      />
+                    </div>
+                    <p
+                      className={`mt-10 text-[42px] font-bold leading-none ${card.tone} transition-transform duration-200 group-hover:translate-x-0.5`}
+                    >
+                      {kpiValues[card.key]}
+                    </p>
+                  </article>
+                </HoverCardTrigger>
+                <HoverCardContent
+                  align="start"
+                  side="bottom"
+                  sideOffset={10}
+                  className="w-[22rem] rounded-[20px] border border-slate-200 bg-white p-0 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.35)]"
                 >
-                  {kpiValues[card.key]}
-                </p>
-              </article>
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {kpiHoverDetails[card.key].title}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      {kpiHoverDetails[card.key].description}
+                    </p>
+                  </div>
+                  <div className="max-h-64 space-y-2 overflow-y-auto px-4 py-3">
+                    {kpiHoverDetails[card.key].items.length > 0 ? (
+                      kpiHoverDetails[card.key].items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-[14px] border border-slate-100 bg-slate-50/70 px-3 py-2"
+                        >
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {item.label}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {item.meta}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[14px] border border-dashed border-slate-200 px-3 py-5 text-center text-xs text-slate-500">
+                        {kpiHoverDetails[card.key].emptyMessage}
+                      </div>
+                    )}
+                  </div>
+                </HoverCardContent>
+              </HoverCard>
             ))}
           </div>
 
@@ -591,6 +796,7 @@ export function ExamProgressMonitoring({
             onOpenChange={(open) => {
               if (!open) {
                 setSelectedStudentId(null);
+                setSelectedScreenshot(null);
               }
             }}
           >
@@ -613,7 +819,7 @@ export function ExamProgressMonitoring({
                           Сэжигтэй үйлдлүүд
                         </h3>
                         <span className="rounded-full bg-[#eaf3ff] px-3.5 py-1.5 text-[12px] font-semibold text-[#0b5cab]">
-                          {selectedStudent.risk} бүртгэл
+                          {selectedStudent.risk} төрөл
                         </span>
                       </div>
 
@@ -648,9 +854,11 @@ export function ExamProgressMonitoring({
                       {selectedStudent.screenshots.length > 0 ? (
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                           {selectedStudent.screenshots.map((screenshot) => (
-                            <article
+                            <button
+                              type="button"
                               key={screenshot.id}
-                              className="overflow-hidden rounded-[16px] border border-[#dfe7f2] bg-white"
+                              onClick={() => setSelectedScreenshot(screenshot)}
+                              className="overflow-hidden rounded-[16px] border border-[#dfe7f2] bg-white text-left transition hover:border-[#93c5fd] hover:shadow-[0_10px_24px_rgba(59,130,246,0.14)]"
                             >
                               <div className="relative aspect-[16/9] overflow-hidden border-b border-[#e8edf5] bg-[#edf3fb]">
                                 <ScreenshotPreviewImage
@@ -669,7 +877,7 @@ export function ExamProgressMonitoring({
                                     screenshot.occurredLabel}
                                 </p>
                               </div>
-                            </article>
+                            </button>
                           ))}
                         </div>
                       ) : (
@@ -684,11 +892,48 @@ export function ExamProgressMonitoring({
               ) : null}
             </DialogContent>
           </Dialog>
+
+          <Dialog
+            open={selectedScreenshot !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                setSelectedScreenshot(null);
+              }
+            }}
+          >
+            <DialogContent className="w-[min(100vw-2rem,72rem)]! max-w-none overflow-hidden rounded-[22px] border border-[#dfe7f2] bg-white p-0 shadow-[0_16px_46px_rgba(15,23,42,0.12)] [&>button:last-child]:right-5 [&>button:last-child]:top-4 [&>button:last-child]:h-6 [&>button:last-child]:w-6 [&>button:last-child]:rounded-full [&>button:last-child]:border-0 [&>button:last-child]:bg-transparent [&>button:last-child]:p-0 [&>button:last-child]:text-slate-900 [&>button:last-child]:opacity-100 [&>button:last-child]:shadow-none [&>button:last-child]:ring-0 [&>button:last-child]:transition-none [&>button:last-child]:hover:bg-transparent [&>button:last-child]:hover:text-slate-900 [&>button:last-child]:focus:outline-none [&>button:last-child]:focus-visible:ring-0 sm:max-w-none">
+              {selectedScreenshot ? (
+                <>
+                  <DialogHeader className="border-b border-[#e8edf5] px-5 py-4">
+                    <DialogTitle className="text-[17px] font-bold text-slate-900">
+                      {selectedScreenshot.caption}
+                    </DialogTitle>
+                    <DialogDescription className="mt-1 text-[12px] text-slate-500">
+                      {selectedScreenshot.occurredLabel}
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="px-5 py-5">
+                    <div className="relative flex min-h-[380px] items-center justify-center overflow-hidden rounded-[18px] border border-[#dfe7f2] bg-[#0f172a] p-3">
+                      <div className="relative h-[min(75vh,42rem)] w-full">
+                        <ScreenshotPreviewImage
+                          src={selectedScreenshot.url}
+                          fallbackSrc={selectedScreenshot.fallbackUrl}
+                          alt={selectedScreenshot.caption}
+                          className="object-contain"
+                          sizes="100vw"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </DialogContent>
+          </Dialog>
         </>
       ) : (
         <PerformanceTabContent
           correctCount={correctCount}
-          canEditSelectedQuestionScore={canEditSelectedQuestionScore}
           incorrectCount={incorrectCount}
           isScoreEditing={isScoreEditing}
           openEndedCount={
@@ -727,21 +972,12 @@ export function ExamProgressMonitoring({
               }),
             );
           }}
-          onMarkAttemptReviewed={() => {
-            if (!selectedAttempt) {
-              return;
-            }
-
+          isApprovingAttempt={isApprovingAttemptId === selectedAttempt?.id}
+          onApproveAttempt={onApproveAttempt}
+          onMarkAttemptReviewed={(nextAttempt) => {
             setLocalReviewAttempts((currentAttempts) =>
               currentAttempts.map((attempt) =>
-                attempt.id === selectedAttempt.id
-                  ? buildUpdatedAttempt(
-                      attempt,
-                      attempt.questions.map((question) =>
-                        markQuestionReviewed(question),
-                      ),
-                    )
-                  : attempt,
+                attempt.id === nextAttempt.id ? nextAttempt : attempt,
               ),
             );
           }}
@@ -779,10 +1015,11 @@ export function ExamProgressMonitoring({
 
 function PerformanceTabContent({
   correctCount,
-  canEditSelectedQuestionScore,
   incorrectCount,
+  isApprovingAttempt,
   isScoreEditing,
   openEndedCount,
+  onApproveAttempt,
   selectedAttempt,
   selectedAttemptScoreLabel,
   selectedQuestionId,
@@ -796,16 +1033,17 @@ function PerformanceTabContent({
   reviewAttempts,
 }: {
   correctCount: number;
-  canEditSelectedQuestionScore: boolean;
   incorrectCount: number;
+  isApprovingAttempt: boolean;
   isScoreEditing: boolean;
   openEndedCount: number;
+  onApproveAttempt?: (attempt: SubmittedAttempt) => Promise<void>;
   selectedAttempt: SubmittedAttempt | null;
   selectedAttemptScoreLabel: string;
   selectedQuestionId: string | null;
   selectedReviewAttemptId: string | null;
   onAwardPoints: (points: number) => void;
-  onMarkAttemptReviewed: () => void;
+  onMarkAttemptReviewed: (attempt: SubmittedAttempt) => void;
   onMarkQuestionReviewed: () => void;
   onSelectAttempt: (attemptId: string | null) => void;
   onSelectQuestion: (questionId: string | null) => void;
@@ -814,28 +1052,32 @@ function PerformanceTabContent({
 }) {
   const [questionFilter, setQuestionFilter] =
     useState<PerformanceQuestionFilter>("all");
+  const [scoreDraft, setScoreDraft] = useState("0");
   const pendingCount = reviewAttempts.filter(
     (attempt) => attempt.status !== "reviewed",
   ).length;
   const selectedAttemptScoreSummary = selectedAttempt
-    ? selectedAttempt.hasPublishedResult
-      ? `${selectedAttemptScoreLabel} (${calculateAttemptPercentage(selectedAttempt)}%)`
-      : `${selectedAttempt.completionRate ?? 0}% бөглөсөн`
+    ? `${selectedAttemptScoreLabel} (${calculateAttemptPercentage(selectedAttempt)}%)`
     : "0/0 (0%)";
-  const filteredQuestions =
-    selectedAttempt?.questions.filter((question) => {
-      if (questionFilter === "correct") {
-        return question.reviewState === "correct";
-      }
-      if (questionFilter === "incorrect") {
-        return question.reviewState === "incorrect";
-      }
-      if (questionFilter === "open") {
-        return question.requiresManualReview || isOpenEndedQuestion(question);
-      }
+  const selectedAttemptTeacherSyncAlert =
+    getTeacherSyncAlert(selectedAttempt);
+  const filteredQuestions = useMemo(
+    () =>
+      selectedAttempt?.questions.filter((question) => {
+        if (questionFilter === "correct") {
+          return question.reviewState === "correct";
+        }
+        if (questionFilter === "incorrect") {
+          return question.reviewState === "incorrect";
+        }
+        if (questionFilter === "open") {
+          return question.requiresManualReview || isOpenEndedQuestion(question);
+        }
 
-      return true;
-    }) ?? [];
+        return true;
+      }) ?? [],
+    [questionFilter, selectedAttempt?.questions],
+  );
   const visibleSelectedQuestion =
     filteredQuestions.find((question) => question.id === selectedQuestionId) ??
     null;
@@ -844,9 +1086,26 @@ function PerformanceTabContent({
     visibleSelectedQuestion &&
     isQuestionReviewed(selectedAttempt, visibleSelectedQuestion),
   );
+  const visibleSelectedQuestionIsMath = isMathQuestionType(
+    visibleSelectedQuestion?.questionType,
+  );
   const visibleSelectedQuestionReferenceText = visibleSelectedQuestion
     ? getQuestionReferenceText(visibleSelectedQuestion) ||
       buildMissingCorrectAnswerFallback(visibleSelectedQuestion)
+    : "";
+  const canScoreVisibleQuestion = Boolean(
+    visibleSelectedQuestion && canManuallyScoreQuestion(visibleSelectedQuestion),
+  );
+  const studentAnswerPointsLabel = visibleSelectedQuestion
+    ? canScoreVisibleQuestion
+      ? visibleSelectedQuestionReviewed
+        ? `${formatPointsValue(visibleSelectedQuestion.points)}/${formatPointsValue(
+            visibleSelectedQuestion.maxPoints,
+          )} оноо`
+        : `${formatPointsValue(visibleSelectedQuestion.maxPoints)} оноо`
+      : `${formatPointsValue(visibleSelectedQuestion.points)}/${formatPointsValue(
+          visibleSelectedQuestion.maxPoints,
+        )} оноо`
     : "";
 
   useEffect(() => {
@@ -862,6 +1121,54 @@ function PerformanceTabContent({
       onSelectQuestion(filteredQuestions[0]?.id ?? null);
     }
   }, [filteredQuestions, onSelectQuestion, selectedQuestionId]);
+
+  useEffect(() => {
+    if (!visibleSelectedQuestion || !canManuallyScoreQuestion(visibleSelectedQuestion)) {
+      setScoreDraft("0");
+      return;
+    }
+
+    setScoreDraft(formatPointsValue(visibleSelectedQuestion.points));
+  }, [visibleSelectedQuestion]);
+
+  const handleMarkCurrentQuestionReviewed = () => {
+    if (visibleSelectedQuestion && canScoreVisibleQuestion) {
+      onAwardPoints(Number(scoreDraft));
+    }
+
+    onMarkQuestionReviewed();
+  };
+
+  const handleMarkAttemptAsReviewed = async () => {
+    if (!selectedAttempt) {
+      return;
+    }
+
+    const nextQuestions = selectedAttempt.questions.map((question) => {
+      if (
+        visibleSelectedQuestion &&
+        canScoreVisibleQuestion &&
+        isScoreEditing &&
+        question.id === visibleSelectedQuestion.id
+      ) {
+        return markQuestionReviewed({
+          ...question,
+          points: clampPoints(Number(scoreDraft), question.maxPoints),
+        });
+      }
+
+      return markQuestionReviewed(question);
+    });
+
+    const nextAttempt = buildUpdatedAttempt(selectedAttempt, nextQuestions);
+
+    if (onApproveAttempt) {
+      await onApproveAttempt(nextAttempt);
+    }
+
+    onSetScoreEditing(false);
+    onMarkAttemptReviewed(nextAttempt);
+  };
 
   if (!selectedAttempt) {
     return (
@@ -936,11 +1243,11 @@ function PerformanceTabContent({
             </h2>
           </div>
           <Button
-            disabled={selectedAttempt.status === "reviewed"}
-            onClick={onMarkAttemptReviewed}
+            disabled={selectedAttempt.status === "reviewed" || isApprovingAttempt}
+            onClick={handleMarkAttemptAsReviewed}
             className="h-[52px] rounded-[14px] bg-[#0b5cab] px-8 text-[15px] font-semibold shadow-[0_12px_24px_rgba(11,92,171,0.2)] hover:bg-[#094f95]"
           >
-            Бүгдийг батлах
+            {isApprovingAttempt ? "Баталж байна..." : "Бүгдийг батлах"}
           </Button>
         </div>
 
@@ -988,8 +1295,8 @@ function PerformanceTabContent({
           </p>
         </div>
 
-        <div className="grid min-h-190 xl:grid-cols-[280px_1fr]">
-          <aside className="border-r max-w-[224px] border-slate-200 bg-white px-3 py-4">
+        <div className="grid min-h-190 xl:grid-cols-[224px_minmax(0,1fr)]">
+          <aside className="border-r border-slate-200 bg-white px-3 py-4">
             {filteredQuestions.map((question) => {
               const isSelected = question.id === selectedQuestionId;
               const isReviewed = isQuestionReviewed(selectedAttempt, question);
@@ -1025,8 +1332,8 @@ function PerformanceTabContent({
                     </span>
                   </span>
                   <QuestionStateIcon
+                    isOpenEnded={isOpenEndedQuestion(question)}
                     reviewState={question.reviewState}
-                    reviewed={isReviewed}
                   />
                 </button>
               );
@@ -1041,7 +1348,13 @@ function PerformanceTabContent({
                     Асуулт {visibleSelectedQuestion.questionNumber}
                   </h3>
                   <div className="mt-4 rounded-[18px] border border-[#dfe5ee] bg-[#f3f6fc] px-6 py-5 text-[15px] font-medium leading-7 text-slate-800">
-                    {normalizeDisplayText(visibleSelectedQuestion.questionText)}
+                    <MathPreviewText
+                      content={normalizeDisplayText(
+                        visibleSelectedQuestion.questionText,
+                      )}
+                      className="text-[15px] font-medium leading-7 text-slate-800"
+                      displayMode={visibleSelectedQuestionIsMath}
+                    />
                   </div>
                 </div>
 
@@ -1054,17 +1367,22 @@ function PerformanceTabContent({
                       visibleSelectedQuestion.reviewState,
                     )}
                   >
-                    {visibleSelectedQuestion.points}/
-                    {visibleSelectedQuestion.maxPoints} оноо
+                    {studentAnswerPointsLabel}
                   </span>
                 </div>
 
-                {!selectedAttempt.hasPublishedResult &&
-                selectedAttempt.answerKeySource === "teacher_service" ? (
-                  <div className="mt-4 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] font-medium text-amber-800">
-                    Энэ оролдлогын дүн болон зөв хариулт backend дээр хараахан
-                    sync болоогүй байна. Сурагч шалгалтаа
-                    {` ${selectedAttempt.completionRate ?? 0}%`} бөглөсөн.
+                {selectedAttemptTeacherSyncAlert ? (
+                  <div
+                    className={`mt-4 rounded-[16px] border px-4 py-3 text-[13px] ${
+                      selectedAttemptTeacherSyncAlert.className
+                    }`}
+                  >
+                    <p className="font-semibold">
+                      {selectedAttemptTeacherSyncAlert.title}
+                    </p>
+                    <p className="mt-1">
+                      {selectedAttemptTeacherSyncAlert.description}
+                    </p>
                   </div>
                 ) : null}
 
@@ -1073,41 +1391,72 @@ function PerformanceTabContent({
                     visibleSelectedQuestion.reviewState,
                   )}
                 >
-                  {normalizeDisplayText(visibleSelectedQuestion.studentAnswer)}
+                  <MathPreviewText
+                    content={normalizeDisplayText(
+                      visibleSelectedQuestion.studentAnswer,
+                    )}
+                    className="text-[15px] font-medium leading-7 text-slate-800"
+                    displayMode={visibleSelectedQuestionIsMath}
+                  />
                 </div>
 
-                {canEditSelectedQuestionScore ? (
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <span className="text-[14px] font-medium text-slate-600">
-                      Багшийн оноо
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={visibleSelectedQuestion.maxPoints}
-                      step={1}
-                      disabled={!isScoreEditing}
-                      value={visibleSelectedQuestion.points}
-                      onChange={(event) => {
-                        onAwardPoints(Number(event.target.value));
-                      }}
-                      className={cn(
-                        "h-11 w-28 rounded-[14px] border border-slate-200 bg-white px-4 text-[14px] font-semibold text-slate-900 outline-none",
-                        isScoreEditing
-                          ? "border-[#0b5cab] ring-2 ring-[#dbeafe]"
-                          : "cursor-default bg-slate-50 text-slate-500",
-                      )}
-                    />
-                    <span className="text-[14px] text-slate-500">
-                      / {visibleSelectedQuestion.maxPoints} оноо
-                    </span>
-                  </div>
-                ) : (
+                {canScoreVisibleQuestion && !visibleSelectedQuestionReviewed ? (
+                  isScoreEditing ? (
+                    <div className="mt-5 rounded-[20px] border border-[#d7e7fb] bg-[#f8fbff] p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h5 className="text-[15px] font-semibold text-slate-900">
+                            Оноо өгөх
+                          </h5>
+                          <p className="mt-1 text-[13px] text-slate-500">
+                            Энэ асуултад хамгийн ихдээ{" "}
+                            {formatPointsValue(visibleSelectedQuestion.maxPoints)} оноо
+                            өгч болно.
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-[#cfe0f5] bg-white px-3 py-1 text-[13px] font-semibold text-[#0b5cab]">
+                          {formatPointsValue(visibleSelectedQuestion.maxPoints)} оноо
+                        </span>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <input
+                          type="number"
+                          min={0}
+                          max={visibleSelectedQuestion.maxPoints}
+                          step={0.5}
+                          value={scoreDraft}
+                          onChange={(event) => {
+                            setScoreDraft(event.target.value);
+                          }}
+                          className="h-11 w-28 rounded-[14px] border border-[#cfe0f5] bg-white px-4 text-[14px] font-semibold text-slate-900 outline-none ring-2 ring-[#dbeafe]"
+                        />
+                        <span className="text-[14px] text-slate-500">
+                          / {formatPointsValue(visibleSelectedQuestion.maxPoints)} оноо
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-5 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => onSetScoreEditing(true)}
+                        className="inline-flex items-center gap-3 text-[15px] font-semibold text-slate-900"
+                      >
+                        <PenLine className="h-5 w-5" />
+                        Оноо өгөх
+                      </button>
+                      <span className="text-[13px] text-slate-500">
+                        Хамгийн ихдээ{" "}
+                        {formatPointsValue(visibleSelectedQuestion.maxPoints)} оноо
+                      </span>
+                    </div>
+                  )
+                ) : canScoreVisibleQuestion ? (
                   <p className="mt-4 text-[13px] text-slate-500">
-                    Энэ асуулт автоматаар үнэлэгдэнэ. Оноо зөвхөн задгай,
-                    текстэн хариулт дээр өөрчлөгдөнө.
+                    Энэ задгай асуултын багшийн үнэлгээ хадгалагдсан.
                   </p>
-                )}
+                ) : null}
 
                 <div className="mt-8">
                   <div className="flex items-center justify-between gap-4">
@@ -1115,12 +1464,15 @@ function PerformanceTabContent({
                       Зөв хариулт
                     </h4>
                     <span className={questionPointsClass("correct")}>
-                      {visibleSelectedQuestion.maxPoints}/
-                      {visibleSelectedQuestion.maxPoints} оноо
+                      {formatPointsValue(visibleSelectedQuestion.maxPoints)} оноо
                     </span>
                   </div>
                   <div className="mt-4 rounded-[18px] border border-emerald-200 bg-emerald-50 px-6 py-5 text-[15px] font-medium leading-7 text-slate-800">
-                    {visibleSelectedQuestionReferenceText}
+                    <MathPreviewText
+                      content={visibleSelectedQuestionReferenceText}
+                      className="text-[15px] font-medium leading-7 text-slate-800"
+                      displayMode={visibleSelectedQuestionIsMath}
+                    />
                   </div>
                 </div>
 
@@ -1129,35 +1481,35 @@ function PerformanceTabContent({
                     Зөв хариултын тайлбар
                   </h4>
                   <div className="mt-4 whitespace-pre-line rounded-[18px] border border-[#dfe5ee] bg-[#f3f6fc] px-6 py-5 text-[15px] leading-8 text-slate-800">
-                    {resolveQuestionExplanation(visibleSelectedQuestion)}
+                    <MathPreviewText
+                      content={resolveQuestionExplanation(visibleSelectedQuestion)}
+                      className="text-[15px] leading-8 text-slate-800"
+                      displayMode={visibleSelectedQuestionIsMath}
+                    />
                   </div>
                 </div>
 
                 <div className="mt-auto flex items-center justify-between gap-4 pt-10">
-                  {canEditSelectedQuestionScore ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSetScoreEditing(!isScoreEditing);
-                      }}
-                      className="inline-flex items-center gap-3 text-[15px] font-semibold text-slate-900"
-                    >
-                      <PenLine className="h-5 w-5" />
-                      {isScoreEditing ? "Оноо хадгалах" : "Оноо өөрчлөх"}
-                    </button>
-                  ) : (
-                    <span />
-                  )}
+                  {canScoreVisibleQuestion && !visibleSelectedQuestionReviewed ? (
+                    <p className="text-[13px] text-slate-500">
+                      Оноо өгөөд <span className="font-semibold">Хянасан</span>{" "}
+                      дарвал нийт оноонд автоматаар нэмэгдэнэ.
+                    </p>
+                  ) : canScoreVisibleQuestion ? (
+                    <span className="text-[13px] text-slate-500">
+                      Энэ асуулт хянагдаж, нийт оноонд нэмэгдсэн.
+                    </span>
+                  ) : null}
 
                   <Button
-                    variant="outline"
+                    variant={visibleSelectedQuestionReviewed ? "outline" : "default"}
                     disabled={visibleSelectedQuestionReviewed}
-                    onClick={onMarkQuestionReviewed}
+                    onClick={handleMarkCurrentQuestionReviewed}
                     className={cn(
-                      "h-[52px] rounded-[14px] px-8 text-[15px] font-semibold",
+                      "h-[52px] min-w-[164px] rounded-[14px] px-8 text-[15px] font-semibold shadow-none disabled:cursor-default disabled:opacity-100",
                       visibleSelectedQuestionReviewed
-                        ? "border-[#179c35] bg-[#179c35] text-white hover:bg-[#14862e]"
-                        : "border-[#0b5cab] text-[#0b5cab] hover:bg-[#f4f8ff]",
+                        ? "!border-[#0b5cab] !bg-white !text-[#0b5cab] hover:!border-[#0b5cab] hover:!bg-[#eff6ff] hover:!text-[#0b5cab] disabled:!border-[#0b5cab] disabled:!bg-white disabled:!text-[#0b5cab]"
+                        : "!border-[#0b5cab] !bg-[#0b5cab] !text-white hover:!border-[#094f95] hover:!bg-[#094f95] hover:!text-white disabled:!border-[#0b5cab] disabled:!bg-[#0b5cab] disabled:!text-white",
                     )}
                   >
                     Хянасан
@@ -1180,11 +1532,15 @@ function PerformanceTabContent({
 
 function ScreenshotPreviewImage({
   alt,
+  className,
   fallbackSrc,
+  sizes = "(max-width: 1280px) 100vw, 33vw",
   src,
 }: {
   alt: string;
+  className?: string;
   fallbackSrc?: string;
+  sizes?: string;
   src: string;
 }) {
   const [currentSrc, setCurrentSrc] = useState(src);
@@ -1197,10 +1553,10 @@ function ScreenshotPreviewImage({
     <Image
       src={currentSrc}
       alt={alt}
-      className="h-full w-full object-cover"
+      className={cn("h-full w-full object-cover", className)}
       fill
       unoptimized
-      sizes="(max-width: 1280px) 100vw, 33vw"
+      sizes={sizes}
       onError={() => {
         if (fallbackSrc && currentSrc !== fallbackSrc) {
           setCurrentSrc(fallbackSrc);
@@ -1217,10 +1573,11 @@ function buildDisplayEvents(
   const eventMap = new Map<string, DisplayEvent>();
 
   for (const event of liveEvents) {
+    const localizedTitle = localizeMonitoringEventTitle(event.code, event.title);
     const appearance = getEventAppearance({
       code: event.code,
       severity: event.severity,
-      title: event.title,
+      title: localizedTitle,
     });
 
     eventMap.set(event.id, {
@@ -1243,10 +1600,11 @@ function buildDisplayEvents(
 
   for (const attempt of reviewAttempts) {
     for (const event of attempt.monitoringSummary.events) {
+      const localizedTitle = localizeMonitoringEventTitle(event.code, event.title);
       const appearance = getEventAppearance({
         code: event.code,
         severity: event.severity,
-        title: event.title,
+        title: localizedTitle,
       });
       const existingEvent = eventMap.get(event.id);
 
@@ -1326,6 +1684,8 @@ function buildStudentRows(
                 tone: "muted" as const,
               },
             ];
+      const attemptCount = sumEventCounts(uniqueAttemptBadges);
+      const riskCount = uniqueAttemptBadges.length;
 
       const screenshots = suspiciousStudentEvents.slice(0, 6).map((event) => {
         const fallbackUrl = getEventFallbackImageUrl(event.code);
@@ -1345,11 +1705,11 @@ function buildStudentRows(
 
       return {
         attemptBadges,
-        attemptCount: uniqueAttemptBadges.length,
+        attemptCount,
         connectionState: toConnectionState(student.monitoringState),
         id: student.id,
         name: student.name,
-        risk: uniqueAttemptBadges.length,
+        risk: riskCount,
         scoreLabel:
           latestAttempt?.score !== undefined
             ? `${latestAttempt.score}%`
@@ -1518,26 +1878,22 @@ function getEventAppearance({
 }
 
 function QuestionStateIcon({
+  isOpenEnded,
   reviewState,
-  reviewed,
 }: {
+  isOpenEnded: boolean;
   reviewState: QuestionReview["reviewState"];
-  reviewed?: boolean;
 }) {
-  if (reviewed) {
-    return (
-      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#179c35] text-white shadow-[0_3px_8px_rgba(23,156,53,0.16)]">
-        <CheckCircle2 className="h-3 w-3" />
-      </span>
-    );
-  }
-
   if (reviewState === "correct") {
     return <CheckCircle2 className="h-5 w-5 text-[#179c35]" />;
   }
 
   if (reviewState === "incorrect") {
     return <XCircle className="h-5 w-5 text-[#ff3b30]" />;
+  }
+
+  if (isOpenEnded) {
+    return <PenLine className="h-5 w-5 text-slate-700" />;
   }
 
   return <TriangleAlert className="h-5 w-5 text-[#f59e0b]" />;
@@ -1811,7 +2167,16 @@ function clampPoints(value: number, maxPoints: number) {
     return 0;
   }
 
-  return Math.max(0, Math.min(Math.round(value), maxPoints));
+  const boundedValue = Math.max(0, Math.min(value, maxPoints));
+  return Math.round(boundedValue * 10) / 10;
+}
+
+function formatPointsValue(value: number) {
+  const normalizedValue = Math.round(value * 10) / 10;
+
+  return Number.isInteger(normalizedValue)
+    ? String(normalizedValue)
+    : normalizedValue.toFixed(1);
 }
 
 function isOpenEndedQuestion(question: QuestionReview) {
@@ -1913,7 +2278,7 @@ function formatAttemptPoints(attempt: SubmittedAttempt) {
     return "0/0";
   }
 
-  return `${totalAwardedPoints}/${totalMaxPoints}`;
+  return `${formatPointsValue(totalAwardedPoints)}/${formatPointsValue(totalMaxPoints)}`;
 }
 
 function calculateAttemptPercentage(attempt: SubmittedAttempt) {
@@ -2007,12 +2372,21 @@ function mergeReviewAttempts(
 
     const mergedQuestions = attempt.questions.map((question) => {
       const currentQuestion = currentQuestions.get(question.id);
-      return currentQuestion?.reviewed
-        ? {
-            ...question,
-            reviewed: true,
-          }
-        : question;
+
+      if (!currentQuestion?.reviewed) {
+        return question;
+      }
+
+      return {
+        ...question,
+        points: canManuallyScoreQuestion(currentQuestion)
+          ? clampPoints(currentQuestion.points, question.maxPoints)
+          : question.points,
+        reviewState: canManuallyScoreQuestion(currentQuestion)
+          ? currentQuestion.reviewState
+          : question.reviewState,
+        reviewed: true,
+      };
     });
 
     return buildUpdatedAttempt(
@@ -2027,40 +2401,7 @@ function mergeReviewAttempts(
 }
 
 function localizeEventDetail(code?: string, detail?: string) {
-  switch (code) {
-    case "attempt-finalize":
-      return "Шалгалтыг амжилттай илгээж дуусгасан.";
-    case "connection_lost":
-      return "Интернэт холболт тасарсан байна.";
-    case "connection_restored":
-      return "Интернэт холболт дахин сэргэж хэвийн болсон.";
-    case "tab_hidden":
-    case "window_blur":
-      return "Шалгалтын табаас гарсан эсвэл өөр цонх руу шилжсэн.";
-    case "tab_visible":
-    case "window_focus":
-      return "Шалгалтын таб руу буцаж орсон.";
-    case "split-view-suspected":
-    case "device_change_suspected":
-    case "parallel-tab-suspected":
-      return "Олон цонх эсвэл хуваасан дэлгэц ашигласан байж болзошгүй.";
-    case "fullscreen-not-active":
-    case "fullscreen-exit":
-    case "viewport-resize-suspicious":
-      return "Шалгалтын цонх жижигэрсэн эсвэл бүтэн дэлгэцээс гарсан.";
-    default:
-      break;
-  }
-
-  if (code?.includes("devtools")) {
-    return "Хөгжүүлэгчийн хэрэгсэл нээсэн байж болзошгүй.";
-  }
-
-  if (code?.startsWith("shortcut")) {
-    return "Сэжигтэй хос товчийн үйлдэл илэрлээ.";
-  }
-
-  return detail;
+  return formatMonitoringEventDetail({ code, detail });
 }
 
 function getEventFallbackImageUrl(code?: string) {
@@ -2142,4 +2483,54 @@ function formatRemainingTime(endTime: Date | undefined, currentTime: number) {
   const seconds = totalSeconds % 60;
 
   return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function getTeacherSyncAlert(attempt: SubmittedAttempt | null) {
+  if (
+    !attempt ||
+    attempt.answerKeySource !== "teacher_service" ||
+    attempt.status === "reviewed"
+  ) {
+    return null;
+  }
+
+  const sync = attempt.teacherSync;
+
+  if (sync?.status === "failed") {
+    const errorMessage = sync.lastError?.trim();
+
+    return {
+      className: "border-red-200 bg-red-50 text-red-700",
+      description: errorMessage
+        ? `Teacher-service рүү илгээхдээ алдаа гарсан: ${errorMessage}. Энэ attempt-ийг эндээс гараар баталж demo-гоо үргэлжлүүлж болно.`
+        : "Teacher-service рүү илгээхдээ алдаа гарсан. Энэ attempt-ийг эндээс гараар баталж demo-гоо үргэлжлүүлж болно.",
+      title: "Teacher-service sync амжилтгүй болсон.",
+    };
+  }
+
+  if (sync?.status === "pending") {
+    return {
+      className: "border-amber-200 bg-amber-50 text-amber-800",
+      description:
+        "Webhook тохиргоо байхгүй эсвэл автомат илгээлт хүлээгдэж байна. Энэ attempt-ийг эндээс гараар баталбал сурагч талд дүн шууд гарна.",
+      title: "Teacher-service автомат sync хүлээгдэж байна.",
+    };
+  }
+
+  if (
+    attempt.answerKeySource === "teacher_service" &&
+    !attempt.hasPublishedResult
+  ) {
+    const sentAt = sync?.sentAt ? formatDateTime(new Date(sync.sentAt)) : null;
+
+    return {
+      className: "border-amber-200 bg-amber-50 text-amber-800",
+      description: sentAt
+        ? `Teacher-service рүү ${sentAt}-д амжилттай илгээсэн, харин шалгасан дүн хараахан буцаж ирээгүй байна. Сурагч шалгалтаа ${attempt.completionRate ?? 0}% бөглөсөн.`
+        : `Энэ оролдлогын дүн болон зөв хариулт backend дээр хараахан sync болоогүй байна. Сурагч шалгалтаа ${attempt.completionRate ?? 0}% бөглөсөн.`,
+      title: "Teacher-service хариу хүлээгдэж байна.",
+    };
+  }
+
+  return null;
 }

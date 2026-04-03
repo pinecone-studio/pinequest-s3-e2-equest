@@ -66,7 +66,7 @@ export type ResultRow = {
   className: string;
   examName: string;
   finishedAt: string;
-  isApproved: boolean;
+  hasResult: boolean;
   scoreText: string;
   startedAt: string;
   subject: string;
@@ -83,8 +83,6 @@ type ResultCardsGridProps = {
 type StudentPageShellProps = {
   activeSection: NavigationSection;
   activeTestsCount: number;
-  approvedAttempts: AttemptSummary[];
-  approvedAttemptsCount: number;
   averageScore: number;
   availableStudents: StudentInfo[];
   completedAttemptsLength: number;
@@ -99,6 +97,7 @@ type StudentPageShellProps = {
   pageTitle: string;
   passRate: number;
   passedAttemptsCount: number;
+  resultAttempts: AttemptSummary[];
   resultRows: ResultRow[];
   selectedStudent: StudentInfo | null;
   selectedStudentId: string;
@@ -698,7 +697,7 @@ function ResultCardsGrid({
           <tbody>
             {rows.map((row) => {
               const attempt = attemptsById.get(row.attemptId);
-              const isClickable = Boolean(attempt && row.isApproved);
+              const isClickable = Boolean(attempt && row.hasResult);
               const isHighlighted = highlightedAttemptId === row.attemptId;
 
               return (
@@ -708,7 +707,7 @@ function ResultCardsGrid({
                   className={`border-t border-slate-200 text-[12px] text-slate-800 transition sm:text-sm ${
                     isHighlighted
                       ? "bg-sky-50/80 outline-2 -outline-offset-2 outline-sky-300"
-                      : row.isApproved
+                      : row.hasResult
                         ? "bg-emerald-50/40"
                         : "bg-white"
                   }`}
@@ -729,10 +728,10 @@ function ResultCardsGrid({
                     <div className="relative flex items-center justify-center">
                       <span
                         className={`font-semibold ${
-                          row.isApproved ? "text-emerald-700" : "text-amber-700"
+                          row.hasResult ? "text-emerald-700" : "text-amber-700"
                         }`}
                       >
-                        {row.isApproved ? row.scoreText : "Хүлээгдэж байна"}
+                        {row.hasResult ? row.scoreText : "Хүлээгдэж байна"}
                       </span>
                       {isClickable ? (
                         <button
@@ -761,8 +760,6 @@ function ResultCardsGrid({
 export function StudentPageShell({
   activeSection,
   activeTestsCount,
-  approvedAttempts,
-  approvedAttemptsCount,
   averageScore,
   availableStudents,
   completedAttemptsLength,
@@ -777,6 +774,7 @@ export function StudentPageShell({
   pageTitle,
   passRate,
   passedAttemptsCount,
+  resultAttempts,
   resultRows,
   selectedStudent,
   selectedStudentId,
@@ -794,18 +792,18 @@ export function StudentPageShell({
     string | null
   >(null);
   const studentMenuRef = useRef<HTMLDivElement | null>(null);
-  const approvedAttemptById = useMemo(
+  const resultAttemptById = useMemo(
     () =>
       new Map(
-        approvedAttempts.map(
+        resultAttempts.map(
           (attempt) => [attempt.attemptId, attempt] as const,
         ),
       ),
-    [approvedAttempts],
+    [resultAttempts],
   );
   const selectedResultAttempt =
     (selectedResultAttemptId
-      ? approvedAttemptById.get(selectedResultAttemptId)
+      ? resultAttemptById.get(selectedResultAttemptId)
       : null) ?? null;
   const activeTests = useMemo(
     () => filteredTests.filter((test) => !completedByTestId.has(test.id)),
@@ -815,9 +813,9 @@ export function StudentPageShell({
     () => filteredTests.filter((test) => completedByTestId.has(test.id)),
     [completedByTestId, filteredTests],
   );
-  const hasResultAttempts = completedAttemptsLength > 0;
+  const hasResultAttempts = resultAttempts.length > 0;
   const isResultApprovalPending =
-    completedAttemptsLength > 0 && approvedAttemptsCount === 0;
+    completedAttemptsLength > 0 && !hasResultAttempts;
 
   useEffect(() => {
     const closeOnOutside = (event: MouseEvent) => {
@@ -1160,7 +1158,7 @@ export function StudentPageShell({
                       </h4>
 
                       <ResultCardsGrid
-                        attemptsById={approvedAttemptById}
+                        attemptsById={resultAttemptById}
                         highlightedAttemptId={highlightedResultAttemptId}
                         rows={resultRows}
                         onOpenAttempt={setSelectedResultAttemptId}
@@ -1219,7 +1217,10 @@ export function StudentPageShell({
                   <div>
                     <DialogTitle>{selectedResultAttempt.title}</DialogTitle>
                     <DialogDescription>
-                      {selectedResultAttempt.percentage ?? 0}% гүйцэтгэл. Алдаа,
+                      {selectedResultAttempt.percentage ??
+                        selectedResultAttempt.result?.percentage ??
+                        0}
+                      % гүйцэтгэл. Алдаа,
                       тайлбар болон зөвлөмжийг доороос харна.
                     </DialogDescription>
                   </div>
@@ -1228,8 +1229,13 @@ export function StudentPageShell({
                       Нийт оноо
                     </p>
                     <p className="text-lg font-bold text-emerald-700">
-                      {selectedResultAttempt.score ?? 0}/
-                      {selectedResultAttempt.maxScore ?? 0}
+                      {selectedResultAttempt.score ??
+                        selectedResultAttempt.result?.score ??
+                        0}
+                      /
+                      {selectedResultAttempt.maxScore ??
+                        selectedResultAttempt.result?.maxScore ??
+                        0}
                     </p>
                   </div>
                 </div>

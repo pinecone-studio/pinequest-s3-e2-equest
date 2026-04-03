@@ -176,6 +176,12 @@ export interface SubmittedAttempt {
   reviewableItems: number;
   answerKeySource: string;
   score?: number;
+  teacherSync?: {
+    lastError?: string | null;
+    sentAt?: string | null;
+    status: "pending" | "sent" | "failed";
+    targetService: string;
+  } | null;
   questions: QuestionReview[];
   feedback?: AttemptFeedbackSummary;
   monitoringSummary: {

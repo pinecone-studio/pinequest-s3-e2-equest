@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type {
 	AttemptAnswerReviewItem,
 	ExamQuestionResult,
@@ -35,6 +35,7 @@ const getSanitizedMathAnswerText = (value: string | null | undefined) => {
 };
 
 export type AttemptResultRow = {
+	attemptId?: string;
 	answerChangeCount: number | null;
 	answerLatex: string | null;
 	competency: string;
@@ -87,6 +88,58 @@ export const getAttemptResults = async (
 		)
 		.where(eq(schema.attempts.id, attemptId));
 
+export const getAttemptResultsForAttempts = async (
+	db: DbClient,
+	attemptIds: string[],
+): Promise<Map<string, AttemptResultRow[]>> => {
+	if (attemptIds.length === 0) {
+		return new Map();
+	}
+
+	const rows = await db.select({
+		attemptId: schema.attempts.id,
+		answerChangeCount: schema.attemptQuestionMetrics.answerChangeCount,
+		answerLatex: schema.questions.answerLatex,
+		competency: schema.questions.competency,
+		dwellMs: schema.attemptQuestionMetrics.dwellMs,
+		questionId: schema.questions.id,
+		prompt: schema.questions.prompt,
+		questionType: schema.questions.type,
+		selectedOptionId: schema.answers.selectedOptionId,
+		correctOptionId: schema.questions.correctOptionId,
+		explanation: schema.questions.explanation,
+		points: schema.questions.points,
+		responseGuide: schema.questions.responseGuide,
+		options: schema.questions.options,
+	})
+		.from(schema.attempts)
+		.innerJoin(schema.questions, eq(schema.questions.testId, schema.attempts.testId))
+		.leftJoin(
+			schema.answers,
+			and(
+				eq(schema.answers.attemptId, schema.attempts.id),
+				eq(schema.answers.questionId, schema.questions.id),
+			),
+		)
+		.leftJoin(
+			schema.attemptQuestionMetrics,
+			and(
+				eq(schema.attemptQuestionMetrics.attemptId, schema.attempts.id),
+				eq(schema.attemptQuestionMetrics.questionId, schema.questions.id),
+			),
+		)
+		.where(inArray(schema.attempts.id, attemptIds));
+
+	const rowsByAttemptId = new Map<string, AttemptResultRow[]>();
+	for (const row of rows) {
+		const current = rowsByAttemptId.get(row.attemptId) ?? [];
+		current.push(row);
+		rowsByAttemptId.set(row.attemptId, current);
+	}
+
+	return rowsByAttemptId;
+};
+
 const getOptionTextById = (
 	options: Array<{ id?: string; text?: string }> | string[],
 	optionId: string | null,
@@ -113,13 +166,10 @@ const getOptionTextById = (
 	return optionId;
 };
 
-export const getAttemptAnswerReview = async (
-	db: DbClient,
-	attemptId: string,
-): Promise<AttemptAnswerReviewItem[]> => {
-	const rows = await getAttemptResults(db, attemptId);
-
-	return rows.map((row) => {
+export const getAttemptAnswerReviewFromRows = (
+	rows: AttemptResultRow[],
+): AttemptAnswerReviewItem[] =>
+	rows.map((row) => {
 		const options = getQuestionOptions({ options: row.options }) as
 			| Array<{ id?: string; text?: string }>
 			| string[];
@@ -153,6 +203,13 @@ export const getAttemptAnswerReview = async (
 			selectedOptionId: row.selectedOptionId,
 		};
 	});
+
+export const getAttemptAnswerReview = async (
+	db: DbClient,
+	attemptId: string,
+): Promise<AttemptAnswerReviewItem[]> => {
+	const rows = await getAttemptResults(db, attemptId);
+	return getAttemptAnswerReviewFromRows(rows);
 };
 
 export const computeResult = (

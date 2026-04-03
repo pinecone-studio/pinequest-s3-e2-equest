@@ -1,7 +1,10 @@
 "use client";
 
 import { type ElementType, useEffect, useMemo, useState } from "react";
-import { AiContentBadge, type AiContentSource } from "@/components/ai-content-badge";
+import {
+  AiContentBadge,
+  type AiContentSource,
+} from "@/components/ai-content-badge";
 import MathPreviewText from "@/components/math-preview-text";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +20,6 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertTriangle,
-  Camera,
   CheckCircle2,
   ChevronRight,
   CircleUserRound,
@@ -25,9 +27,15 @@ import {
   ShieldAlert,
   XCircle,
 } from "lucide-react";
+import {
+  formatMonitoringEventDetail,
+  formatMonitoringModeLabel,
+} from "@/lib/format-monitoring-event-detail";
 import { cn } from "@/lib/utils";
+import { isMathQuestionType } from "@/lib/is-math-question-type";
 import { fetchRuntimeJson } from "@/lib/runtime-api";
 import { approveTakeExamAttempt } from "@/lib/take-exam-dashboard-api";
+import { MonitoringScreenshotPreview } from "./monitoring-screenshot-preview";
 import { QuestionReview, SubmittedAttempt } from "../lib/types";
 
 interface ReviewTabProps {
@@ -46,9 +54,9 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
     Record<string, AiContentSource>
   >({});
   const [manualScores, setManualScores] = useState<Record<string, number>>({});
-  const [reviewedQuestions, setReviewedQuestions] = useState<Record<string, true>>(
-    {},
-  );
+  const [reviewedQuestions, setReviewedQuestions] = useState<
+    Record<string, true>
+  >({});
   const [selectedMonitoringDialog, setSelectedMonitoringDialog] = useState<{
     attemptId: string;
     type: "warning" | "danger" | "focus";
@@ -72,7 +80,8 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
       (attempt) => attempt.id === selectedAttemptId,
     );
     const nextAttempt = hasSelectedAttempt
-      ? attempts.find((attempt) => attempt.id === selectedAttemptId) ?? attempts[0]
+      ? (attempts.find((attempt) => attempt.id === selectedAttemptId) ??
+        attempts[0])
       : attempts[0];
 
     if (nextAttempt.id !== selectedAttemptId) {
@@ -84,7 +93,7 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
     );
     const nextQuestionId = hasSelectedQuestion
       ? selectedQuestionId
-      : nextAttempt.questions[0]?.id ?? null;
+      : (nextAttempt.questions[0]?.id ?? null);
 
     if (nextQuestionId !== selectedQuestionId) {
       setSelectedQuestionId(nextQuestionId);
@@ -112,6 +121,24 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
     selectedAttempt && selectedQuestion
       ? getQuestionKey(selectedAttempt.id, selectedQuestion.id)
       : null;
+  const selectedQuestionIsMath = isMathQuestionType(
+    selectedQuestion?.questionType,
+  );
+  const selectedQuestionIsAutoZero = selectedQuestion
+    ? isAutoZeroQuestion(selectedQuestion)
+    : false;
+  const selectedQuestionHasSavedManualScore =
+    selectedAttempt && selectedQuestion
+      ? hasSavedManualScore(selectedAttempt, selectedQuestion, manualScores)
+      : false;
+  const selectedQuestionIsMarkedReviewed =
+    selectedAttempt && selectedQuestion && selectedQuestionKey
+      ? isQuestionReviewed(
+          selectedAttempt,
+          selectedQuestion,
+          reviewedQuestions,
+        )
+      : false;
 
   useEffect(() => {
     if (!selectedQuestion || !selectedAttempt) {
@@ -129,14 +156,16 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
       return null;
     }
 
-    const hasPendingManualReview = selectedAttempt.questions.some((question) => {
-      if (!question.requiresManualReview) {
-        return false;
-      }
-
-      const questionKey = getQuestionKey(selectedAttempt.id, question.id);
-      return !reviewedQuestions[questionKey];
-    });
+    const hasPendingManualReview = selectedAttempt.questions.some(
+      (question) => {
+        return !hasCompletedManualReview(
+          selectedAttempt,
+          question,
+          manualScores,
+          reviewedQuestions,
+        );
+      },
+    );
 
     const earnedPoints = selectedAttempt.questions.reduce((sum, question) => {
       const questionKey = getQuestionKey(selectedAttempt.id, question.id);
@@ -171,17 +200,20 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
     : "";
   const selectedQuestionExplanation =
     selectedQuestion && selectedQuestionKey
-      ? explanationDrafts[selectedQuestionKey] ??
-        selectedQuestionFallbackExplanation
+      ? (explanationDrafts[selectedQuestionKey] ??
+        selectedQuestionFallbackExplanation)
       : "";
   const selectedQuestionReferenceText = selectedQuestion
     ? getQuestionReferenceText(selectedQuestion)
     : "";
   const selectedQuestionAiSource =
-    (selectedQuestionKey ? explanationSources[selectedQuestionKey] : undefined) ??
-    selectedQuestion?.aiSource;
+    (selectedQuestionKey
+      ? explanationSources[selectedQuestionKey]
+      : undefined) ?? selectedQuestion?.aiSource;
   const showReviewAdvice =
     selectedQuestionEffectiveState !== "correct" && Boolean(selectedQuestion);
+  const selectedAttemptTeacherSyncAlert =
+    getTeacherSyncAlert(selectedAttempt);
 
   const waitingCount = attempts.filter(
     (attempt) => attempt.status !== "reviewed",
@@ -207,7 +239,12 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
       return;
     }
 
-    if (hasMeaningfulReviewText(selectedQuestion.aiAnalysis, selectedQuestion.explanation)) {
+    if (
+      hasMeaningfulReviewText(
+        selectedQuestion.aiAnalysis,
+        selectedQuestion.explanation,
+      )
+    ) {
       return;
     }
 
@@ -233,7 +270,9 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
       },
       body: JSON.stringify({
         competency: selectedQuestion.competency,
-        correctAnswer: normalizeUnavailableAnswer(selectedQuestion.correctAnswer),
+        correctAnswer: normalizeUnavailableAnswer(
+          selectedQuestion.correctAnswer,
+        ),
         questionText: selectedQuestion.questionText,
         questionType: selectedQuestion.questionType,
         referenceGuide: getQuestionReferenceGuide(selectedQuestion),
@@ -301,15 +340,15 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
       ...current,
       [questionKey]: normalized,
     }));
-    setReviewedQuestions((current) => ({
-      ...current,
-      [questionKey]: true,
-    }));
     setScoreInput(String(normalized));
   };
 
   const handleQuickEditReview = () => {
-    if (!selectedAttempt || !selectedQuestion || typeof window === "undefined") {
+    if (
+      !selectedAttempt ||
+      !selectedQuestion ||
+      typeof window === "undefined"
+    ) {
       return;
     }
 
@@ -335,14 +374,11 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
       ...current,
       [questionKey]: normalized,
     }));
-    setReviewedQuestions((current) => ({
-      ...current,
-      [questionKey]: true,
-    }));
     setScoreInput(String(normalized));
 
     const currentExplanation =
-      explanationDrafts[questionKey] ?? getDefaultReviewExplanation(selectedQuestion);
+      explanationDrafts[questionKey] ??
+      getDefaultReviewExplanation(selectedQuestion);
     const nextExplanation = window.prompt(
       "Тайлбар / зөвлөмжийг шинэчлэх үү?",
       currentExplanation,
@@ -358,6 +394,13 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
 
   const handleMarkReviewed = () => {
     if (!selectedAttempt || !selectedQuestion) {
+      return;
+    }
+
+    if (
+      selectedQuestion.requiresManualReview &&
+      !hasSavedManualScore(selectedAttempt, selectedQuestion, manualScores)
+    ) {
       return;
     }
 
@@ -381,7 +424,8 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
           question.maxPoints,
         );
         const explanation =
-          explanationDrafts[questionKey] ?? getDefaultReviewExplanation(question);
+          explanationDrafts[questionKey] ??
+          getDefaultReviewExplanation(question);
         const reviewState = getEffectiveReviewState(
           selectedAttempt,
           question,
@@ -508,7 +552,7 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                         : `${attemptScorePreview.percentage}%`
                       : selectedAttempt.score !== undefined
                         ? `${selectedAttempt.score}%`
-                      : "Хүлээгдэж байна"}
+                        : "Хүлээгдэж байна"}
                   </span>
                   <span>•</span>
                   <span>
@@ -546,8 +590,25 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
 
             {attemptScorePreview?.hasPendingManualReview ? (
               <div className="border-b border-[#e7ecf3] bg-[#fff8e8] px-6 py-3 text-[13px] text-amber-700">
-                Нээлттэй асуултуудыг эхлээд оноолж эсвэл хянасан гэж тэмдэглэсний дараа
-                батална.
+                Задгай асуулт бүрт оноогоо хадгалж, хянасан гэж тэмдэглэсний
+                дараа л батална. Хэрэв 0 оноо өгөх бол мөн адил хадгалж
+                баталгаажуулна.
+              </div>
+            ) : null}
+
+            {selectedAttemptTeacherSyncAlert ? (
+              <div
+                className={cn(
+                  "border-b border-[#e7ecf3] px-6 py-3 text-[13px]",
+                  selectedAttemptTeacherSyncAlert.className,
+                )}
+              >
+                <p className="font-semibold">
+                  {selectedAttemptTeacherSyncAlert.title}
+                </p>
+                <p className="mt-1">
+                  {selectedAttemptTeacherSyncAlert.description}
+                </p>
               </div>
             ) : null}
 
@@ -616,7 +677,9 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                           type="button"
                         >
                           <span>{`Асуулт ${question.questionNumber}`}</span>
-                          <QuestionStateIcon reviewState={effectiveReviewState} />
+                          <QuestionStateIcon
+                            reviewState={effectiveReviewState}
+                          />
                         </button>
                       );
                     })}
@@ -635,7 +698,7 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                         <MathPreviewText
                           content={selectedQuestion.questionText}
                           className="mt-2.5 text-[15px] leading-7 text-foreground"
-                          displayMode={selectedQuestion.questionType === "math"}
+                          displayMode={selectedQuestionIsMath}
                         />
                       </div>
 
@@ -654,8 +717,8 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                         className={getStudentAnswerClassName(
                           selectedQuestionEffectiveState,
                         )}
-                        displayMode={selectedQuestion.questionType === "math"}
-                        forceMath={selectedQuestion.questionType === "math"}
+                        displayMode={selectedQuestionIsMath}
+                        forceMath={selectedQuestionIsMath}
                         title="ОЮУТНЫ ХАРИУЛТ"
                         value={selectedQuestion.studentAnswer}
                       />
@@ -663,8 +726,8 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                       {Boolean(selectedQuestionReferenceText) && (
                         <AnswerBlock
                           className="border-[#dfe5ee] bg-[#f7f9fc]"
-                          displayMode={selectedQuestion.questionType === "math"}
-                          forceMath={selectedQuestion.questionType === "math"}
+                          displayMode={selectedQuestionIsMath}
+                          forceMath={selectedQuestionIsMath}
                           title={
                             selectedQuestion.correctAnswerKind === "reference"
                               ? "ЖИШИГ ХАРИУ / ЧИГЛҮҮЛЭГ"
@@ -712,6 +775,12 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                                   / {selectedQuestion.maxPoints}
                                 </span>
                               </div>
+                              {!selectedQuestionHasSavedManualScore ? (
+                                <p className="mt-2 text-xs text-amber-700">
+                                  0 оноо өгөх байсан ч &quot;Оноо хадгалах&quot;
+                                  дарж баталгаажуулна.
+                                </p>
+                              ) : null}
                             </div>
                             <Button
                               size="sm"
@@ -725,22 +794,35 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                       ) : null}
 
                       {(selectedQuestion.requiresManualReview ||
-                        selectedQuestionEffectiveState !== "correct") && (
-                        <div className="flex gap-2 pt-2">
+                        (selectedQuestionEffectiveState !== "correct" &&
+                          !selectedQuestionIsAutoZero)) && (
+                        <div className="flex flex-wrap justify-end gap-2 pt-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-10 flex-1 rounded-[8px] border-[#dbe3ec] bg-[#f8fafc] text-[14px] font-medium text-foreground shadow-none hover:bg-[#f1f5f9]"
+                            className="h-10 min-w-[132px] rounded-[8px] border-[#dbe3ec] bg-[#f8fafc] px-4 text-[14px] font-medium text-foreground shadow-none hover:bg-[#f1f5f9]"
                             onClick={handleQuickEditReview}
                           >
                             Оноо өөрчлөх
                           </Button>
                           <Button
                             size="sm"
-                            className="h-10 flex-1 rounded-[8px] text-[14px] font-medium shadow-none"
+                            variant="outline"
+                            className={cn(
+                              "h-11 min-w-[228px] shrink-0 whitespace-nowrap rounded-[12px] border px-5 text-[14px] font-semibold shadow-none transition-all",
+                              selectedQuestionIsMarkedReviewed
+                                ? "border-[#0b5cab] bg-[#0b5cab] text-white hover:border-[#0a66c2] hover:bg-[#0a66c2] hover:text-white"
+                                : "border-[#93c5fd] bg-white text-[#0b5cab] hover:border-[#60a5fa] hover:bg-[#eff6ff] hover:text-[#0b5cab]",
+                              "disabled:border-[#c7d8f5] disabled:bg-[#f8fbff] disabled:text-[#8aa8d6] disabled:opacity-100",
+                            )}
                             onClick={handleMarkReviewed}
+                            disabled={
+                              selectedQuestion.requiresManualReview &&
+                              !selectedQuestionHasSavedManualScore
+                            }
                           >
-                            Хянасан гэж тэмдэглэх
+                            <CheckCircle2 className="h-4 w-4" />
+                            {selectedQuestionIsMarkedReviewed ? "Хянасан" : "Хянасан гэж тэмдэглэх"}
                           </Button>
                         </div>
                       )}
@@ -779,7 +861,8 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                   : "Анхаарал алдсан үйлдлүүд"}
             </DialogTitle>
             <DialogDescription>
-              {selectedAttempt?.studentName} дээр бүртгэгдсэн хяналтын event-үүд.
+              {selectedAttempt?.studentName} дээр бүртгэгдсэн хяналтын
+              event-үүд.
             </DialogDescription>
           </DialogHeader>
 
@@ -814,7 +897,11 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                       </Badge>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-foreground/90">
-                      {event.detail}
+                      {formatMonitoringEventDetail({
+                        code: event.code,
+                        detail: event.detail,
+                        mode: event.mode,
+                      })}
                     </p>
                     {event.mode || event.screenshotUrl ? (
                       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -824,15 +911,11 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                           </Badge>
                         ) : null}
                         {event.screenshotUrl ? (
-                          <a
-                            className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[10px] font-medium text-foreground hover:bg-secondary"
-                            href={event.screenshotUrl}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            <Camera className="h-3 w-3" />
-                            Screenshot
-                          </a>
+                          <MonitoringScreenshotPreview
+                            screenshotUrl={event.screenshotUrl}
+                            title={`${event.title} — дэлгэцийн зураг`}
+                            capturedAtLabel={formatDateTime(event.occurredAt)}
+                          />
                         ) : null}
                       </div>
                     ) : null}
@@ -858,6 +941,63 @@ function getQuestionKey(attemptId: string, questionId: string) {
   return `${attemptId}:${questionId}`;
 }
 
+function hasOwnManualScore(
+  manualScores: Record<string, number>,
+  questionKey: string,
+) {
+  return Object.prototype.hasOwnProperty.call(manualScores, questionKey);
+}
+
+function hasSavedManualScore(
+  attempt: SubmittedAttempt,
+  question: QuestionReview,
+  manualScores: Record<string, number>,
+) {
+  if (!question.requiresManualReview) {
+    return true;
+  }
+
+  if (attempt.status === "reviewed" || question.reviewed) {
+    return true;
+  }
+
+  const questionKey = getQuestionKey(attempt.id, question.id);
+  return hasOwnManualScore(manualScores, questionKey);
+}
+
+function isQuestionReviewed(
+  attempt: SubmittedAttempt,
+  question: QuestionReview,
+  reviewedQuestions: Record<string, true>,
+) {
+  if (!question.requiresManualReview) {
+    return true;
+  }
+
+  if (attempt.status === "reviewed" || question.reviewed) {
+    return true;
+  }
+
+  const questionKey = getQuestionKey(attempt.id, question.id);
+  return Boolean(reviewedQuestions[questionKey]);
+}
+
+function hasCompletedManualReview(
+  attempt: SubmittedAttempt,
+  question: QuestionReview,
+  manualScores: Record<string, number>,
+  reviewedQuestions: Record<string, true>,
+) {
+  if (!question.requiresManualReview) {
+    return true;
+  }
+
+  return (
+    hasSavedManualScore(attempt, question, manualScores) &&
+    isQuestionReviewed(attempt, question, reviewedQuestions)
+  );
+}
+
 function clampScore(value: number, maxPoints: number) {
   return Math.max(0, Math.min(Math.round(value), maxPoints));
 }
@@ -875,23 +1015,14 @@ function hasMeaningfulReviewText(...values: Array<string | undefined>) {
     const trimmed = value?.trim();
     return Boolean(
       trimmed &&
-        trimmed !== "AI дүгнэлт хараахан ирээгүй байна." &&
-        trimmed !== "Тайлбар хараахан нэмэгдээгүй байна.",
+      trimmed !== "AI дүгнэлт хараахан ирээгүй байна." &&
+      trimmed !== "Тайлбар хараахан нэмэгдээгүй байна.",
     );
   });
 }
 
 function formatMonitoringCaptureMode(mode?: string) {
-  switch (mode) {
-    case "screen-capture-enabled":
-      return "Screen capture";
-    case "fallback-dom-capture":
-      return "Fallback capture";
-    case "limited-monitoring":
-      return "Limited monitoring";
-    default:
-      return "Monitoring";
-  }
+  return formatMonitoringModeLabel(mode) ?? "Хяналт";
 }
 
 function normalizeUnavailableAnswer(value: string) {
@@ -914,6 +1045,24 @@ function getQuestionReferenceGuide(question: QuestionReview) {
     : "";
 }
 
+function formatInlineReviewValue(question: QuestionReview, value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || !isMathQuestionType(question.questionType)) {
+    return trimmed;
+  }
+
+  return `$${trimmed}$`;
+}
+
+function isAutoZeroQuestion(question: QuestionReview) {
+  return (
+    isMathQuestionType(question.questionType) &&
+    question.points === 0 &&
+    !question.requiresManualReview &&
+    normalizeUnavailableAnswer(question.studentAnswer) === "Хариу өгөөгүй"
+  );
+}
+
 function buildFormulaRelationFallback(
   question: QuestionReview,
   referenceGuide: string,
@@ -934,7 +1083,7 @@ function buildFormulaRelationFallback(
   }
 
   const lead = studentAnswer
-    ? `Таны хариулт "${studentAnswer}" байна.`
+    ? `Таны хариулт "${formatInlineReviewValue(question, studentAnswer)}" байна.`
     : "Энэ бодлогод хариулт дутуу байна.";
 
   return `${lead} Томьёог уншихдаа аль хувьсагч нь алинаасаа хамаарч байгааг эхэлж зөв тогтоох хэрэгтэй. Жишээлбэл x-ийг y-ээр илэрхийлсэн бол x нь y-ээс хамаарна. Дараа нь орлуулалт, хувиргалт бүр дээр тэнцлийн хоёр талд ижил үйлдэл хийснээ шалгаарай.`;
@@ -961,16 +1110,16 @@ function buildLocalExplanationFallback(question: QuestionReview) {
     !studentAnswer.startsWith("-") &&
     correctAnswer.startsWith("-")
   ) {
-    return `Та ${subtractionMatch[2]}-${subtractionMatch[3]} үйлдлийн тэмдгийг алдсан байна. Бага тооноос их тоог хасахад хариу сөрөг тэмдэгтэй гардаг тул ${correctAnswer} гэж бодох ёстой. Тооны шулуун ашиглаад ижил төрлийн жишээг дахин ажиллаарай.`;
+    return `Та ${subtractionMatch[2]}-${subtractionMatch[3]} үйлдлийн тэмдгийг алдсан байна. Бага тооноос их тоог хасахад хариу сөрөг тэмдэгтэй гардаг тул ${formatInlineReviewValue(question, correctAnswer)} гэж бодох ёстой. Тооны шулуун ашиглаад ижил төрлийн жишээг дахин ажиллаарай.`;
   }
 
   if (
-    question.questionType === "math" &&
+    isMathQuestionType(question.questionType) &&
     correctAnswer.includes("+ C") &&
     studentAnswer &&
     !studentAnswer.includes("+ C")
   ) {
-    return `Та үндсэн илэрхийллээ олсон ч интегралын тогтмол болох +C-г орхигдуулсан байна. Эцсийн хариуг ${correctAnswer} хэлбэрээр бичих ёстойг дахин анхаараарай.`;
+    return `Та үндсэн илэрхийллээ олсон ч интегралын тогтмол болох +C-г орхигдуулсан байна. Эцсийн хариуг ${formatInlineReviewValue(question, correctAnswer)} хэлбэрээр бичих ёстойг дахин анхаараарай.`;
   }
 
   const formulaRelationFallback = buildFormulaRelationFallback(
@@ -982,11 +1131,11 @@ function buildLocalExplanationFallback(question: QuestionReview) {
   }
 
   if (studentAnswer && correctAnswer) {
-    return `Таны хариулт "${studentAnswer}" байсан ч зөв хариулт нь "${correctAnswer}" байна. Гол ойлголт болон бодолтын дарааллаа дахин шалгаж, ижил төрлийн жишээ ажиллаарай.`;
+    return `Таны хариулт "${formatInlineReviewValue(question, studentAnswer)}" байсан ч зөв хариулт нь "${formatInlineReviewValue(question, correctAnswer)}" байна. Гол ойлголт болон бодолтын дарааллаа дахин шалгаж, ижил төрлийн жишээ ажиллаарай.`;
   }
 
   if (correctAnswer) {
-    return `Энэ асуултад хариулаагүй эсвэл дутуу хариулсан байна. Зөв хариулт нь "${correctAnswer}" юм. Суурь дүрэм, жишээ бодлогуудаа дахин давтаарай.`;
+    return `Энэ асуултад хариулаагүй эсвэл дутуу хариулсан байна. Зөв хариулт нь "${formatInlineReviewValue(question, correctAnswer)}" юм. Суурь дүрэм, жишээ бодлогуудаа дахин давтаарай.`;
   }
 
   if (referenceGuide) {
@@ -1061,11 +1210,11 @@ function getEffectiveReviewState(
   manualScores: Record<string, number>,
   reviewedQuestions: Record<string, true>,
 ): QuestionReview["reviewState"] {
-  if (!attempt || !question || !question.requiresManualReview) {
-    if (!attempt || !question) {
-      return question?.reviewState ?? "pending";
-    }
+  if (!attempt || !question) {
+    return question?.reviewState ?? "pending";
+  }
 
+  if (!question.requiresManualReview) {
     const questionKey = getQuestionKey(attempt.id, question.id);
     if (!(questionKey in manualScores) && !reviewedQuestions[questionKey]) {
       return question.reviewState;
@@ -1073,7 +1222,21 @@ function getEffectiveReviewState(
   }
 
   const questionKey = getQuestionKey(attempt.id, question.id);
-  if (!reviewedQuestions[questionKey]) {
+  const hasPersistedReview = attempt.status === "reviewed" || question.reviewed;
+
+  if (question.requiresManualReview) {
+    if (hasPersistedReview && !hasOwnManualScore(manualScores, questionKey)) {
+      return question.reviewState;
+    }
+
+    if (!hasSavedManualScore(attempt, question, manualScores)) {
+      return "pending";
+    }
+
+    if (!isQuestionReviewed(attempt, question, reviewedQuestions)) {
+      return "pending";
+    }
+  } else if (!reviewedQuestions[questionKey]) {
     return "pending";
   }
 
@@ -1099,8 +1262,20 @@ function getQuestionBadgeLabel(
     return `${question.points}/${question.maxPoints} pts`;
   }
 
+  if (
+    !hasSavedManualScore(attempt, question, manualScores)
+  ) {
+    return "Хүлээгдэж байна";
+  }
+
   const questionKey = getQuestionKey(attempt.id, question.id);
-  if (!reviewedQuestions[questionKey]) {
+  const hasPersistedReview = attempt.status === "reviewed" || question.reviewed;
+
+  if (hasPersistedReview && !hasOwnManualScore(manualScores, questionKey)) {
+    return `${question.points}/${question.maxPoints} pts`;
+  }
+
+  if (!isQuestionReviewed(attempt, question, reviewedQuestions)) {
     return "Хүлээгдэж байна";
   }
 
@@ -1136,7 +1311,10 @@ function AnswerBlock({
         {badgeLabel ? (
           <Badge
             variant="outline"
-            className={cn("rounded-full px-2 py-0.5 text-[12px]", badgeClassName)}
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[12px]",
+              badgeClassName,
+            )}
           >
             {badgeLabel}
           </Badge>
@@ -1255,4 +1433,52 @@ function formatMonitoringType(type: "warning" | "danger" | "focus") {
     default:
       return "Анхааруулга";
   }
+}
+
+function getTeacherSyncAlert(attempt: SubmittedAttempt | null) {
+  if (
+    !attempt ||
+    attempt.answerKeySource !== "teacher_service" ||
+    attempt.status === "reviewed"
+  ) {
+    return null;
+  }
+
+  const sync = attempt.teacherSync;
+  if (!sync) {
+    return null;
+  }
+
+  if (sync.status === "failed") {
+    const errorMessage = sync.lastError?.trim();
+
+    return {
+      className: "bg-red-50 text-red-700",
+      description: errorMessage
+        ? `Teacher-service рүү илгээхдээ алдаа гарсан: ${errorMessage}. Энэ оролдлогыг эндээс гараар баталж demo-гоо үргэлжлүүлж болно.`
+        : "Teacher-service рүү илгээхдээ алдаа гарсан. Энэ оролдлогыг эндээс гараар баталж demo-гоо үргэлжлүүлж болно.",
+      title: "Teacher-service sync амжилтгүй болсон.",
+    };
+  }
+
+  if (sync.status === "pending") {
+    return {
+      className: "bg-amber-50 text-amber-800",
+      description:
+        "Webhook тохиргоо байхгүй эсвэл автомат илгээлт хүлээгдэж байна. Энэ оролдлогыг эндээс гараар баталбал сурагч талд дүн шууд гарна.",
+      title: "Teacher-service автомат sync хүлээгдэж байна.",
+    };
+  }
+
+  if (!attempt.hasPublishedResult) {
+    return {
+      className: "bg-sky-50 text-sky-800",
+      description: sync.sentAt
+        ? `Teacher-service рүү ${formatDateTime(new Date(sync.sentAt))}-д амжилттай илгээсэн, харин шалгасан дүн хараахан буцаж ирээгүй байна.`
+        : "Teacher-service рүү амжилттай илгээсэн, харин шалгасан дүн хараахан буцаж ирээгүй байна.",
+      title: "Teacher-service хариу хүлээгдэж байна.",
+    };
+  }
+
+  return null;
 }

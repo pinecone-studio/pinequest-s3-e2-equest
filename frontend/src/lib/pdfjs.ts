@@ -1,10 +1,5 @@
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
-const PDFJS_WORKER_URL = new URL(
-  "pdfjs-dist/legacy/build/pdf.worker.mjs",
-  import.meta.url,
-).toString();
-
 type PdfJsWorkerScope = typeof globalThis & {
   __pinequestPdfJsWorker?: Worker | null;
   pdfjsWorker?: {
@@ -12,8 +7,35 @@ type PdfJsWorkerScope = typeof globalThis & {
   };
 };
 
+let cachedPdfJsWorkerUrl: string | null | undefined;
+
 function getPdfJsWorkerScope() {
   return globalThis as PdfJsWorkerScope;
+}
+
+function canUseDedicatedPdfJsWorker() {
+  return (
+    typeof Worker !== "undefined"
+    && typeof window !== "undefined"
+    && typeof document !== "undefined"
+  );
+}
+
+function getPdfJsWorkerUrl() {
+  if (cachedPdfJsWorkerUrl !== undefined) {
+    return cachedPdfJsWorkerUrl;
+  }
+
+  try {
+    cachedPdfJsWorkerUrl = new URL(
+      "pdfjs-dist/legacy/build/pdf.worker.mjs",
+      import.meta.url,
+    ).toString();
+  } catch {
+    cachedPdfJsWorkerUrl = null;
+  }
+
+  return cachedPdfJsWorkerUrl;
 }
 
 function ensureNodePdfJsGlobals() {
@@ -35,21 +57,21 @@ function ensureNodePdfJsGlobals() {
 }
 
 function ensurePdfJsWorker(pdfjs: PdfJsModule) {
+  const workerUrl = getPdfJsWorkerUrl();
   const scope = getPdfJsWorkerScope();
 
-  if (typeof Worker === "undefined") {
+  if (!canUseDedicatedPdfJsWorker()) {
     ensureNodePdfJsGlobals();
-    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-      pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
-    }
     return;
   }
 
   if (scope.__pinequestPdfJsWorker === undefined) {
     try {
-      scope.__pinequestPdfJsWorker = new Worker(PDFJS_WORKER_URL, {
-        type: "module",
-      });
+      scope.__pinequestPdfJsWorker = workerUrl
+        ? new Worker(workerUrl, {
+            type: "module",
+          })
+        : null;
     } catch {
       scope.__pinequestPdfJsWorker = null;
     }
@@ -57,13 +79,13 @@ function ensurePdfJsWorker(pdfjs: PdfJsModule) {
 
   if (scope.__pinequestPdfJsWorker) {
     pdfjs.GlobalWorkerOptions.workerPort = scope.__pinequestPdfJsWorker;
-  } else if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+  } else if (workerUrl && !pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
   }
 }
 
 export async function loadPdfJs() {
-  if (typeof Worker === "undefined") {
+  if (!canUseDedicatedPdfJsWorker()) {
     ensureNodePdfJsGlobals();
     const scope = getPdfJsWorkerScope();
     if (!scope.pdfjsWorker?.WorkerMessageHandler) {

@@ -113,7 +113,7 @@ export function ExamProgressOverview({
           </div>
 
           {activeExams.length > 0 ? (
-            <div className="mt-8 grid gap-6 xl:grid-cols-2">
+            <div className="mt-8 grid items-stretch gap-6 xl:grid-cols-3">
               {activeExams.map((card) => (
                 <MockLiveExamCardView
                   key={card.exam.id}
@@ -181,7 +181,7 @@ export function ExamProgressOverview({
           </div>
 
           {filteredCompletedExams.length > 0 ? (
-            <div className="mt-6 grid gap-6 xl:grid-cols-3">
+            <div className="mt-6 grid items-stretch gap-6 xl:grid-cols-3">
               {filteredCompletedExams.slice(0, 6).map((exam) => (
                 <CompletedExamCard
                   key={exam.id}
@@ -245,7 +245,7 @@ function MockLiveExamCardView({
           onClick();
         }
       }}
-      className="min-h-[204px] max-w-[488px] cursor-pointer rounded-[24px] border border-slate-200 bg-white px-7 py-6 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:border-[#0b5cab]"
+      className="flex h-full min-h-[240px] flex-col cursor-pointer rounded-[24px] border border-slate-200 bg-white px-7 py-8 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:border-[#0b5cab]"
     >
       <div className="flex items-start justify-between gap-4">
         <span className="inline-flex items-center gap-2 rounded-full bg-[#16a34a] px-4 py-1.5 text-[14px] font-semibold text-white">
@@ -257,11 +257,11 @@ function MockLiveExamCardView({
         </span>
       </div>
 
-      <h3 className="mt-8 text-[18px] font-bold text-slate-900">
+      <h3 className="mt-8 text-[18px] font-bold leading-snug text-slate-900">
         {card.exam.title}
       </h3>
 
-      <div className="mt-8 flex items-end justify-between gap-4 text-[15px] text-slate-500">
+      <div className="mt-auto flex items-end justify-between gap-4 pt-8 text-[15px] text-slate-500">
         <div className="space-y-3">
           <p className="flex items-center gap-2 text-[15px]">
             <Clock3 className="h-4 w-4 text-slate-500" />
@@ -301,7 +301,7 @@ function CompletedExamCard({
           onClick();
         }
       }}
-      className="min-h-[240px] cursor-pointer rounded-[24px] border border-slate-200 bg-white px-7 py-8 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:border-[#0b5cab]"
+      className="flex h-full min-h-[240px] flex-col cursor-pointer rounded-[24px] border border-slate-200 bg-white px-7 py-8 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:border-[#0b5cab]"
     >
       <div className="flex items-start justify-between gap-4">
         {badgeVariant ? (
@@ -320,7 +320,7 @@ function CompletedExamCard({
         {exam.title}
       </h3>
 
-      <div className="mt-8 space-y-3 text-[15px] text-slate-500">
+      <div className="mt-auto space-y-3 pt-8 text-[15px] text-slate-500">
         <p className="flex items-center gap-2">
           <GraduationCap className="h-4 w-4" />
           {formatCompletedClassLabel(exam.class)}

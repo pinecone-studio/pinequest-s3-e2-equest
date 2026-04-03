@@ -824,6 +824,7 @@ export function AiStudentPersonalScheduler({
                     mode="single"
                     selected={date}
                     onSelect={setDate}
+                    hideNavigation
                     locale={mn}
                     className="w-fit"
                   />

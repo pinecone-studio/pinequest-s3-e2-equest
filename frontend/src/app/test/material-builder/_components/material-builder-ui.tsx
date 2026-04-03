@@ -2,6 +2,7 @@
 
 import { CircleDot, Database, RefreshCcw, Repeat2 } from "lucide-react";
 import { type ReactNode } from "react";
+import MathPreviewText from "@/components/math-preview-text";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -146,7 +147,11 @@ export function TextbookQuestionCard({
         <p className="mb-3 text-[14px] font-medium text-slate-800">Хариулт</p>
         {answerMode === "written" ? (
           <div className="min-h-[56px] rounded-[10px] border border-[#e2e8f0] bg-[#eef3ff] px-4 py-4 text-[14px] text-slate-800">
-            {selectedAnswer}
+            <MathPreviewText
+              content={selectedAnswer}
+              contentSource="backend"
+              className="text-[14px] leading-relaxed text-slate-800"
+            />
           </div>
         ) : (
           <RadioGroup value={selectedAnswer} className="gap-3">
@@ -159,7 +164,11 @@ export function TextbookQuestionCard({
                   value={answer}
                   className="border-[#cdd8ea] text-[#0b5cab] data-checked:border-[#0b5cab] data-checked:bg-[#0b5cab]"
                 />
-                <span>{answer}</span>
+                <MathPreviewText
+                  content={answer}
+                  contentSource="backend"
+                  className="min-w-0 flex-1 text-[14px] leading-relaxed text-slate-800"
+                />
               </label>
             ))}
           </RadioGroup>
@@ -337,7 +346,11 @@ export function SharedLibraryQuestionCard({
                 value={answer}
                 className="border-[#cdd8ea] text-[#0b5cab] data-checked:border-[#0b5cab] data-checked:bg-[#0b5cab]"
               />
-              <span>{answer}</span>
+              <MathPreviewText
+                content={answer}
+                contentSource="backend"
+                className="min-w-0 flex-1 text-[14px] leading-relaxed text-slate-800"
+              />
             </label>
           ))}
         </RadioGroup>

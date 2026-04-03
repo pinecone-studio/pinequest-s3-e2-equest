@@ -1,9 +1,14 @@
 import type { DashboardApiPayload } from "@/app/test/live-dashboard/lib/dashboard-adapters";
 import { getTakeExamGraphqlUrl } from "@/lib/take-exam-graphql";
 
+const DASHBOARD_TEST_LIMIT = 80;
+const DASHBOARD_ATTEMPT_LIMIT = 180;
+const DASHBOARD_SELECTED_EXAM_ATTEMPT_LIMIT = 120;
+const DASHBOARD_REQUEST_TIMEOUT_MS = 12_000;
+
 const DASHBOARD_QUERY = `
-query FrontendDashboard($limit: Int!, $forceRefresh: Boolean) {
-  availableTests(forceRefresh: $forceRefresh) {
+query FrontendDashboard($limit: Int!, $testLimit: Int!, $attemptLimit: Int!, $forceRefresh: Boolean) {
+  availableTests(limit: $testLimit, forceRefresh: $forceRefresh) {
     id
     title
     description
@@ -17,7 +22,7 @@ query FrontendDashboard($limit: Int!, $forceRefresh: Boolean) {
       topic
     }
   }
-  attempts(forceRefresh: $forceRefresh) {
+  attempts(limit: $attemptLimit, forceRefresh: $forceRefresh) {
     attemptId
     testId
     title
@@ -90,6 +95,12 @@ query FrontendDashboard($limit: Int!, $forceRefresh: Boolean) {
       strengths
       improvements
       source
+    }
+    teacherSync {
+      status
+      targetService
+      lastError
+      sentAt
     }
   }
   liveMonitoringFeed(limit: $limit) {
@@ -124,8 +135,8 @@ query FrontendDashboard($limit: Int!, $forceRefresh: Boolean) {
 `.trim();
 
 const DASHBOARD_WITH_MATERIAL_QUERY = `
-query FrontendDashboardWithMaterial($limit: Int!, $testId: String!, $forceRefresh: Boolean) {
-  availableTests(forceRefresh: $forceRefresh) {
+query FrontendDashboardWithMaterial($limit: Int!, $testId: ID!, $testLimit: Int!, $attemptLimit: Int!, $forceRefresh: Boolean) {
+  availableTests(limit: $testLimit, forceRefresh: $forceRefresh) {
     id
     title
     description
@@ -139,7 +150,7 @@ query FrontendDashboardWithMaterial($limit: Int!, $testId: String!, $forceRefres
       topic
     }
   }
-  attempts(forceRefresh: $forceRefresh) {
+  attempts(limit: $attemptLimit, forceRefresh: $forceRefresh) {
     attemptId
     testId
     title
@@ -212,6 +223,12 @@ query FrontendDashboardWithMaterial($limit: Int!, $testId: String!, $forceRefres
       strengths
       improvements
       source
+    }
+    teacherSync {
+      status
+      targetService
+      lastError
+      sentAt
     }
   }
   liveMonitoringFeed(limit: $limit) {
@@ -389,7 +406,7 @@ query FrontendDashboard($limit: Int!) {
 `.trim();
 
 const LEGACY_DASHBOARD_WITH_MATERIAL_QUERY = `
-query FrontendDashboardWithMaterial($limit: Int!, $testId: String!) {
+query FrontendDashboardWithMaterial($limit: Int!, $testId: ID!) {
   availableTests {
     id
     title
@@ -526,6 +543,150 @@ query FrontendDashboardWithMaterial($limit: Int!, $testId: String!) {
 }
 `.trim();
 
+const LIVE_DASHBOARD_EXAM_QUERY = `
+query FrontendLiveDashboardExam($limit: Int!, $testId: ID!, $attemptLimit: Int!, $forceRefresh: Boolean) {
+  attemptsByTestId(testId: $testId, limit: $attemptLimit, forceRefresh: $forceRefresh) {
+    attemptId
+    testId
+    title
+    studentId
+    studentName
+    status
+    answerKeySource
+    score
+    maxScore
+    percentage
+    startedAt
+    submittedAt
+    monitoring {
+      totalEvents
+      warningCount
+      dangerCount
+      lastEventAt
+      recentEvents {
+        id
+        code
+        severity
+        title
+        detail
+        occurredAt
+        mode
+        screenshotCapturedAt
+        screenshotStorageKey
+        screenshotUrl
+      }
+    }
+    result {
+      score
+      maxScore
+      percentage
+      correctCount
+      incorrectCount
+      unansweredCount
+      questionResults {
+        questionId
+        prompt
+        competency
+        questionType
+        selectedOptionId
+        correctOptionId
+        isCorrect
+        pointsAwarded
+        maxPoints
+        explanation
+        explanationSource
+        dwellMs
+        answerChangeCount
+      }
+    }
+    answerReview {
+      questionId
+      prompt
+      competency
+      questionType
+      selectedOptionId
+      selectedAnswerText
+      correctAnswerText
+      points
+      responseGuide
+      dwellMs
+      answerChangeCount
+    }
+    feedback {
+      headline
+      summary
+      strengths
+      improvements
+      source
+    }
+    teacherSync {
+      status
+      targetService
+      lastError
+      sentAt
+    }
+  }
+  liveMonitoringFeed(limit: $limit, testId: $testId) {
+    attemptId
+    testId
+    title
+    studentId
+    studentName
+    status
+    startedAt
+    submittedAt
+    monitoring {
+      totalEvents
+      warningCount
+      dangerCount
+      lastEventAt
+    }
+    latestEvent {
+      id
+      code
+      severity
+      title
+      detail
+      occurredAt
+      mode
+      screenshotCapturedAt
+      screenshotStorageKey
+      screenshotUrl
+    }
+  }
+  testMaterial(testId: $testId, forceRefresh: $forceRefresh) {
+    testId
+    title
+    description
+    criteria {
+      className
+      difficulty
+      gradeLevel
+      questionCount
+      subject
+      topic
+    }
+    questions {
+      questionId
+      prompt
+      type
+      points
+      competency
+      imageUrl
+      audioUrl
+      videoUrl
+      correctOptionId
+      responseGuide
+      answerLatex
+      options {
+        id
+        text
+      }
+    }
+  }
+}
+`.trim();
+
 type GraphqlEnvelope<TData> = {
   data?: TData;
   errors?: Array<{ message?: string }>;
@@ -533,6 +694,14 @@ type GraphqlEnvelope<TData> = {
 
 type DashboardAttempt = DashboardApiPayload["attempts"][number];
 type DashboardAvailableTest = DashboardApiPayload["availableTests"][number];
+type LiveDashboardExamSeed = {
+  class?: string;
+  id: string;
+  questionCount?: number;
+  subject?: string;
+  title?: string;
+  topic?: string;
+};
 
 const hasMissingFieldError = (
   payload: { errors?: Array<{ message?: string }> },
@@ -558,8 +727,10 @@ const shouldRetryWithLegacyDashboard = (
       (
         hasMissingFieldError(payload, "answerLatex") ||
         hasMissingFieldError(payload, "correctOptionId") ||
+        hasMissingFieldError(payload, "teacherSync") ||
         hasMissingFieldError(payload, "testMaterial") ||
-        hasUnknownArgumentError(payload, "forceRefresh")
+        hasUnknownArgumentError(payload, "forceRefresh") ||
+        hasUnknownArgumentError(payload, "limit")
       ),
   );
 
@@ -570,7 +741,7 @@ const buildProgress = (attempt: Record<string, any>, questionCount: number) => {
     (attempt.result?.unansweredCount ?? 0);
   const answeredQuestionsFromReview =
     attempt.answerReview?.filter(
-      (item) =>
+      (item: { selectedAnswerText?: string | null; selectedOptionId?: string | null }) =>
         item.selectedOptionId || item.selectedAnswerText,
     ).length ?? 0;
   const answeredQuestions = Math.max(
@@ -596,19 +767,113 @@ const buildProgress = (attempt: Record<string, any>, questionCount: number) => {
   };
 };
 
+const normalizeDashboardPayload = (
+  data: DashboardApiPayload,
+): DashboardApiPayload => {
+  const testsById = new Map<string, DashboardAvailableTest>(
+    data.availableTests.map((test) => [test.id, test]),
+  );
+
+  return {
+    ...data,
+    attempts: data.attempts.map((attempt) => {
+      const test = testsById.get(attempt.testId);
+      const totalQuestions = test?.criteria.questionCount ?? 0;
+
+      return {
+        ...attempt,
+        answerReview: attempt.answerReview ?? null,
+        criteria: test?.criteria ?? null,
+        monitoring: attempt.monitoring
+          ? {
+              ...attempt.monitoring,
+              infoCount: 0,
+              recentEvents: attempt.monitoring.recentEvents ?? [],
+            }
+          : null,
+        progress: buildProgress(attempt, totalQuestions),
+        result: attempt.result
+          ? {
+              ...attempt.result,
+              questionResults: attempt.result.questionResults.map((result) => ({
+                ...result,
+                answerChangeCount: result.answerChangeCount ?? null,
+                competency: result.competency,
+                dwellMs: result.dwellMs ?? null,
+                prompt: result.prompt,
+                questionType: result.questionType,
+              })),
+            }
+          : null,
+        teacherSync: attempt.teacherSync ?? null,
+      };
+    }),
+    availableTests: data.availableTests.map((test) => ({ ...test })),
+    liveMonitoringFeed: data.liveMonitoringFeed.map((item) => ({
+      ...item,
+      monitoring: item.monitoring ? { ...item.monitoring, infoCount: 0 } : null,
+    })),
+  } satisfies DashboardApiPayload;
+};
+
+const buildDashboardTestFromSeed = (
+  testId: string,
+  testMaterial: any,
+  fallbackExam?: LiveDashboardExamSeed | null,
+): DashboardApiPayload["availableTests"][number] => ({
+  id: testId,
+  title: testMaterial?.title ?? fallbackExam?.title ?? "Шалгалт",
+  description: testMaterial?.description ?? "",
+  updatedAt: new Date().toISOString(),
+  criteria: {
+    className: testMaterial?.criteria?.className ?? fallbackExam?.class ?? "",
+    difficulty: testMaterial?.criteria?.difficulty ?? "medium",
+    gradeLevel:
+      typeof testMaterial?.criteria?.gradeLevel === "number"
+        ? testMaterial.criteria.gradeLevel
+        : 0,
+    questionCount:
+      typeof testMaterial?.criteria?.questionCount === "number"
+        ? testMaterial.criteria.questionCount
+        : (testMaterial?.questions?.length ??
+          fallbackExam?.questionCount ??
+          0),
+    subject: testMaterial?.criteria?.subject ?? fallbackExam?.subject ?? "",
+    topic: testMaterial?.criteria?.topic ?? fallbackExam?.topic ?? "",
+  },
+});
+
 const fetchGraphqlPayload = async <TData>(
   query: string,
   variables: Record<string, unknown>,
   graphqlUrl?: string,
 ) => {
-  const response = await fetch(graphqlUrl ?? getTakeExamGraphqlUrl(), {
-    body: JSON.stringify({ query, variables }),
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, DASHBOARD_REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+
+  try {
+    response = await fetch(graphqlUrl ?? getTakeExamGraphqlUrl(), {
+      body: JSON.stringify({ query, variables }),
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Take exam service хэт удаан хариулж байна.");
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const rawText = await response.text();
   const trimmedText = rawText.trim();
@@ -646,7 +911,20 @@ export const fetchTakeExamDashboard = async (
 
   let { payload, response } = await fetchGraphqlPayload<DashboardWithMaterial>(
     testId ? DASHBOARD_WITH_MATERIAL_QUERY : DASHBOARD_QUERY,
-    testId ? { forceRefresh, limit, testId } : { forceRefresh, limit },
+    testId
+      ? {
+          attemptLimit: DASHBOARD_ATTEMPT_LIMIT,
+          forceRefresh,
+          limit,
+          testId,
+          testLimit: DASHBOARD_TEST_LIMIT,
+        }
+      : {
+          attemptLimit: DASHBOARD_ATTEMPT_LIMIT,
+          forceRefresh,
+          limit,
+          testLimit: DASHBOARD_TEST_LIMIT,
+        },
     graphqlUrl,
   );
 
@@ -702,53 +980,80 @@ export const fetchTakeExamDashboard = async (
     );
   }
 
-  const data = payload.data;
-  const testsById = new Map<string, DashboardAvailableTest>(
-    data.availableTests.map((test) => [test.id, test]),
+  return normalizeDashboardPayload(payload.data);
+};
+
+export const fetchTakeExamLiveDashboardExam = async (
+  limit: number,
+  testId: string,
+  graphqlUrl?: string,
+  {
+    fallbackExam,
+    forceRefresh = false,
+  }: {
+    fallbackExam?: LiveDashboardExamSeed | null;
+    forceRefresh?: boolean;
+  } = {},
+): Promise<DashboardApiPayload> => {
+  type LiveDashboardExamResponse = {
+    attemptsByTestId: DashboardApiPayload["attempts"];
+    liveMonitoringFeed: DashboardApiPayload["liveMonitoringFeed"];
+    testMaterial?: {
+      criteria?: DashboardApiPayload["availableTests"][number]["criteria"];
+      description?: string;
+      questions?: NonNullable<DashboardApiPayload["testMaterial"]>["questions"];
+      testId: string;
+      title: string;
+    } | null;
+  };
+
+  let { payload, response } = await fetchGraphqlPayload<LiveDashboardExamResponse>(
+    LIVE_DASHBOARD_EXAM_QUERY,
+    {
+      attemptLimit: DASHBOARD_SELECTED_EXAM_ATTEMPT_LIMIT,
+      forceRefresh,
+      limit,
+      testId,
+    },
+    graphqlUrl,
   );
 
-  return {
-    ...data,
-    attempts: data.attempts.map((attempt) => {
-      const test = testsById.get(attempt.testId);
-      const totalQuestions = test?.criteria.questionCount ?? 0;
+  if (
+    response.ok &&
+    payload &&
+    (
+      hasMissingFieldError(payload, "attemptsByTestId") ||
+      hasUnknownArgumentError(payload, "limit") ||
+      hasUnknownArgumentError(payload, "testId")
+    )
+  ) {
+    return fetchTakeExamDashboard(limit, testId, graphqlUrl, { forceRefresh });
+  }
 
-      return {
-        ...attempt,
-        answerReview: attempt.answerReview ?? null,
-        criteria: test?.criteria ?? null,
-        monitoring: attempt.monitoring
-          ? {
-              ...attempt.monitoring,
-              infoCount: 0,
-              recentEvents: attempt.monitoring.recentEvents ?? [],
-            }
-          : null,
-        progress: buildProgress(attempt, totalQuestions),
-        result: attempt.result
-          ? {
-              ...attempt.result,
-              questionResults: attempt.result.questionResults.map(
-                (result) => ({
-                  ...result,
-                  answerChangeCount: result.answerChangeCount ?? null,
-                  competency: result.competency,
-                  dwellMs: result.dwellMs ?? null,
-                  prompt: result.prompt,
-                  questionType: result.questionType,
-                }),
-              ),
-            }
-          : null,
-        teacherSync: null,
-      };
-    }),
-    availableTests: data.availableTests.map((test) => ({ ...test })),
-    liveMonitoringFeed: data.liveMonitoringFeed.map((item) => ({
-      ...item,
-      monitoring: item.monitoring ? { ...item.monitoring, infoCount: 0 } : null,
-    })),
-  } satisfies DashboardApiPayload;
+  if (!response.ok || payload?.errors?.length || !payload?.data) {
+    throw new Error(
+      payload?.errors?.[0]?.message ??
+        "Take exam service-ээс сонгосон шалгалтын өгөгдөл авч чадсангүй.",
+    );
+  }
+
+  const testMaterial = payload.data.testMaterial ?? null;
+  const dashboardPayload: DashboardApiPayload = {
+    availableTests: [buildDashboardTestFromSeed(testId, testMaterial, fallbackExam)],
+    attempts: payload.data.attemptsByTestId ?? [],
+    liveMonitoringFeed: (payload.data.liveMonitoringFeed ?? []).filter(
+      (item) => item.testId === testId,
+    ),
+    testMaterial: testMaterial
+      ? {
+          questions: testMaterial.questions ?? [],
+          testId: testMaterial.testId,
+          title: testMaterial.title,
+        }
+      : null,
+  };
+
+  return normalizeDashboardPayload(dashboardPayload);
 };
 
 export const approveTakeExamAttempt = async (input: {

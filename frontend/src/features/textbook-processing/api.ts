@@ -1,4 +1,9 @@
-import { getConfiguredTextbookR2BucketName } from "@/lib/create-exam-graphql";
+import {
+  getConfiguredTextbookR2BucketName,
+  getConfiguredTextbookR2PresignUrl,
+  getConfiguredTextbookR2PublicUrl,
+  getCreateExamServiceBaseUrl,
+} from "@/lib/create-exam-graphql";
 import {
   MAX_TEXTBOOK_FILE_SIZE_BYTES,
 } from "./constants";
@@ -52,9 +57,164 @@ type UploadProgressSnapshot = {
   total: number;
 };
 
-const TEXTBOOK_R2_PROXY_PATH = "/api/textbook-r2";
 const TEXTBOOK_R2_UPLOAD_PROXY_PATH = "/api/textbook-r2-upload";
-const TEXTBOOK_MATERIALS_PROXY_PATH = "/api/textbook-materials";
+const TEXTBOOK_PARSE_PROXY_PATH = "/api/textbook-parse";
+
+function buildCreateExamApiUrl(path: string) {
+  return new URL(path, getCreateExamServiceBaseUrl()).toString();
+}
+
+function buildTextbookRuntimeApiUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_TEXTBOOK_RUNTIME_API_BASE_URL
+      ?.trim()
+      .replace(/\/$/, "") || "";
+
+  if (!baseUrl) {
+    return path;
+  }
+
+  return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+function encodeObjectKey(key: string) {
+  return key
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
+function buildPublicTextbookObjectUrl(key: string) {
+  const baseUrl = getConfiguredTextbookR2PublicUrl();
+  if (!baseUrl) {
+    return "";
+  }
+
+  return `${baseUrl}/${encodeObjectKey(key)}`;
+}
+
+function shouldFallbackToPublicR2(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("r2 credentials") ||
+    normalized.includes("r2 bucket") ||
+    normalized.includes("upstreamstatus") ||
+    normalized.includes("http 500")
+  );
+}
+
+function getSubjectAliases(subject: MaterialBuilderSubject) {
+  switch (subject) {
+    case "math":
+      return ["matematic", "matematik", "mathematics", "math"];
+    case "physics":
+      return ["physics", "physic", "fizik"];
+    case "chemistry":
+      return ["chemistry", "chemic", "himi"];
+    default:
+      return [subject];
+  }
+}
+
+function buildExpectedPublicTextbookKeys(
+  grade: number,
+  subject: MaterialBuilderSubject,
+) {
+  const normalizedGrade = normalizeBookFileName(String(grade));
+  const keys: Array<{ fileName: string; key: string; matchScore: number }> = [];
+  const seen = new Set<string>();
+
+  for (const alias of getSubjectAliases(subject)) {
+    const candidates = [
+      { fileName: `${normalizedGrade}_${alias}.pdf`, matchScore: 100 },
+      { fileName: `${normalizedGrade}-${alias}.pdf`, matchScore: 96 },
+    ];
+
+    for (const candidate of candidates) {
+      if (seen.has(candidate.fileName)) {
+        continue;
+      }
+      seen.add(candidate.fileName);
+      keys.push({
+        fileName: candidate.fileName,
+        key: candidate.fileName,
+        matchScore: candidate.matchScore,
+      });
+    }
+  }
+
+  return keys;
+}
+
+function parseHeaderNumber(value: string | null) {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function fetchPublicR2TextbookCandidates(
+  grade: number,
+  subject: MaterialBuilderSubject,
+): Promise<R2TextbookListResponse | null> {
+  const publicUrl = getConfiguredTextbookR2PublicUrl();
+  if (!publicUrl) {
+    return null;
+  }
+
+  const items = (
+    await Promise.all(
+      buildExpectedPublicTextbookKeys(grade, subject).map(async (candidate) => {
+        const response = await fetch(buildPublicTextbookObjectUrl(candidate.key), {
+          method: "HEAD",
+        });
+
+        if (!response.ok) {
+          return null;
+        }
+
+        return {
+          bucketName: getConfiguredTextbookR2BucketName() || "public",
+          fileName: candidate.fileName,
+          key: candidate.key,
+          lastModified: response.headers.get("last-modified"),
+          matchScore: candidate.matchScore,
+          size: parseHeaderNumber(response.headers.get("content-length")),
+        } satisfies R2TextbookCandidate;
+      }),
+    )
+  ).filter((item): item is R2TextbookCandidate => Boolean(item));
+
+  return {
+    bucketName: getConfiguredTextbookR2BucketName() || "public",
+    expectedFileName: getExpectedR2FileName(grade, subject),
+    items,
+  };
+}
+
+async function downloadPublicR2Textbook(candidate: R2TextbookCandidate) {
+  const publicObjectUrl = buildPublicTextbookObjectUrl(candidate.key);
+  if (!publicObjectUrl) {
+    throw new Error("Public R2 URL тохируулаагүй байна.");
+  }
+
+  const response = await fetch(publicObjectUrl, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  return new File([blob], candidate.fileName, {
+    type: blob.type || "application/pdf",
+  });
+}
 
 function slugifyUploadName(value: string) {
   return String(value || "")
@@ -112,11 +272,7 @@ async function parseProxyJson<T extends { error?: string }>(response: Response) 
 }
 
 function getTextbookPresignUrl() {
-  return (
-    process.env.NEXT_PUBLIC_TEXTBOOK_R2_PRESIGN_URL?.trim() ||
-    process.env.NEXT_PUBLIC_R2_PRESIGN_URL?.trim() ||
-    ""
-  );
+  return getConfiguredTextbookR2PresignUrl();
 }
 
 export function hasConfiguredTextbookPresignUpload() {
@@ -127,7 +283,7 @@ export async function parseTextbookPdfByServer(file: File) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch("/api/textbook-parse", {
+  const response = await fetch(buildTextbookRuntimeApiUrl(TEXTBOOK_PARSE_PROXY_PATH), {
     method: "POST",
     body: formData,
   });
@@ -168,51 +324,72 @@ export async function fetchR2TextbookCandidates(
   grade: number,
   subject: MaterialBuilderSubject,
 ): Promise<R2TextbookListResponse> {
-  const url = new URL(TEXTBOOK_R2_PROXY_PATH, window.location.origin);
-  const configuredBucketName = getConfiguredTextbookR2BucketName();
-  url.searchParams.set("mode", "list");
-  url.searchParams.set("grade", String(grade));
-  url.searchParams.set("subject", subject);
-  if (configuredBucketName) {
-    url.searchParams.set("bucketName", configuredBucketName);
+  try {
+    const url = new URL(buildCreateExamApiUrl("/api/r2"));
+    const configuredBucketName = getConfiguredTextbookR2BucketName();
+    url.searchParams.set("mode", "list");
+    url.searchParams.set("grade", String(grade));
+    url.searchParams.set("subject", subject);
+    if (configuredBucketName) {
+      url.searchParams.set("bucketName", configuredBucketName);
+    }
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseJsonError(response));
+    }
+
+    return await parseProxyJson<R2TextbookListResponse & { error?: string }>(response);
+  } catch (error) {
+    if (!shouldFallbackToPublicR2(error)) {
+      throw error;
+    }
+
+    const publicFallback = await fetchPublicR2TextbookCandidates(grade, subject);
+    if (publicFallback) {
+      return publicFallback;
+    }
+
+    throw error;
   }
-
-  const response = await fetch(url.toString(), {
-    method: "GET",
-  });
-
-  if (!response.ok) {
-    throw new Error(await parseJsonError(response));
-  }
-
-  return parseProxyJson<R2TextbookListResponse & { error?: string }>(response);
 }
 
 export async function downloadR2Textbook(candidate: R2TextbookCandidate) {
-  const url = new URL(TEXTBOOK_R2_PROXY_PATH, window.location.origin);
-  const configuredBucketName = getConfiguredTextbookR2BucketName();
-  url.searchParams.set("mode", "file");
-  url.searchParams.set("key", candidate.key);
-  url.searchParams.set("bucketName", configuredBucketName || candidate.bucketName);
+  try {
+    const url = new URL(buildCreateExamApiUrl("/api/r2"));
+    const configuredBucketName = getConfiguredTextbookR2BucketName();
+    url.searchParams.set("mode", "file");
+    url.searchParams.set("key", candidate.key);
+    url.searchParams.set("bucketName", configuredBucketName || candidate.bucketName);
 
-  const response = await fetch(url.toString(), {
-    method: "GET",
-  });
+    const response = await fetch(url.toString(), {
+      method: "GET",
+    });
 
-  if (!response.ok) {
-    throw new Error(await parseJsonError(response));
+    if (!response.ok) {
+      throw new Error(await parseJsonError(response));
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      await parseProxyJson<{ error?: string }>(response);
+      throw new Error("R2-оос PDF файл татах хариу буруу ирлээ.");
+    }
+
+    const blob = await response.blob();
+    return new File([blob], candidate.fileName, {
+      type: blob.type || "application/pdf",
+    });
+  } catch (error) {
+    if (!shouldFallbackToPublicR2(error)) {
+      throw error;
+    }
+
+    return downloadPublicR2Textbook(candidate);
   }
-
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    await parseProxyJson<{ error?: string }>(response);
-    throw new Error("R2-оос PDF файл татах хариу буруу ирлээ.");
-  }
-
-  const blob = await response.blob();
-  return new File([blob], candidate.fileName, {
-    type: blob.type || "application/pdf",
-  });
 }
 
 export async function uploadTextbookPdfToR2(
@@ -250,8 +427,8 @@ export async function uploadTextbookPdfToR2(
   formData.append("key", objectKey);
 
   const uploadUrl = hasConfiguredTextbookPresignUpload()
-    ? TEXTBOOK_R2_UPLOAD_PROXY_PATH
-    : TEXTBOOK_R2_PROXY_PATH;
+    ? buildTextbookRuntimeApiUrl(TEXTBOOK_R2_UPLOAD_PROXY_PATH)
+    : buildCreateExamApiUrl("/api/r2");
   const uploadPayload =
     typeof XMLHttpRequest !== "undefined"
       ? await new Promise<R2PresignResponse>((resolve, reject) => {
@@ -356,7 +533,7 @@ export async function createTextbookMaterialRecord(input: {
   grade: number;
   subject: MaterialBuilderSubject;
 }) {
-  const response = await fetch(TEXTBOOK_MATERIALS_PROXY_PATH, {
+  const response = await fetch(buildCreateExamApiUrl("/api/textbook-materials"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -386,8 +563,9 @@ export async function getTextbookMaterialById(
   } = {},
 ) {
   const url = new URL(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}`,
-    window.location.origin,
+    buildCreateExamApiUrl(
+      `/api/textbook-materials/${encodeURIComponent(materialId)}`,
+    ),
   );
   if (options.includeContent) {
     url.searchParams.set("includeContent", "1");
@@ -413,10 +591,7 @@ export async function listTextbookMaterialLibrary(options: {
   statuses?: string[];
   subject?: MaterialBuilderSubject | string | null;
 } = {}) {
-  const url = new URL(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/library`,
-    window.location.origin,
-  );
+  const url = new URL(buildCreateExamApiUrl("/api/textbook-materials/library"));
 
   if (options.grade != null && Number.isFinite(Number(options.grade))) {
     url.searchParams.set("grade", String(options.grade));
@@ -457,7 +632,7 @@ export async function getTextbookMaterialByR2(
     includeContent?: boolean;
   } = {},
 ) {
-  const url = new URL(TEXTBOOK_MATERIALS_PROXY_PATH, window.location.origin);
+  const url = new URL(buildCreateExamApiUrl("/api/textbook-materials"));
   url.searchParams.set("bucketName", bucketName);
   url.searchParams.set("key", key);
   if (options.includeContent) {
@@ -483,7 +658,9 @@ export async function updateTextbookMaterialStatus(
   payload: Record<string, unknown>,
 ) {
   const response = await fetch(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}`,
+    buildCreateExamApiUrl(
+      `/api/textbook-materials/${encodeURIComponent(materialId)}`,
+    ),
     {
       method: "PATCH",
       headers: {
@@ -505,7 +682,9 @@ export async function upsertTextbookMaterialPages(
   payload: Record<string, unknown>,
 ) {
   const response = await fetch(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/pages`,
+    buildCreateExamApiUrl(
+      `/api/textbook-materials/${encodeURIComponent(materialId)}/pages`,
+    ),
     {
       method: "POST",
       headers: {
@@ -527,7 +706,9 @@ export async function replaceTextbookMaterialStructure(
   payload: TextbookStructurePayload,
 ) {
   const response = await fetch(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/structure`,
+    buildCreateExamApiUrl(
+      `/api/textbook-materials/${encodeURIComponent(materialId)}/structure`,
+    ),
     {
       method: "POST",
       headers: {

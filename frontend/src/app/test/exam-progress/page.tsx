@@ -3,9 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fetchTakeExamDashboard } from "@/lib/take-exam-dashboard-api";
+import { buildAblyAuthUrl } from "@/lib/runtime-api";
+import {
+  approveTakeExamAttempt,
+  fetchTakeExamDashboard,
+  fetchTakeExamLiveDashboardExam,
+} from "@/lib/take-exam-dashboard-api";
 import { TestShell } from "../_components/test-shell";
-import type { BreadcrumbItem } from "../_components/test-header-bar";
 import { ExamProgressMonitoring } from "./_components/exam-progress-monitoring-mock";
 import { ExamProgressOverview, type ExamProgressExamMeta } from "./_components/exam-progress-overview";
 import {
@@ -14,21 +18,15 @@ import {
   type DashboardApiPayload,
 } from "../live-dashboard/lib/dashboard-adapters";
 import type { AblyConnectionStatus } from "../live-dashboard/lib/types";
+import type { QuestionReview, SubmittedAttempt } from "../live-dashboard/lib/types";
 
-const POLL_INTERVAL_MS = 30_000;
-const ACTIVE_CACHE_TTL_MS = 30_000;
-const INACTIVE_CACHE_TTL_MS = 2 * 60 * 1000;
-const EXAM_PROGRESS_CACHE_PREFIX = "test-exam-progress-dashboard";
+const ACTIVE_POLL_INTERVAL_MS = 4_000;
+const OVERVIEW_POLL_INTERVAL_MS = 8_000;
 const EMPTY_DASHBOARD_PAYLOAD: DashboardApiPayload = {
   availableTests: [],
   attempts: [],
   liveMonitoringFeed: [],
   testMaterial: null,
-};
-
-type ExamProgressCacheEntry = {
-  expiresAt: number;
-  payload: DashboardApiPayload;
 };
 
 export default function ExamProgressPage() {
@@ -37,11 +35,24 @@ export default function ExamProgressPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [approvingAttemptId, setApprovingAttemptId] = useState<string | null>(null);
   const [ablyStatus, setAblyStatus] = useState<AblyConnectionStatus | null>(
     null,
   );
   const dashboardRequestIdRef = useRef(0);
   const realtimeRefreshTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    for (const key of Object.keys(window.sessionStorage)) {
+      if (key.startsWith("test-exam-progress-dashboard:")) {
+        window.sessionStorage.removeItem(key);
+      }
+    }
+  }, []);
 
   const loadDashboard = useCallback(async ({
     force = false,
@@ -52,28 +63,7 @@ export default function ExamProgressPage() {
   } = {}) => {
     const requestId = dashboardRequestIdRef.current + 1;
     dashboardRequestIdRef.current = requestId;
-    const freshCachedPayload = force
-      ? null
-      : readExamProgressCache(selectedExamId, { allowExpired: false });
-
-    if (freshCachedPayload) {
-      setPayload(freshCachedPayload);
-      setError(null);
-      setIsLoading(false);
-      setIsRefreshing(false);
-      return;
-    }
-
-    const staleCachedPayload = force
-      ? null
-      : readExamProgressCache(selectedExamId, { allowExpired: true });
-    const shouldShowLoader = showLoader && !staleCachedPayload;
-
-    if (staleCachedPayload) {
-      setPayload(staleCachedPayload);
-      setError(null);
-      setIsLoading(false);
-    }
+    const shouldShowLoader = showLoader;
 
     if (shouldShowLoader) {
       setIsLoading(true);
@@ -82,17 +72,20 @@ export default function ExamProgressPage() {
     }
 
     try {
-      const nextPayload = await fetchTakeExamDashboard(
-        40,
-        selectedExamId,
-        undefined,
-        { forceRefresh: force },
-      );
+      const nextPayload = selectedExamId
+        ? await fetchTakeExamLiveDashboardExam(
+            40,
+            selectedExamId,
+            undefined,
+            { forceRefresh: force },
+          )
+        : await fetchTakeExamDashboard(40, null, undefined, {
+            forceRefresh: force,
+          });
       if (dashboardRequestIdRef.current !== requestId) {
         return;
       }
 
-      writeExamProgressCache(selectedExamId, nextPayload);
       setPayload(nextPayload);
       setError(null);
     } catch (nextError) {
@@ -114,7 +107,7 @@ export default function ExamProgressPage() {
   }, [selectedExamId]);
 
   useEffect(() => {
-    void loadDashboard({ showLoader: true });
+    void loadDashboard({ force: true, showLoader: true });
   }, [loadDashboard]);
 
   useEffect(() => {
@@ -138,49 +131,73 @@ export default function ExamProgressPage() {
   const handleForceRefresh = useCallback(() => {
     void loadDashboard({ force: true });
   }, [loadDashboard]);
-  const breadcrumbItems: BreadcrumbItem[] = selectedExam
-    ? [
-        { href: "/test/live-dashboard", label: "Нүүр" },
-        { href: "/test/exam-progress", label: "Шалгалтын явц" },
-        { active: true, label: selectedExam.title },
-      ]
-    : [
-        { href: "/test/live-dashboard", label: "Нүүр" },
-        { active: true, label: "Шалгалтын явц" },
-      ];
-  const shouldPoll = useMemo(() => {
+  const handleApproveAttempt = useCallback(
+    async (attempt: SubmittedAttempt) => {
+      setError(null);
+      setApprovingAttemptId(attempt.id);
+
+      try {
+        await approveTakeExamAttempt({
+          attemptId: attempt.id,
+          review: {
+            questionReviews: attempt.questions.map((question) => ({
+              explanation: buildAttemptReviewExplanation(question),
+              isCorrect: question.reviewState === "correct",
+              maxPoints: question.maxPoints,
+              pointsAwarded: clampAttemptReviewPoints(
+                question.points,
+                question.maxPoints,
+              ),
+              questionId: question.id,
+            })),
+          },
+        });
+
+        await loadDashboard({ force: true });
+      } catch (nextError) {
+        setError(
+          nextError instanceof Error
+            ? nextError.message
+            : "Шалгалтын дүн батлах үед алдаа гарлаа.",
+        );
+        throw nextError;
+      } finally {
+        setApprovingAttemptId(null);
+      }
+    },
+    [loadDashboard],
+  );
+  const headerBreadcrumb = (
+    <div className="text-[18px] font-bold tracking-tight text-slate-900 sm:text-[20px]">
+      Шалгалтын явц
+    </div>
+  );
+  const pollIntervalMs = useMemo(() => {
     if (selectedExam) {
-      return selectedExam.liveStudentCount > 0;
+      return selectedExam.liveStudentCount > 0
+        ? ACTIVE_POLL_INTERVAL_MS
+        : OVERVIEW_POLL_INTERVAL_MS;
     }
 
-    return hasAnyActiveExam;
+    return hasAnyActiveExam ? ACTIVE_POLL_INTERVAL_MS : OVERVIEW_POLL_INTERVAL_MS;
   }, [hasAnyActiveExam, selectedExam]);
 
   useEffect(() => {
-    if (!shouldPoll) {
-      return;
-    }
-
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === "hidden") {
         return;
       }
 
-      void loadDashboard();
-    }, POLL_INTERVAL_MS);
+      void loadDashboard({ force: true });
+    }, pollIntervalMs);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [loadDashboard, shouldPoll]);
+  }, [loadDashboard, pollIntervalMs]);
 
   useEffect(() => {
-    if (!selectedExamId) {
-      setAblyStatus(null);
-      return;
-    }
-
-    const authUrl = process.env.NEXT_PUBLIC_ABLY_AUTH_URL || "/api/ably/auth";
+    const authUrl = buildAblyAuthUrl();
     let isActive = true;
     let cleanup: (() => void) | null = null;
     setAblyStatus({
@@ -211,7 +228,9 @@ export default function ExamProgressPage() {
           authMethod: "POST",
           authUrl,
         });
-        const channel = realtime.channels.get(`exam-monitoring:${selectedExamId}`);
+        const channel = realtime.channels.get(
+          selectedExamId ? `exam-monitoring:${selectedExamId}` : "exam-monitoring",
+        );
         const subscribedEvents = [
           "attempt.started",
           "attempt.saved",
@@ -305,10 +324,9 @@ export default function ExamProgressPage() {
           }
         };
 
+        cleanup = disposeRealtime;
+
         try {
-          for (const eventName of subscribedEvents) {
-            channel.subscribe(eventName, handleRealtimeMessage);
-          }
           realtime.connection.on(handleConnectionState);
           handleConnectionState({
             current: realtime.connection.state,
@@ -327,7 +345,28 @@ export default function ExamProgressPage() {
           return;
         }
 
-        cleanup = disposeRealtime;
+        void channel
+          .subscribe([...subscribedEvents], handleRealtimeMessage)
+          .then(() => {
+            if (!isActive) {
+              disposeRealtime();
+            }
+          })
+          .catch((nextError) => {
+            if (!isActive || didDisposeRealtime) {
+              return;
+            }
+
+            setAblyStatus({
+              error:
+                nextError instanceof Error
+                  ? nextError.message
+                  : "Ably realtime subscription эхлүүлж чадсангүй.",
+              lastCheckedAt: new Date().toISOString(),
+              state: "failed",
+            });
+            disposeRealtime();
+          });
       })
       .catch((nextError) => {
         setAblyStatus({
@@ -454,6 +493,7 @@ export default function ExamProgressPage() {
   if (selectedExam && selectedExamData?.exam) {
     return (
       <TestShell
+        breadcrumb={headerBreadcrumb}
         breadcrumbItems={[]}
         actions={
           <Button
@@ -506,8 +546,10 @@ export default function ExamProgressPage() {
           <ExamProgressMonitoring
             exam={selectedExamData.exam}
             events={selectedExamData.events}
+            isApprovingAttemptId={approvingAttemptId}
             lastUpdated={selectedExamLastUpdated}
             onBack={() => setSelectedExamId(null)}
+            onApproveAttempt={handleApproveAttempt}
             reviewAttempts={selectedExamData.attempts}
             students={selectedExamData.students}
           />
@@ -518,7 +560,8 @@ export default function ExamProgressPage() {
 
   return (
     <TestShell
-      breadcrumbItems={breadcrumbItems}
+      breadcrumb={headerBreadcrumb}
+      breadcrumbItems={[]}
       title="Шалгалтын явц"
       isTeacherRefreshing={isRefreshing}
       onTeacherRefresh={handleForceRefresh}
@@ -548,86 +591,23 @@ export default function ExamProgressPage() {
   );
 }
 
-function getExamProgressCacheKey(selectedExamId: string | null) {
-  return `${EXAM_PROGRESS_CACHE_PREFIX}:${selectedExamId ?? "overview"}`;
+function clampAttemptReviewPoints(points: number, maxPoints: number) {
+  return Math.min(Math.max(points, 0), maxPoints);
 }
 
-function getExamProgressCacheTtlMs(
-  selectedExamId: string | null,
-  payload: DashboardApiPayload,
-) {
-  if (selectedExamId) {
-    const detail = buildExamDashboardData(payload, selectedExamId);
-    const hasActiveStudents =
-      detail.students.some(
-        (student) =>
-          student.status === "in-progress" || student.status === "processing",
-      ) || Boolean(detail.exam && detail.exam.liveStudentCount > 0);
-
-    return hasActiveStudents ? ACTIVE_CACHE_TTL_MS : INACTIVE_CACHE_TTL_MS;
+function buildAttemptReviewExplanation(question: QuestionReview) {
+  const explanation = question.explanation?.trim();
+  if (explanation) {
+    return explanation;
   }
 
-  const hasActiveExams = buildExamList(payload).some(
-    (exam) => exam.liveStudentCount > 0,
-  );
-
-  return hasActiveExams ? ACTIVE_CACHE_TTL_MS : INACTIVE_CACHE_TTL_MS;
-}
-
-function readExamProgressCache(
-  selectedExamId: string | null,
-  { allowExpired = false }: { allowExpired?: boolean } = {},
-): DashboardApiPayload | null {
-  if (typeof window === "undefined") {
-    return null;
+  const aiAnalysis = question.aiAnalysis?.trim();
+  if (aiAnalysis) {
+    return aiAnalysis;
   }
 
-  try {
-    const rawValue = window.sessionStorage.getItem(
-      getExamProgressCacheKey(selectedExamId),
-    );
-    if (!rawValue) {
-      return null;
-    }
-
-    const parsed = JSON.parse(rawValue) as ExamProgressCacheEntry;
-    if (!parsed?.payload || typeof parsed.expiresAt !== "number") {
-      window.sessionStorage.removeItem(getExamProgressCacheKey(selectedExamId));
-      return null;
-    }
-
-    if (!allowExpired && parsed.expiresAt <= Date.now()) {
-      return null;
-    }
-
-    return parsed.payload;
-  } catch {
-    window.sessionStorage.removeItem(getExamProgressCacheKey(selectedExamId));
-    return null;
-  }
-}
-
-function writeExamProgressCache(
-  selectedExamId: string | null,
-  payload: DashboardApiPayload,
-) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const ttlMs = getExamProgressCacheTtlMs(selectedExamId, payload);
-
-  try {
-    window.sessionStorage.setItem(
-      getExamProgressCacheKey(selectedExamId),
-      JSON.stringify({
-        expiresAt: Date.now() + ttlMs,
-        payload,
-      } satisfies ExamProgressCacheEntry),
-    );
-  } catch {
-    // Ignore cache write failures.
-  }
+  const correctAnswer = question.correctAnswer?.trim();
+  return correctAnswer || null;
 }
 
 function formatTimeAgo(date: Date): string {
@@ -693,20 +673,20 @@ function normalizeAblyConnectionState(
 
 function formatAblyStatusLabel(status: AblyConnectionStatus | null): string {
   if (!status) {
-    return "Ably шалгаж байна";
+    return "Шууд холболтыг шалгаж байна";
   }
 
   switch (status.state) {
     case "connected":
-      return "Ably realtime холбогдсон";
+      return "Шууд холболт идэвхтэй";
     case "connecting":
     case "checking":
-      return "Ably realtime холбогдож байна";
+      return "Шууд холболт тогтоож байна";
     case "disconnected":
-      return "Ably realtime тасарсан";
+      return "Шууд холболт тасарсан";
     case "failed":
-      return "Ably realtime холбогдоогүй";
+      return "Шууд холболт тогтсонгүй";
     default:
-      return "Ably realtime шалгаж байна";
+      return "Шууд холболтыг шалгаж байна";
   }
 }

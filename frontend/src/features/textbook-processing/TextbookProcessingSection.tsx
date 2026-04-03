@@ -60,6 +60,7 @@ import {
   TextbookQuestionCard,
 } from "@/app/test/material-builder/_components/material-builder-ui";
 import { textareaClassName } from "@/app/test/material-builder/_components/material-builder-config";
+import { buildRuntimeApiUrl } from "@/lib/runtime-api";
 
 type TextbookGenerateApiResponse = {
   error?: string;
@@ -106,7 +107,7 @@ async function requestAiEnhancedTextbookTest({
   sourceProblems: TextbookSourceProblem[];
   visiblePages: Array<{ content: string; pageNumber: number }>;
 }) {
-  const response = await fetch("/api/textbook-generate", {
+  const response = await fetch(buildRuntimeApiUrl("/api/textbook-generate"), {
     body: JSON.stringify({
       fallbackTest,
       grade,

@@ -5,6 +5,7 @@ import type {
   GeneratedExamPayload,
   UploadAttachmentPayload,
 } from "@/lib/math-exam-contract";
+import { buildRuntimeApiUrl } from "@/lib/runtime-api";
 
 type GenerateExamOptions = Omit<GenerateExamRequest, "attachments"> & {
   files?: File[];
@@ -105,7 +106,7 @@ export async function requestGeneratedExam({
     files.map((file) => serializeAttachment(file)),
   );
 
-  const response = await fetch("/api/gemini-exam", {
+  const response = await fetch(buildRuntimeApiUrl("/api/gemini-exam"), {
     body: JSON.stringify({
       ...request,
       attachments,
@@ -135,9 +136,10 @@ export async function requestExtractedExam(
     enhanceFocus: options?.enhanceFocus,
     mode: options?.mode ?? "fast",
   });
+  const endpoint = buildRuntimeApiUrl("/api/gemini-extract");
 
   if (!options?.onProgress) {
-    const response = await fetch("/api/gemini-extract", {
+    const response = await fetch(endpoint, {
       body: payload,
       headers: {
         "Content-Type": "application/json",
@@ -151,7 +153,7 @@ export async function requestExtractedExam(
   return new Promise<GeneratedExamPayload>((resolve, reject) => {
     const request = new XMLHttpRequest();
 
-    request.open("POST", "/api/gemini-extract");
+    request.open("POST", endpoint);
     request.setRequestHeader("Content-Type", "application/json");
     request.upload.onprogress = (event) => {
       options.onProgress?.({

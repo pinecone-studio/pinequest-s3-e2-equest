@@ -1,44 +1,24 @@
-# Хуулаад `.dev.vars` болгон нэрлэнэ (.gitignore-д байгаа тул git-д орохгүй).
-# Локал:
-# - `wrangler` / OpenNext preview үед `.dev.vars` уншигдана
-# - `bun run dev` (`next dev`) үед `.env.local`-д бас ижил утгуудыг тавибал найдвартай
+# Copy this file to `.dev.vars` for local OpenNext/Wrangler runs.
+# Keep real secrets only in `.dev.vars`, `.env.local`, or Cloudflare secrets.
 
-# ── Deploy дээр нууцаар (зөвлөмж) ──
-# Төслийн хавтаснаас:
-#   npx wrangler secret put GOOGLE_AI_API_KEY
-# эсвэл:
-#   npx wrangler secret put GEMINI_API_KEY
-# Дараа нь түлхүүрээ paste → Enter. wrangler.jsonc эсвэл `vars` дотор түлхүүр битгий бич.
+CLOUDFLARE_ACCOUNT_ID=your-cloudflare-account-id
+CLOUDFLARE_DATABASE_ID=your-d1-database-id
+CLOUDFLARE_D1_TOKEN=your-d1-api-token
 
-# ── Зөвхөн локал (доор нэгийг нь бөглөнө) ──
-# GOOGLE_AI_API_KEY=
-GEMINI_API_KEY=
-TAKE_EXAM_RESULT_WEBHOOK_URL=http://localhost:3002/api/teacher-submission-result
-TAKE_EXAM_RESULT_WEBHOOK_SECRET=
+GRAPHQL_CORS_ORIGINS=http://localhost:3000
 
-# R2 (`/api/r2`) — сурах бичгийн PDF хадгалах/унших үед ашиглана
-# Доорх нэрсээс нэг иж бүрдэл байхад хангалттай:
-# R2_S3_API=https://<cloudflare-account-id>.r2.cloudflarestorage.com
-# эсвэл R2_ENDPOINT=
-# эсвэл AWS_ENDPOINT_URL_S3=
-#
-# R2_ACCESS_KEY_ID=
-# эсвэл AWS_ACCESS_KEY_ID=
-#
-# R2_SECRET_ACCESS_KEY=
-# эсвэл AWS_SECRET_ACCESS_KEY=
-#
-# R2_BUCKET_NAME=
-# эсвэл TEXTBOOK_R2_BUCKET=
-# эсвэл BOOK_R2_BUCKET_NAME=
+ABLY_API_KEY=your-ably-api-key
+GEMINI_API_KEY=your-gemini-api-key
+GOOGLE_AI_API_KEY=your-google-ai-api-key
 
-# analyzeQuestion model (сонголттой; wrangler.jsonc `vars.GEMINI_ANALYZE_MODEL`-тай нийлнэ)
-# GEMINI_ANALYZE_MODEL=gemini-1.5-flash
+# R2 S3-compatible credentials for `/api/r2`
+R2_ACCESS_KEY_ID=your-r2-access-key-id
+R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
+R2_BUCKET_NAME=exam
+R2_ENDPOINT=https://your-public-bucket-subdomain.r2.dev
+R2_S3_API=https://your-account-id.r2.cloudflarestorage.com
 
-# Deploy-тай ижил: wrangler.jsonc → vars.LOG_GRAPHQL_GENERATION
-# LOG_GRAPHQL_GENERATION=1
-
-# CORS (шаардлагатай бол)
-# GRAPHQL_CORS_ORIGINS=http://localhost:3000
-
-# Нууцлал: Gemini түлхүүрийг React/фронт кодонд бүү оруул — зөвхөн backend/Worker.
+# Frontend-facing helpers
+NEXT_PUBLIC_R2_BUCKET_NAME=exam
+NEXT_PUBLIC_R2_PUBLIC_URL=https://your-public-bucket-subdomain.r2.dev
+NEXT_PUBLIC_R2_PRESIGN_URL=https://take-exam-service.example.workers.dev/api/proctoring-screenshots/presign

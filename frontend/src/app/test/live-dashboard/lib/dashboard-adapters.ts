@@ -15,6 +15,9 @@ import {
   getTakeExamScreenshotObjectUrl,
   resolveTakeExamScreenshotUrl,
 } from "@/lib/take-exam-graphql";
+import { isMathQuestionType } from "@/lib/is-math-question-type";
+import { localizeMonitoringEventTitle } from "@/lib/monitoring-event-localization";
+import { normalizeBackendLatexOnly } from "@/lib/normalize-math-text";
 
 export type DashboardApiPayload = {
   availableTests: Array<{
@@ -81,6 +84,12 @@ export type DashboardApiPayload = {
       remainingQuestions: number;
       totalQuestions: number;
     };
+    teacherSync?: {
+      lastError?: string | null;
+      sentAt?: string | null;
+      status: "pending" | "sent" | "failed";
+      targetService: string;
+    } | null;
     feedback?: {
       headline: string;
       improvements: string[];
@@ -479,6 +488,23 @@ const getTextAnswer = (value?: string | null) => {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 };
 
+const normalizeReviewAnswerValue = (
+  value: string | null | undefined,
+  isMathLikeQuestion: boolean,
+) => {
+  const trimmed = getTextAnswer(value);
+  if (!trimmed) {
+    return null;
+  }
+
+  return isMathLikeQuestion ? normalizeBackendLatexOnly(trimmed) : trimmed;
+};
+
+const isUnansweredReviewAnswer = (value?: string | null) => {
+  const trimmed = value?.trim();
+  return !trimmed || trimmed === "Хариу өгөөгүй";
+};
+
 const getOptionTextFromAnswerValue = (
   question: MaterialQuestion | undefined,
   value?: string | null,
@@ -494,15 +520,20 @@ const getOptionTextFromAnswerValue = (
 };
 
 const getSelectedAnswerLabel = ({
+  isMathLikeQuestion,
   materialQuestion,
   selectedAnswerText,
   selectedOptionId,
 }: {
+  isMathLikeQuestion: boolean;
   materialQuestion?: MaterialQuestion;
   selectedAnswerText?: string | null;
   selectedOptionId?: string | null;
 }) => {
-  const directAnswer = getTextAnswer(selectedAnswerText);
+  const directAnswer = normalizeReviewAnswerValue(
+    selectedAnswerText,
+    isMathLikeQuestion,
+  );
   const optionTextFromAnswer = getOptionTextFromAnswerValue(
     materialQuestion,
     directAnswer,
@@ -552,20 +583,28 @@ const isLikelyDirectAnswer = (value?: string | null) => {
 const getCorrectAnswerLabel = ({
   correctAnswerText,
   correctOptionId,
+  isMathLikeQuestion,
   materialQuestion,
   responseGuide,
 }: {
   correctAnswerText?: string | null;
   correctOptionId?: string | null;
+  isMathLikeQuestion: boolean;
   materialQuestion?: MaterialQuestion;
   responseGuide?: string | null;
 }) => {
-  const directAnswer = getTextAnswer(correctAnswerText);
+  const directAnswer = normalizeReviewAnswerValue(
+    correctAnswerText,
+    isMathLikeQuestion,
+  );
   const optionTextFromDirectAnswer = getOptionTextFromAnswerValue(
     materialQuestion,
     directAnswer,
   );
-  const materialAnswer = getTextAnswer(materialQuestion?.answerLatex);
+  const materialAnswer = normalizeReviewAnswerValue(
+    materialQuestion?.answerLatex,
+    isMathLikeQuestion,
+  );
   const exactAnswer = directAnswer ?? materialAnswer;
   if (optionTextFromDirectAnswer) {
     return {
@@ -606,6 +645,20 @@ const getCorrectAnswerLabel = ({
   };
 };
 
+const getVisibleAttemptRecentEvents = (attempt: DashboardAttempt) =>
+  (attempt.monitoring?.recentEvents ?? []).filter(
+    (event) =>
+      !shouldExcludeLiveEvent({
+        attemptId: attempt.attemptId,
+        code: event.code,
+        mode: event.mode,
+        occurredAt: event.screenshotCapturedAt ?? event.occurredAt,
+        screenshotStorageKey: event.screenshotStorageKey,
+        screenshotUrl: event.screenshotUrl,
+        studentName: attempt.studentName,
+      }),
+  );
+
 const buildQuestionReviews = (
   attempt: DashboardAttempt,
   materialQuestionsById: Map<string, MaterialQuestion>,
@@ -627,21 +680,37 @@ const buildQuestionReviews = (
         questionResult.questionType ??
         answerReview?.questionType ??
         "single-choice";
+      const isMathLikeQuestion = isMathQuestionType(questionType);
       const responseGuide =
         questionResult.explanation ??
         answerReview?.responseGuide ??
         materialQuestion?.responseGuide ??
         null;
+      const studentAnswer = getSelectedAnswerLabel({
+        isMathLikeQuestion,
+        materialQuestion,
+        selectedAnswerText,
+        selectedOptionId:
+          questionResult.selectedOptionId ?? answerReview?.selectedOptionId ?? null,
+      });
+      const isUnansweredMathQuestion =
+        isMathLikeQuestion && isUnansweredReviewAnswer(studentAnswer);
+      const shouldKeepUnansweredTeacherReviewPending =
+        attempt.answerKeySource === "teacher_service" &&
+        isUnansweredMathQuestion &&
+        !isApprovedAttempt;
       const correctAnswer = getCorrectAnswerLabel({
         correctAnswerText: answerReview?.correctAnswerText ?? null,
         materialQuestion,
         correctOptionId: questionResult.correctOptionId ?? null,
+        isMathLikeQuestion,
         responseGuide,
       });
       const hasScoredResult = typeof questionResult.isCorrect === "boolean";
       const requiresManualReview =
         attempt.answerKeySource === "teacher_service" &&
-        questionType === "math" &&
+        isMathLikeQuestion &&
+        !isUnansweredMathQuestion &&
         attempt.status !== "approved";
 
       return {
@@ -657,12 +726,7 @@ const buildQuestionReviews = (
           questionResult.prompt ??
           answerReview?.prompt ??
           `Асуулт ${index + 1}`,
-        studentAnswer: getSelectedAnswerLabel({
-          materialQuestion,
-          selectedAnswerText,
-          selectedOptionId:
-            questionResult.selectedOptionId ?? answerReview?.selectedOptionId ?? null,
-        }),
+        studentAnswer,
         correctAnswer: correctAnswer.value,
         correctAnswerKind: correctAnswer.kind,
         aiAnalysis: requiresManualReview
@@ -673,10 +737,14 @@ const buildQuestionReviews = (
         requiresManualReview,
         reviewState: requiresManualReview
           ? "pending"
+          : shouldKeepUnansweredTeacherReviewPending
+          ? "pending"
           : hasScoredResult
           ? questionResult.isCorrect
             ? "correct"
             : "incorrect"
+          : isUnansweredMathQuestion
+          ? "incorrect"
           : "pending",
         reviewed: isApprovedAttempt,
         points: hasScoredResult ? questionResult.pointsAwarded : 0,
@@ -691,18 +759,34 @@ const buildQuestionReviews = (
     const selectedAnswerText = getTextAnswer(answerReview.selectedAnswerText);
     const questionType =
       materialQuestion?.type ?? answerReview.questionType ?? "single-choice";
+    const isMathLikeQuestion = isMathQuestionType(questionType);
     const requiresManualReview =
-      attempt.answerKeySource === "teacher_service" && questionType === "math";
+      attempt.answerKeySource === "teacher_service" && isMathLikeQuestion;
     const responseGuide =
       answerReview.responseGuide ??
       materialQuestion?.responseGuide ??
       null;
+    const studentAnswer = getSelectedAnswerLabel({
+      isMathLikeQuestion,
+      materialQuestion,
+      selectedAnswerText,
+      selectedOptionId: answerReview.selectedOptionId ?? null,
+    });
+    const isUnansweredMathQuestion =
+      isMathLikeQuestion && isUnansweredReviewAnswer(studentAnswer);
+    const shouldKeepUnansweredTeacherReviewPending =
+      attempt.answerKeySource === "teacher_service" &&
+      isUnansweredMathQuestion &&
+      !isApprovedAttempt;
     const correctAnswer = getCorrectAnswerLabel({
       correctAnswerText: answerReview.correctAnswerText ?? null,
       materialQuestion,
       correctOptionId: null,
+      isMathLikeQuestion,
       responseGuide,
     });
+
+    const needsManualReview = requiresManualReview && !isUnansweredMathQuestion;
 
     return {
       competency:
@@ -713,20 +797,20 @@ const buildQuestionReviews = (
         materialQuestion?.prompt ??
         answerReview.prompt ??
         `Асуулт ${index + 1}`,
-      studentAnswer: getSelectedAnswerLabel({
-        materialQuestion,
-        selectedAnswerText,
-        selectedOptionId: answerReview.selectedOptionId ?? null,
-      }),
+      studentAnswer,
       correctAnswer: correctAnswer.value,
       correctAnswerKind: correctAnswer.kind,
-      aiAnalysis: requiresManualReview
+      aiAnalysis: needsManualReview
         ? responseGuide ?? "AI дүгнэлт хараахан ирээгүй байна."
         : undefined,
       aiSource: undefined,
       questionType,
-      requiresManualReview,
-      reviewState: "pending",
+      requiresManualReview: needsManualReview,
+      reviewState: shouldKeepUnansweredTeacherReviewPending
+        ? "pending"
+        : isUnansweredMathQuestion
+        ? "incorrect"
+        : "pending",
       reviewed: isApprovedAttempt,
       points: 0,
       maxPoints: materialQuestion?.points ?? answerReview.points ?? 0,
@@ -740,7 +824,7 @@ const buildSubmittedAttempt = (
   materialQuestionsById: Map<string, MaterialQuestion>,
 ): SubmittedAttempt => {
   const questions = buildQuestionReviews(attempt, materialQuestionsById);
-  const recentEvents = attempt.monitoring?.recentEvents ?? [];
+  const recentEvents = getVisibleAttemptRecentEvents(attempt);
 
   return {
     id: attempt.attemptId,
@@ -760,11 +844,15 @@ const buildSubmittedAttempt = (
         (attempt.result?.unansweredCount ?? 0) || questions.length,
     answerKeySource: attempt.answerKeySource ?? "local",
     score: getAttemptPercentage(attempt),
+    teacherSync: attempt.teacherSync ?? null,
     questions,
     feedback: attempt.feedback ?? undefined,
     monitoringSummary: {
-      warningCount: attempt.monitoring?.warningCount ?? 0,
-      dangerCount: attempt.monitoring?.dangerCount ?? 0,
+      warningCount: recentEvents.filter(
+        (event) => event.severity === "warning" && !isFocusEventCode(event.code),
+      ).length,
+      dangerCount: recentEvents.filter((event) => event.severity === "danger")
+        .length,
       focusLostCount: recentEvents.filter(
         (event) => event.code === "tab_hidden" || event.code === "window_blur",
       ).length,
@@ -791,7 +879,7 @@ const buildSubmittedAttempt = (
             screenshotUrl: event.screenshotUrl,
             studentName: attempt.studentName,
           }),
-          title: event.title,
+          title: localizeMonitoringEventTitle(event.code, event.title),
           type:
             event.code === "tab_hidden" || event.code === "window_blur"
               ? ("focus" as const)
@@ -1248,7 +1336,7 @@ export const buildExamDashboardData = (
       studentName: item.studentName,
       type: toEventType(latestEvent.code),
       severity: latestEvent.severity,
-      title: latestEvent.title,
+      title: localizeMonitoringEventTitle(latestEvent.code, latestEvent.title),
       detail: latestEvent.detail,
       timestamp: getEventTimestamp(latestEvent.occurredAt),
     });
@@ -1292,7 +1380,7 @@ export const buildExamDashboardData = (
         studentName: attempt.studentName,
         type: toEventType(event.code),
         severity: event.severity,
-        title: event.title,
+        title: localizeMonitoringEventTitle(event.code, event.title),
         detail: event.detail,
         timestamp: getEventTimestamp(event.occurredAt),
       });

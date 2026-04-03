@@ -742,7 +742,9 @@ export const loadDashboardPayload = async (
 
   dashboardRequestInFlight = (async () => {
     await syncExternalExamsIfNeeded(options);
-    const data = await gqlRequest(GetStudentDashboardDocument);
+    const data = await gqlRequest(GetStudentDashboardDocument, {
+      forceRefresh: options?.force ?? false,
+    });
     const nextPayload = mapDashboardPayload(data);
     dashboardCache = {
       expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,

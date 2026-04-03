@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { TestThemeBridge } from "./_components/test-theme-bridge";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -29,5 +30,10 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <div className="font-sans antialiased">{children}</div>;
+  return (
+    <div className="font-sans antialiased">
+      <TestThemeBridge />
+      {children}
+    </div>
+  );
 }

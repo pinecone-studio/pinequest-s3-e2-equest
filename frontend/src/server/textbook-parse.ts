@@ -17,6 +17,18 @@ export type TextbookServerParseResult = {
   payload: TextbookStructurePayload;
 };
 
+export function normalizeTextbookParseErrorMessage(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : "PDF боловсруулах үед алдаа гарлаа.";
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("invalid pdf structure") || normalized.includes("invalid pdf")) {
+    return "PDF файл гэмтсэн эсвэл бүрэн PDF бүтэцгүй байна. Өөр PDF сонгоод дахин оролдоно уу.";
+  }
+
+  return message;
+}
+
 export async function parseTextbookFileOnServer(
   file: File,
 ): Promise<TextbookServerParseResult> {
@@ -104,5 +116,27 @@ export async function parseTextbookFileOnServer(
   } finally {
     pdfDocument.cleanup();
     void pdfDocument.destroy();
+  }
+}
+
+export async function handleTextbookParsePost(request: Request) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file");
+
+    if (!file || typeof (file as File).arrayBuffer !== "function") {
+      return Response.json(
+        { error: "PDF файл олдсонгүй." },
+        { status: 400 },
+      );
+    }
+
+    const result = await parseTextbookFileOnServer(file as File);
+    return Response.json(result);
+  } catch (error) {
+    return Response.json(
+      { error: normalizeTextbookParseErrorMessage(error) },
+      { status: 400 },
+    );
   }
 }

@@ -8,6 +8,8 @@ import {
 import { handleGeminiExamPost } from "./server/gemini-exam";
 import { handleGeminiExtractPost } from "./server/gemini-extract";
 import { handleTextbookGeneratePost } from "./server/textbook-generate";
+import { handleTextbookParsePost } from "./server/textbook-parse";
+import { forwardTextbookR2Request } from "./server/textbook-r2-proxy";
 
 type AssetBinding = {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -181,7 +183,6 @@ type GraphqlPayload = {
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-const CREATE_EXAM_LIST_CACHE_TTL_SECONDS = 60;
 const CREATE_EXAM_LIST_QUERY = `
 query FrontendListNewMathExams($limit: Int = 40) {
   listNewMathExams(limit: $limit) {
@@ -287,6 +288,12 @@ fragment FrontendDashboardAttemptFields on AttemptSummary {
     strengths
     improvements
     source
+  }
+  teacherSync {
+    status
+    targetService
+    lastError
+    sentAt
   }
 }
 
@@ -423,6 +430,12 @@ fragment FrontendDashboardAttemptFields on AttemptSummary {
     improvements
     source
   }
+  teacherSync {
+    status
+    targetService
+    lastError
+    sentAt
+  }
 }
 
 fragment FrontendDashboardLiveFeedFields on AttemptLiveFeedItem {
@@ -512,6 +525,8 @@ query FrontendTakeExamDashboardWithMaterial($limit: Int!, $testId: ID!) {
 }
 `.trim();
 
+const DASHBOARD_REQUEST_TIMEOUT_MS = 12_000;
+
 const getEnvValue = (value?: string) => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
@@ -527,7 +542,7 @@ const getCreateExamGraphqlUrl = (env: Env) =>
 const getTakeExamGraphqlUrl = (env: Env) =>
   getEnvValue(env.TAKE_EXAM_GRAPHQL_URL) ??
   getEnvValue(env.NEXT_PUBLIC_TAKE_EXAM_GRAPHQL_URL) ??
-  "http://localhost:3002/api/graphql";
+  "https://take-exam-service.tsetsegulziiocherdene.workers.dev/api/graphql";
 
 const asJsonObject = (value: unknown): JsonObject | null =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -588,14 +603,32 @@ const fetchDashboardPayload = async (
   query: string,
   variables: Record<string, string | number>,
 ) => {
-  const response = await fetch(targetUrl, {
-    body: JSON.stringify({ query, variables }),
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, DASHBOARD_REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+
+  try {
+    response = await fetch(targetUrl, {
+      body: JSON.stringify({ query, variables }),
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Take exam service хэт удаан хариулж байна.");
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const rawText = await response.text();
   const trimmedText = rawText.trim();
@@ -722,7 +755,7 @@ async function handleDashboardGet(request: Request, env: Env) {
                 ),
               }
             : null,
-          teacherSync: null,
+          teacherSync: attempt.teacherSync ?? null,
         };
       }),
       availableTests: availableTests.map((test) => ({
@@ -788,17 +821,6 @@ async function handleCreateExamListGet(request: Request, env: Env) {
   const limit = Number.isFinite(parsedLimit)
     ? Math.min(Math.max(parsedLimit, 1), 60)
     : 40;
-
-  const cacheUrl = new URL(request.url);
-  cacheUrl.search = "";
-  cacheUrl.searchParams.set("limit", String(limit));
-  const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
-  const cache = await caches.open("create-exam-list");
-  const cachedResponse = await cache.match(cacheKey);
-
-  if (cachedResponse) {
-    return cachedResponse;
-  }
 
   const targetUrl = getCreateExamGraphqlUrl(env);
 
@@ -885,12 +907,11 @@ async function handleCreateExamListGet(request: Request, env: Env) {
       { exams },
       {
         headers: {
-          "Cache-Control": `public, max-age=${CREATE_EXAM_LIST_CACHE_TTL_SECONDS}, s-maxage=${CREATE_EXAM_LIST_CACHE_TTL_SECONDS}`,
+          "Cache-Control": "no-store",
         },
       },
     );
 
-    await cache.put(cacheKey, proxyResponse.clone());
     return proxyResponse;
   } catch (error) {
     return json(
@@ -2144,6 +2165,14 @@ async function routeApiRequest(request: Request, env: Env) {
 
   if (pathname === "/api/textbook-generate" && request.method === "POST") {
     return handleTextbookGeneratePost(request, env);
+  }
+
+  if (pathname === "/api/textbook-parse" && request.method === "POST") {
+    return handleTextbookParsePost(request);
+  }
+
+  if (pathname === "/api/textbook-r2-upload" && request.method === "POST") {
+    return forwardTextbookR2Request(request);
   }
 
   if (pathname === "/api/take-exam-dashboard" && request.method === "GET") {

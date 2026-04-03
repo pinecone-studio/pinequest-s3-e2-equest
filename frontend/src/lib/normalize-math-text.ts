@@ -219,7 +219,8 @@ function restoreInlineMathDelimiters(value: string): string {
     return withWrappedEnvironments;
   }
 
-  const withWrappedDegreeExpressions = value.replace(
+  const withWrappedBraceRuns = wrapEscapedBraceMathRuns(value);
+  const withWrappedDegreeExpressions = withWrappedBraceRuns.replace(
     /(\d+\^\\circ(?:\s*[,;]\s*\d+\^\\circ)+|\d+\^\\circ)/g,
     (full) => `$${full.trim()}$`,
   );
@@ -267,4 +268,51 @@ function wrapTrailingLatexRuns(value: string): string {
       return `$${trimmed}$`;
     },
   );
+}
+
+function wrapEscapedBraceMathRuns(value: string) {
+  if (!value) {
+    return value;
+  }
+
+  let cursor = 0;
+  let wrapped = "";
+  let hasWrappedSegment = false;
+
+  while (cursor < value.length) {
+    const leftBraceIndex = value.indexOf("\\left\\{", cursor);
+    const bareBraceIndex = value.indexOf("\\{", cursor);
+    const candidateIndexes = [leftBraceIndex, bareBraceIndex].filter(
+      (index) => index >= 0,
+    );
+
+    if (candidateIndexes.length === 0) {
+      wrapped += value.slice(cursor);
+      break;
+    }
+
+    const nextIndex = Math.min(...candidateIndexes);
+    wrapped += value.slice(cursor, nextIndex);
+
+    const isLeftRightBrace = value.startsWith("\\left\\{", nextIndex);
+    const closingToken = isLeftRightBrace ? "\\right\\}" : "\\}";
+    const searchStart = nextIndex + (isLeftRightBrace ? "\\left\\{".length : "\\{".length);
+    const closingIndex = value.indexOf(closingToken, searchStart);
+
+    if (closingIndex < 0) {
+      wrapped += value.slice(nextIndex);
+      break;
+    }
+
+    const segment = value.slice(nextIndex, closingIndex + closingToken.length).trim();
+    const previousChar = wrapped.at(-1);
+    const nextChar = value.at(closingIndex + closingToken.length);
+    const isAlreadyWrapped = previousChar === "$" && nextChar === "$";
+
+    wrapped += isAlreadyWrapped ? segment : `$${segment}$`;
+    hasWrappedSegment = hasWrappedSegment || !isAlreadyWrapped;
+    cursor = closingIndex + closingToken.length;
+  }
+
+  return hasWrappedSegment ? wrapped : value;
 }

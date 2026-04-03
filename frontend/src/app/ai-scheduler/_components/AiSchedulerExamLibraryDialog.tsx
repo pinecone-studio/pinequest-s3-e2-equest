@@ -40,6 +40,7 @@ type ExamSummaryRow = {
   questionCount?: number | null;
   teacherId?: string | null;
   withVariants?: boolean | null;
+  variantCount?: number | null;
   firstQuestionPreview?: string | null;
   secondQuestionPreview?: string | null;
 };

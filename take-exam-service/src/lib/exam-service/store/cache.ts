@@ -12,11 +12,41 @@ import {
 } from "./common";
 import type { CachedAttemptState, CachedTestSummary } from "./internal-types";
 
+// Demo-safe mode: bypass EXAM_CACHE entirely to avoid quota errors,
+// stale cache reads, and noisy logs during live demos.
+const KV_CACHE_ENABLED = false;
+const KV_MUTATION_BACKOFF_MS = 15 * 60 * 1000;
+let kvMutationsBlockedUntil = 0;
+let lastKvQuotaWarningAt = 0;
+
+const isKvMutationQuotaExceeded = (error: unknown) =>
+	error instanceof Error &&
+	error.message.toLowerCase().includes("limit exceeded");
+
+const areKvMutationsTemporarilyBlocked = () =>
+	kvMutationsBlockedUntil > Date.now();
+
+const blockKvMutations = (reason: unknown) => {
+	kvMutationsBlockedUntil = Date.now() + KV_MUTATION_BACKOFF_MS;
+
+	if (Date.now() - lastKvQuotaWarningAt < 60_000) {
+		return;
+	}
+
+	lastKvQuotaWarningAt = Date.now();
+	console.warn(
+		`EXAM_CACHE KV write quota exceeded. Skipping KV mutations for ${Math.round(
+			KV_MUTATION_BACKOFF_MS / 60_000,
+		)} minutes.`,
+		reason,
+	);
+};
+
 export const readJsonFromKv = async <T>(
 	kv: KVNamespace | undefined,
 	key: string,
 ): Promise<T | null> => {
-	if (!kv) return null;
+	if (!kv || !KV_CACHE_ENABLED) return null;
 
 	try {
 		const cached = await kv.get(key);
@@ -33,11 +63,16 @@ export const writeJsonToKv = async (
 	value: unknown,
 	expirationTtl: number,
 ) => {
-	if (!kv) return;
+	if (!kv || !KV_CACHE_ENABLED) return;
+	if (areKvMutationsTemporarilyBlocked()) return;
 
 	try {
 		await kv.put(key, JSON.stringify(value), { expirationTtl });
 	} catch (error) {
+		if (isKvMutationQuotaExceeded(error)) {
+			blockKvMutations(error);
+			return;
+		}
 		console.error(`Failed to write KV key "${key}":`, error);
 	}
 };
@@ -46,11 +81,16 @@ export const deleteJsonFromKv = async (
 	kv: KVNamespace | undefined,
 	key: string,
 ) => {
-	if (!kv) return;
+	if (!kv || !KV_CACHE_ENABLED) return;
+	if (areKvMutationsTemporarilyBlocked()) return;
 
 	try {
 		await kv.delete(key);
 	} catch (error) {
+		if (isKvMutationQuotaExceeded(error)) {
+			blockKvMutations(error);
+			return;
+		}
 		console.error(`Failed to delete KV key "${key}":`, error);
 	}
 };

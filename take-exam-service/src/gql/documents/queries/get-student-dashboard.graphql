@@ -1,8 +1,8 @@
-query GetStudentDashboard {
-  availableTests {
+query GetStudentDashboard($forceRefresh: Boolean) {
+  availableTests(forceRefresh: $forceRefresh) {
     ...TestFields
   }
-  attempts {
+  attempts(forceRefresh: $forceRefresh) {
     ...AttemptSummaryFields
   }
 }

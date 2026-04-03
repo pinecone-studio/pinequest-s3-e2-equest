@@ -30,7 +30,7 @@ export function ExamCard({ exam, onClick }: ExamCardProps) {
 
   return (
     <Card
-      className="group cursor-pointer border-border bg-card p-5 transition-all hover:border-accent hover:bg-secondary/50"
+      className="group flex h-full min-h-[240px] cursor-pointer flex-col border-border bg-card p-5 transition-all hover:border-accent hover:bg-secondary/50"
       onClick={onClick}
     >
       <div className="mb-4 flex items-start justify-between">
@@ -59,7 +59,7 @@ export function ExamCard({ exam, onClick }: ExamCardProps) {
         {exam.subject} • {exam.topic}
       </p>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="mt-auto grid grid-cols-2 gap-3 pt-6">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <BookOpen className="h-4 w-4" />
           <span>{exam.questionCount} асуулт</span>

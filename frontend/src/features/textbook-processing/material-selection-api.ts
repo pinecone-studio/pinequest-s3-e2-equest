@@ -1,9 +1,14 @@
+import { getCreateExamServiceBaseUrl } from "@/lib/create-exam-graphql";
 import type {
   TextbookMaterialDetail,
   TextbookMaterialStructureDetail,
 } from "./types";
 
 const TEXTBOOK_MATERIALS_PROXY_PATH = "/api/textbook-materials";
+
+function buildCreateExamApiUrl(path: string) {
+  return new URL(path, getCreateExamServiceBaseUrl()).toString();
+}
 
 async function parseJsonError(response: Response) {
   try {
@@ -24,7 +29,9 @@ async function parseProxyJson<T extends { error?: string }>(response: Response) 
 
 export async function getTextbookMaterialStructureById(materialId: string) {
   const response = await fetch(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/structure`,
+    buildCreateExamApiUrl(
+      `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/structure`,
+    ),
     {
       method: "GET",
     },
@@ -45,7 +52,9 @@ export async function getTextbookMaterialSelectionByNodeIds(
   nodeIds: string[],
 ) {
   const response = await fetch(
-    `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/selection`,
+    buildCreateExamApiUrl(
+      `${TEXTBOOK_MATERIALS_PROXY_PATH}/${encodeURIComponent(materialId)}/selection`,
+    ),
     {
       method: "POST",
       headers: {

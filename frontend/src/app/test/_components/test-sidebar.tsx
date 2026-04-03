@@ -5,11 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowUpRight,
   BarChart3,
+  BookCheck,
   CalendarClock,
   CheckSquare,
   ChevronDown,
   GraduationCap,
   ListChecks,
+  MonitorCheck,
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
@@ -59,7 +61,7 @@ const digitalExamSubItems = [
   },
   {
     href: "/test/exam-progress",
-    icon: CheckSquare,
+    icon: MonitorCheck,
     label: "Шалгалтын явц",
   },
 ] as const;
@@ -173,7 +175,7 @@ export function TestSidebar({
           >
             <span className="flex min-w-0 items-center">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                <CheckSquare className="h-5 w-5 shrink-0" />
+                <BookCheck className="h-5 w-5 shrink-0" />
               </span>
               <span className={navLabelClassName}>Цахим шалгалт</span>
             </span>

@@ -1,4 +1,9 @@
-import { getCreateExamServiceBaseUrl } from "@/lib/create-exam-graphql";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import {
+  getConfiguredTextbookR2BucketName,
+  getConfiguredTextbookR2PresignUrl,
+  getCreateExamServiceBaseUrl,
+} from "@/lib/create-exam-graphql";
 
 const PASSTHROUGH_RESPONSE_HEADERS = [
   "cache-control",
@@ -8,12 +13,114 @@ const PASSTHROUGH_RESPONSE_HEADERS = [
   "last-modified",
 ] as const;
 
+type RouteEnv = {
+  NEXT_PUBLIC_BOOK_BUCKET_NAME?: string;
+  NEXT_PUBLIC_BOOK_R2_BUCKET_NAME?: string;
+  NEXT_PUBLIC_BUCKET_NAME?: string;
+  NEXT_PUBLIC_R2_BUCKET?: string;
+  NEXT_PUBLIC_R2_BUCKET_NAME?: string;
+  NEXT_PUBLIC_R2_PRESIGN_URL?: string;
+  NEXT_PUBLIC_TEXTBOOK_BUCKET_NAME?: string;
+  NEXT_PUBLIC_TEXTBOOK_PRESIGN_URL?: string;
+  NEXT_PUBLIC_TEXTBOOK_R2_BUCKET?: string;
+  NEXT_PUBLIC_TEXTBOOK_R2_BUCKET_NAME?: string;
+  NEXT_PUBLIC_TEXTBOOK_R2_PRESIGN_URL?: string;
+  NEXT_PUBLIC_TEXTBOOK_UPLOAD_PRESIGN_URL?: string;
+  NEXT_PUBLIC_TEXTBOOK_UPLOAD_URL?: string;
+  NEXT_PUBLIC_PRESIGN_URL?: string;
+  NEXT_PUBLIC_R2_UPLOAD_URL?: string;
+};
+
+function getRouteEnv() {
+  try {
+    return ((getCloudflareContext() as unknown as { env: RouteEnv }).env ?? {}) as RouteEnv;
+  } catch {
+    return {} as RouteEnv;
+  }
+}
+
+function pickFirstConfiguredValue(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return "";
+}
+
 function getExternalTextbookPresignUrl() {
-  return (
-    process.env.NEXT_PUBLIC_TEXTBOOK_R2_PRESIGN_URL?.trim() ||
-    process.env.NEXT_PUBLIC_R2_PRESIGN_URL?.trim() ||
-    ""
+  const env = getRouteEnv();
+
+  return pickFirstConfiguredValue(
+    getConfiguredTextbookR2PresignUrl(),
+    env.NEXT_PUBLIC_TEXTBOOK_R2_PRESIGN_URL,
+    env.NEXT_PUBLIC_TEXTBOOK_PRESIGN_URL,
+    env.NEXT_PUBLIC_TEXTBOOK_UPLOAD_PRESIGN_URL,
+    env.NEXT_PUBLIC_TEXTBOOK_UPLOAD_URL,
+    env.NEXT_PUBLIC_R2_PRESIGN_URL,
+    env.NEXT_PUBLIC_R2_UPLOAD_URL,
+    env.NEXT_PUBLIC_PRESIGN_URL,
   );
+}
+
+function getConfiguredTextbookBucketNameForServer() {
+  const env = getRouteEnv();
+
+  return pickFirstConfiguredValue(
+    getConfiguredTextbookR2BucketName(),
+    env.NEXT_PUBLIC_TEXTBOOK_R2_BUCKET,
+    env.NEXT_PUBLIC_TEXTBOOK_R2_BUCKET_NAME,
+    env.NEXT_PUBLIC_TEXTBOOK_BUCKET_NAME,
+    env.NEXT_PUBLIC_BOOK_R2_BUCKET_NAME,
+    env.NEXT_PUBLIC_BOOK_BUCKET_NAME,
+    env.NEXT_PUBLIC_R2_BUCKET_NAME,
+    env.NEXT_PUBLIC_R2_BUCKET,
+    env.NEXT_PUBLIC_BUCKET_NAME,
+  );
+}
+
+function getConfiguredTextbookUploadCandidatesForServer() {
+  const configuredUrl = getExternalTextbookPresignUrl().replace(/\/$/, "");
+  if (!configuredUrl) {
+    return [];
+  }
+
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string) => {
+    const normalized = value.trim().replace(/\/$/, "");
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    candidates.push(normalized);
+  };
+
+  if (/\/api\/proctoring-screenshots\/upload$/i.test(configuredUrl)) {
+    push(configuredUrl);
+  }
+
+  if (/\/api\/proctoring-screenshots\/presign$/i.test(configuredUrl)) {
+    push(
+      configuredUrl.replace(
+        /\/api\/proctoring-screenshots\/presign$/i,
+        "/api/proctoring-screenshots/upload",
+      ),
+    );
+  }
+
+  if (/\/api\/r2\/presign$/i.test(configuredUrl)) {
+    push(configuredUrl.replace(/\/api\/r2\/presign$/i, "/api/proctoring-screenshots/upload"));
+    push(configuredUrl.replace(/\/api\/r2\/presign$/i, "/api/r2"));
+  }
+
+  if (/\/api\/r2$/i.test(configuredUrl)) {
+    push(configuredUrl);
+  }
+
+  return candidates;
 }
 
 function getBucketNameFromUploadUrl(uploadUrl: string) {
@@ -28,74 +135,51 @@ async function readJsonSafely<T>(response: Response) {
   return (await response.json().catch(() => null)) as T | null;
 }
 
-export async function handleTextbookUploadProxyRequest(request: Request) {
-  const formData = await request.formData();
-  const file = formData.get("file");
+function getTrimmedFormValue(formData: FormData, key: string) {
+  const value = formData.get(key);
+  return typeof value === "string" ? value.trim() : "";
+}
 
-  if (!file || typeof (file as File).arrayBuffer !== "function") {
-    throw new Error("Upload хийх PDF файл олдсонгүй.");
-  }
-
-  const uploadFile = file as File;
-  const presignResponse = await fetch(getExternalTextbookPresignUrl(), {
+async function uploadTextbookDirectly(
+  formData: FormData,
+  uploadFile: File,
+) {
+  const upstream = await fetch(new URL("/api/r2", getCreateExamServiceBaseUrl()), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      attemptId: "textbook-import",
-      capturedAt: new Date().toISOString(),
-      contentType: uploadFile.type || "application/pdf",
-      eventCode: "textbook-upload",
-      fileName: uploadFile.name,
-      userId: "material-builder",
-    }),
+    body: formData,
     cache: "no-store",
   });
 
-  const presignPayload =
+  const payload =
     await readJsonSafely<
-      | { key: string; publicUrl?: string; uploadUrl: string }
+      | {
+          bucketName: string;
+          contentType?: string;
+          fileName?: string;
+          key: string;
+          size?: number;
+          uploadedAt?: string;
+        }
       | { error?: string; message?: string }
-    >(presignResponse);
+    >(upstream);
 
-  if (
-    !presignResponse.ok ||
-    !presignPayload ||
-    !("uploadUrl" in presignPayload) ||
-    !presignPayload.uploadUrl ||
-    !presignPayload.key
-  ) {
-    const errorPayload =
-      presignPayload && !("uploadUrl" in presignPayload) ? presignPayload : null;
+  if (!upstream.ok || !payload || !("bucketName" in payload) || !payload.bucketName || !payload.key) {
+    const errorPayload = payload && !("bucketName" in payload) ? payload : null;
     throw new Error(
       errorPayload?.message ||
         errorPayload?.error ||
-        "Textbook upload presign үүсгэж чадсангүй.",
+        `R2 direct upload амжилтгүй боллоо. HTTP ${upstream.status}`,
     );
-  }
-
-  const uploadResponse = await fetch(presignPayload.uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": uploadFile.type || "application/pdf",
-    },
-    body: new Uint8Array(await uploadFile.arrayBuffer()),
-    cache: "no-store",
-  });
-
-  if (!uploadResponse.ok) {
-    throw new Error(`R2 presigned upload амжилтгүй боллоо. HTTP ${uploadResponse.status}`);
   }
 
   return new Response(
     JSON.stringify({
-      bucketName: getBucketNameFromUploadUrl(presignPayload.uploadUrl),
-      contentType: uploadFile.type || "application/pdf",
-      fileName: uploadFile.name,
-      key: presignPayload.key,
-      size: uploadFile.size,
-      uploadedAt: new Date().toISOString(),
+      bucketName: payload.bucketName,
+      contentType: payload.contentType || uploadFile.type || "application/pdf",
+      fileName: payload.fileName || uploadFile.name,
+      key: payload.key,
+      size: typeof payload.size === "number" ? payload.size : uploadFile.size,
+      uploadedAt: payload.uploadedAt || new Date().toISOString(),
     }),
     {
       status: 200,
@@ -105,6 +189,170 @@ export async function handleTextbookUploadProxyRequest(request: Request) {
       },
     },
   );
+}
+
+async function uploadTextbookViaConfiguredRoutes(
+  formData: FormData,
+  uploadFile: File,
+) {
+  for (const uploadUrl of getConfiguredTextbookUploadCandidatesForServer()) {
+    try {
+      const upstream = await fetch(uploadUrl, {
+        method: "POST",
+        body: formData,
+        cache: "no-store",
+      });
+
+      const payload =
+        await readJsonSafely<
+          | {
+              bucketName?: string;
+              contentType?: string;
+              fileName?: string;
+              key: string;
+              size?: number;
+              uploadedAt?: string;
+            }
+          | { error?: string; message?: string }
+        >(upstream);
+
+      if (!upstream.ok || !payload || !("key" in payload) || !payload.key) {
+        continue;
+      }
+
+      return new Response(
+        JSON.stringify({
+          bucketName:
+            ("bucketName" in payload && payload.bucketName) ||
+            getTrimmedFormValue(formData, "bucketName") ||
+            getConfiguredTextbookBucketNameForServer() ||
+            "exam",
+          contentType: payload.contentType || uploadFile.type || "application/pdf",
+          fileName: payload.fileName || uploadFile.name,
+          key: payload.key,
+          size: typeof payload.size === "number" ? payload.size : uploadFile.size,
+          uploadedAt: payload.uploadedAt || new Date().toISOString(),
+        }),
+        {
+          status: 200,
+          headers: {
+            "Cache-Control": "no-store",
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    } catch {
+      // Try the next configured route candidate.
+    }
+  }
+
+  return null;
+}
+
+export async function handleTextbookUploadProxyRequest(request: Request) {
+  const formData = await request.formData();
+  const file = formData.get("file");
+
+  if (!file || typeof (file as File).arrayBuffer !== "function") {
+    throw new Error("Upload хийх PDF файл олдсонгүй.");
+  }
+
+  const uploadFile = file as File;
+  const configuredUploadResponse = await uploadTextbookViaConfiguredRoutes(
+    formData,
+    uploadFile,
+  );
+
+  if (configuredUploadResponse) {
+    return configuredUploadResponse;
+  }
+
+  const presignUrl = getExternalTextbookPresignUrl();
+
+  if (presignUrl) {
+    try {
+      const presignResponse = await fetch(presignUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          attemptId: "textbook-import",
+          bucketName: getTrimmedFormValue(formData, "bucketName") || undefined,
+          capturedAt: new Date().toISOString(),
+          contentType: uploadFile.type || "application/pdf",
+          eventCode: "textbook-upload",
+          fileName: uploadFile.name,
+          key: getTrimmedFormValue(formData, "key") || undefined,
+          userId: "material-builder",
+        }),
+        cache: "no-store",
+      });
+
+      const presignPayload =
+        await readJsonSafely<
+          | {
+              bucketName?: string;
+              key: string;
+              publicUrl?: string;
+              uploadUrl?: string;
+              url?: string;
+            }
+          | { error?: string; message?: string }
+        >(presignResponse);
+
+      const uploadUrl =
+        presignPayload &&
+        "key" in presignPayload &&
+        typeof presignPayload.key === "string"
+          ? (presignPayload.uploadUrl || presignPayload.url || "")
+          : "";
+
+      if (
+        presignResponse.ok &&
+        presignPayload &&
+        "key" in presignPayload &&
+        uploadUrl
+      ) {
+        const uploadResponse = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": uploadFile.type || "application/pdf",
+          },
+          body: new Uint8Array(await uploadFile.arrayBuffer()),
+          cache: "no-store",
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error(`R2 presigned upload амжилтгүй боллоо. HTTP ${uploadResponse.status}`);
+        }
+
+        return new Response(
+          JSON.stringify({
+            bucketName:
+              ("bucketName" in presignPayload && presignPayload.bucketName) ||
+              getBucketNameFromUploadUrl(uploadUrl),
+            contentType: uploadFile.type || "application/pdf",
+            fileName: uploadFile.name,
+            key: presignPayload.key,
+            size: uploadFile.size,
+            uploadedAt: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              "Cache-Control": "no-store",
+              "Content-Type": "application/json",
+            },
+          },
+        );
+      }
+    } catch {
+      // Fall back to direct multipart upload via create-exam-service.
+    }
+  }
+
+  return uploadTextbookDirectly(formData, uploadFile);
 }
 
 function buildUpstreamUrl(request: Request) {

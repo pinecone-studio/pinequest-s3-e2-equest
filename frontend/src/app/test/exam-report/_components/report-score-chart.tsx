@@ -34,6 +34,10 @@ interface TrendChartPoint {
   score: number | null;
 }
 
+interface ResolvedTrendStudent extends ReportScoreTrendStudent {
+  resolvedClassName: string;
+}
+
 interface ClassTrend {
   className: string;
   latestScore: number | null;
@@ -67,12 +71,19 @@ export function ReportScoreChart({
   trend,
 }: ReportScoreChartProps) {
   const activeTrend = dataSource === "mock" ? MOCK_SCORE_TREND_DATA : trend;
-  const allClassTrends = useMemo(() => {
-    return buildClassTrends(activeTrend, dataSource, currentClassName);
+  const resolvedStudents = useMemo(() => {
+    return resolveTrendStudents(activeTrend, dataSource, currentClassName);
   }, [activeTrend, currentClassName, dataSource]);
+  const allClassTrends = useMemo(() => {
+    return buildClassTrends(activeTrend.phases, resolvedStudents);
+  }, [activeTrend.phases, resolvedStudents]);
   const classTrends = useMemo(() => {
     if (aggregateClassLabel) {
-      const aggregate = buildAggregateTrend(allClassTrends, aggregateClassLabel);
+      const aggregate = buildAggregateTrend(
+        activeTrend.phases,
+        resolvedStudents,
+        aggregateClassLabel,
+      );
       return aggregate ? [aggregate] : [];
     }
 
@@ -81,7 +92,13 @@ export function ReportScoreChart({
     }
 
     return allClassTrends.filter((item) => item.className === forcedClassName);
-  }, [allClassTrends, forcedClassName]);
+  }, [
+    activeTrend.phases,
+    aggregateClassLabel,
+    allClassTrends,
+    forcedClassName,
+    resolvedStudents,
+  ]);
   const [selectedClassName, setSelectedClassName] = useState<string | null>(
     classTrends[0]?.className ?? currentClassName,
   );
@@ -353,81 +370,21 @@ function HeaderStatCard({
 }
 
 function buildClassTrends(
-  trend: ReportScoreTrendData,
-  dataSource: "mock" | "real",
-  fallbackClassName: string,
+  phases: ReportScoreTrendData["phases"],
+  students: ResolvedTrendStudent[],
 ): ClassTrend[] {
-  const groups = new Map<
-    string,
-    {
-      className: string;
-      students: ReportScoreTrendStudent[];
-    }
-  >();
+  const groups = new Map<string, ResolvedTrendStudent[]>();
 
-  for (const student of trend.students) {
-    const resolvedClassName = resolveStudentClassName(
-      student,
-      dataSource,
-      fallbackClassName,
-    );
-    const current = groups.get(resolvedClassName) ?? {
-      className: resolvedClassName,
-      students: [],
-    };
-
-    current.students.push(student);
-    groups.set(resolvedClassName, current);
+  for (const student of students) {
+    const current = groups.get(student.resolvedClassName) ?? [];
+    current.push(student);
+    groups.set(student.resolvedClassName, current);
   }
 
-  return [...groups.values()]
-    .map((group) => {
-      const points = trend.phases.map((phase) => {
-        const scores = group.students
-          .map((student) => {
-            return (
-              student.points.find((point) => point.key === phase.key)?.score ??
-              null
-            );
-          })
-          .filter((score): score is number => typeof score === "number");
-
-        return {
-          examTitle: phase.examTitle,
-          label: formatPhaseLabel(phase.label),
-          score: scores.length > 0 ? roundToOneDecimal(average(scores)) : null,
-        };
-      });
-      const availableScores = points
-        .map((point) => point.score)
-        .filter((score): score is number => typeof score === "number");
-      const latestScore =
-        availableScores.length > 0
-          ? availableScores[availableScores.length - 1]
-          : null;
-      const overallDelta =
-        availableScores.length >= 2
-          ? roundToOneDecimal(
-              availableScores[availableScores.length - 1] - availableScores[0],
-            )
-          : null;
-      const recentDelta =
-        availableScores.length >= 2
-          ? roundToOneDecimal(
-              availableScores[availableScores.length - 1] -
-                availableScores[availableScores.length - 2],
-            )
-          : null;
-
-      return {
-        className: group.className,
-        latestScore,
-        overallDelta,
-        points,
-        recentDelta,
-        studentCount: group.students.length,
-      };
-    })
+  return [...groups.entries()]
+    .map(([className, classStudents]) =>
+      buildTrendSummary(className, phases, classStudents),
+    )
     .sort((left, right) => {
       return formatClassLabel(left.className).localeCompare(
         formatClassLabel(right.className),
@@ -437,20 +394,34 @@ function buildClassTrends(
 }
 
 function buildAggregateTrend(
-  classTrends: ClassTrend[],
+  phases: ReportScoreTrendData["phases"],
+  students: ResolvedTrendStudent[],
   label: string,
 ): ClassTrend | null {
-  if (classTrends.length === 0) {
+  if (students.length === 0) {
     return null;
   }
 
-  const points = classTrends[0].points.map((point, index) => {
-    const scores = classTrends
-      .map((trend) => trend.points[index]?.score ?? null)
+  return buildTrendSummary(label, phases, students);
+}
+
+function buildTrendSummary(
+  className: string,
+  phases: ReportScoreTrendData["phases"],
+  students: ResolvedTrendStudent[],
+): ClassTrend {
+  const points = phases.map((phase) => {
+    const scores = students
+      .map((student) => {
+        return (
+          student.points.find((point) => point.key === phase.key)?.score ?? null
+        );
+      })
       .filter((score): score is number => typeof score === "number");
 
     return {
-      ...point,
+      examTitle: phase.examTitle,
+      label: formatPhaseLabel(phase.label),
       score: scores.length > 0 ? roundToOneDecimal(average(scores)) : null,
     };
   });
@@ -477,12 +448,12 @@ function buildAggregateTrend(
       : null;
 
   return {
-    className: label,
+    className,
     latestScore,
     overallDelta,
     points,
     recentDelta,
-    studentCount: classTrends.reduce((sum, trend) => sum + trend.studentCount, 0),
+    studentCount: students.length,
   };
 }
 
@@ -519,6 +490,21 @@ function resolveStudentClassName(
   }
 
   return fallbackClassName;
+}
+
+function resolveTrendStudents(
+  trend: ReportScoreTrendData,
+  dataSource: "mock" | "real",
+  fallbackClassName: string,
+): ResolvedTrendStudent[] {
+  return trend.students.map((student) => ({
+    ...student,
+    resolvedClassName: resolveStudentClassName(
+      student,
+      dataSource,
+      fallbackClassName,
+    ),
+  }));
 }
 
 function average(values: number[]): number {

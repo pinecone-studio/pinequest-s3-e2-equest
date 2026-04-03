@@ -22,6 +22,17 @@ import {
 import type { CachedTestSummary } from "./internal-types";
 import type { ExamQuestion } from "@/lib/exam-service/types";
 
+const MAX_AVAILABLE_TESTS = 120;
+
+const clampAvailableTestsLimit = (value?: number) => {
+	const rounded =
+		typeof value === "number" && Number.isFinite(value)
+			? Math.round(value)
+			: MAX_AVAILABLE_TESTS;
+
+	return Math.min(Math.max(rounded, 1), MAX_AVAILABLE_TESTS);
+};
+
 const hasMissingTeacherServiceAnswerKey = (
 	questions: Array<
 		Pick<ExamQuestion, "type" | "correctOptionId" | "answerLatex">
@@ -149,36 +160,46 @@ export const savePublishedTest = async (
 	await syncPublishedTestCache(kv, test);
 };
 
-export const listTests = async (db: DbClient, kv?: KVNamespace) => {
+export const listTests = async (
+	db: DbClient,
+	kv?: KVNamespace,
+	options?: { limit?: number },
+) => {
 	const cachedIndex = await readJsonFromKv<CachedTestSummary[]>(
 		kv,
 		TEST_CACHE_INDEX_KEY,
 	);
-	if (cachedIndex) return cachedIndex;
+	if (cachedIndex) {
+		const safeLimit = clampAvailableTestsLimit(options?.limit);
+		return cachedIndex.slice(0, safeLimit);
+	}
 
 	return db.query.tests.findMany({
 		where: eq(schema.tests.status, "published"),
 		orderBy: [desc(schema.tests.updatedAt)],
+		limit: clampAvailableTestsLimit(options?.limit),
 	});
 };
 
 export const listAvailableTests = async (
 	db: DbClient,
 	kv?: KVNamespace,
-	options?: { force?: boolean },
+	options?: { force?: boolean; limit?: number },
 ): Promise<TeacherTestSummary[]> => {
+	const safeLimit = clampAvailableTestsLimit(options?.limit);
+
 	if (!options?.force) {
 		const cachedAvailableTests = await readJsonFromKv<TeacherTestSummary[]>(
 			kv,
 			AVAILABLE_TESTS_CACHE_KEY,
 		);
 		if (cachedAvailableTests) {
-			return cachedAvailableTests;
+			return cachedAvailableTests.slice(0, safeLimit);
 		}
 	}
 
-	const tests = await listTests(db, undefined);
-	const nextAvailableTests = tests.map(mapTeacherTestSummary);
+	const tests = await listTests(db, undefined, { limit: safeLimit });
+	const nextAvailableTests = tests.slice(0, safeLimit).map(mapTeacherTestSummary);
 
 	await writeJsonToKv(
 		kv,

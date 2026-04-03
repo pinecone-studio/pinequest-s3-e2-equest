@@ -35,6 +35,7 @@ export const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 export const DEFAULT_OLLAMA_MODEL = "llama3.1:latest";
 const DEFAULT_OLLAMA_RETRIES = 1;
 const DEFAULT_OLLAMA_TIMEOUT_MS = 15000;
+const shouldUseLocalOllamaFallback = () => process.env.NODE_ENV === "development";
 
 class OllamaRequestError extends Error {
 	retryable: boolean;
@@ -46,8 +47,18 @@ class OllamaRequestError extends Error {
 	}
 }
 
-export const normalizeOllamaBaseUrl = (value?: string) =>
-	(value?.trim() || DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, "");
+export const normalizeOllamaBaseUrl = (value?: string) => {
+	const trimmed = value?.trim();
+	if (trimmed) {
+		return trimmed.replace(/\/+$/, "");
+	}
+
+	if (shouldUseLocalOllamaFallback()) {
+		return DEFAULT_OLLAMA_BASE_URL;
+	}
+
+	return "";
+};
 
 const buildOllamaHeaders = (apiKey?: string) => ({
 	"Content-Type": "application/json",
@@ -157,7 +168,15 @@ export const fetchOllamaJson = async <T>({
 	retries = DEFAULT_OLLAMA_RETRIES,
 	timeoutMs = DEFAULT_OLLAMA_TIMEOUT_MS,
 }: OllamaRequestOptions): Promise<T> => {
-	const url = `${normalizeOllamaBaseUrl(baseUrl)}${path}`;
+	const resolvedBaseUrl = normalizeOllamaBaseUrl(baseUrl);
+	if (!resolvedBaseUrl) {
+		throw new OllamaRequestError(
+			`${context}: OLLAMA_BASE_URL тохируулаагүй байна.`,
+			false,
+		);
+	}
+
+	const url = `${resolvedBaseUrl}${path}`;
 	let lastError: Error | null = null;
 
 	for (let attempt = 0; attempt <= retries; attempt += 1) {

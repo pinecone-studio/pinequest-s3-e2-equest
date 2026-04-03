@@ -56,35 +56,35 @@ const EVENT_CONFIG: Record<
 > = {
   connection_lost: {
     severity: "danger",
-    title: "Connection lost",
+    title: "Холболт тасарсан",
   },
   connection_restored: {
     severity: "info",
-    title: "Connection restored",
+    title: "Холболт сэргэсэн",
   },
   heartbeat: {
     severity: "info",
-    title: "Heartbeat",
+    title: "Холболтын шалгалт",
   },
   device_change_suspected: {
     severity: "warning",
-    title: "Device change suspected",
+    title: "Төхөөрөмж өөрчлөгдсөн",
   },
   tab_hidden: {
     severity: "warning",
-    title: "Tab hidden",
+    title: "Табаас гарсан",
   },
   tab_visible: {
     severity: "info",
-    title: "Tab visible",
+    title: "Таб руу буцсан",
   },
   window_blur: {
     severity: "warning",
-    title: "Window blur",
+    title: "Фокус алдагдсан",
   },
   window_focus: {
     severity: "info",
-    title: "Window focus",
+    title: "Фокус сэргэсэн",
   },
 };
 

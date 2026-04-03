@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import MathPreviewText from "@/components/math-preview-text";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -288,13 +289,16 @@ export function QuestionBankSection() {
                   >
                     Жишиг хариулт (заавал биш)
                   </Label>
-                  <Textarea
+                  <div
                     id="written-answer-sample"
-                    value={generated.correctAnswer}
-                    readOnly
-                    placeholder="Жишиг хариултаа энд бичнэ үү..."
-                    className="min-h-[170px] resize-none rounded-[12px] border border-[#e2e8f0] bg-white px-4 py-3 text-[14px] leading-7 text-slate-800 shadow-none"
-                  />
+                    className="min-h-[170px] rounded-[12px] border border-[#e2e8f0] bg-white px-4 py-3 text-[14px] leading-7 text-slate-800 shadow-none"
+                  >
+                    <MathPreviewText
+                      content={generated.correctAnswer}
+                      contentSource="backend"
+                      className="text-[14px] leading-7 text-slate-800"
+                    />
+                  </div>
                 </div>
                 <div className="rounded-[14px] border border-[#d9e6ff] bg-[#edf4ff] px-4 py-3 text-[14px] leading-7 text-[#2c5fb3]">
                   <span className="font-medium">Зөвлөгөө:</span> Задгай асуултыг
@@ -317,7 +321,11 @@ export function QuestionBankSection() {
                       value={option}
                       className="border-[#cdd8ea] text-[#0b5cab] data-checked:border-[#0b5cab] data-checked:bg-[#0b5cab]"
                     />
-                    <span>{option}</span>
+                    <MathPreviewText
+                      content={option}
+                      contentSource="backend"
+                      className="min-w-0 flex-1 text-[14px] leading-relaxed text-slate-800"
+                    />
                   </label>
                 ))}
               </RadioGroup>
@@ -331,12 +339,16 @@ export function QuestionBankSection() {
             >
               Зөв хариултын тайлбар
             </Label>
-            <Textarea
+            <div
               id="answer-explanation"
-              value={generated.explanation}
-              readOnly
               className={explanationClassName}
-            />
+            >
+              <MathPreviewText
+                content={generated.explanation}
+                contentSource="backend"
+                className="text-[14px] leading-7 text-slate-800"
+              />
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-4">

@@ -182,6 +182,49 @@ export async function ensureExamSchema(db: D1Database) {
 		)
 		.run();
 
+	await db
+		.prepare(
+			`CREATE INDEX IF NOT EXISTS idx_tests_status_updated_at
+			 ON tests (status, updated_at)`,
+		)
+		.run();
+	await db
+		.prepare(
+			`CREATE INDEX IF NOT EXISTS idx_questions_test_id
+			 ON questions (test_id)`,
+		)
+		.run();
+	await db
+		.prepare(
+			`CREATE INDEX IF NOT EXISTS idx_answers_attempt_id
+			 ON answers (attempt_id)`,
+		)
+		.run();
+	await db
+		.prepare(
+			`CREATE INDEX IF NOT EXISTS idx_attempts_started_at
+			 ON attempts (started_at)`,
+		)
+		.run();
+	await db
+		.prepare(
+			`CREATE INDEX IF NOT EXISTS idx_attempts_test_started_at
+			 ON attempts (test_id, started_at)`,
+		)
+		.run();
+	await db
+		.prepare(
+			`CREATE INDEX IF NOT EXISTS idx_proctoring_events_attempt_occurred_at
+			 ON proctoring_events (attempt_id, occurred_at)`,
+		)
+		.run();
+	await db
+		.prepare(
+			`CREATE INDEX IF NOT EXISTS idx_teacher_submission_exports_attempt_id
+			 ON teacher_submission_exports (attempt_id)`,
+		)
+		.run();
+
 	const studentColumns = await getColumnNames(db, "students");
 	await addColumnIfMissing(
 		db,

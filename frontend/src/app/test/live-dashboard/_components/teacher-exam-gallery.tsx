@@ -397,7 +397,7 @@ export function TeacherExamGallery({
         ) : null}
 
         {filteredExams.length > 0 ? (
-          <div className="mt-4 grid gap-6 xl:grid-cols-3">
+          <div className="mt-4 grid items-stretch gap-6 xl:grid-cols-3">
             {filteredExams.map((exam) => (
               <article
                 key={exam.id}
@@ -410,7 +410,7 @@ export function TeacherExamGallery({
                 }}
                 role="button"
                 tabIndex={0}
-                className={`rounded-[22px] border bg-white p-7 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 ${
+                className={`flex h-full min-h-[240px] flex-col rounded-[22px] border bg-white p-7 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 ${
                   activeMenuExamId === exam.id
                     ? "border-[#0b5cab] shadow-[0_0_0_1px_rgba(11,92,171,0.12)]"
                     : "border-slate-200"
@@ -434,7 +434,7 @@ export function TeacherExamGallery({
                   {exam.title}
                 </h3>
 
-                <div className="mt-8 space-y-3 text-[15px] text-slate-500">
+                <div className="mt-auto space-y-3 pt-8 text-[15px] text-slate-500">
                   <p className="flex items-center gap-2">
                     <Clock3 className="h-4 w-4" />
                     {getEstimatedDurationLabel(exam)}
@@ -621,6 +621,9 @@ function ExamPreviewDialog({
   const questionCount =
     exam?.detail?.questions.length ?? exam?.summary.questionCount ?? 0;
   const timeLeftLabel = formatTimerLabel(durationMinutes);
+  const showRemainingTime = Boolean(
+    exam && exam.summary.liveStudentCount > 0 && !exam.summary.endTime,
+  );
 
   const scrollToQuestion = (questionId: string) => {
     questionCardRefs.current[questionId]?.scrollIntoView({
@@ -839,9 +842,11 @@ function ExamPreviewDialog({
 
                 <aside className="order-1 lg:order-2 lg:sticky lg:top-6">
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_20px_rgba(148,163,184,0.10)] sm:p-5">
-                    <div className="sticky top-3 z-20 mb-4 rounded-[10px] border border-[#ff8d8d] bg-white/95 px-4 py-2 text-sm font-medium text-slate-900 shadow-sm backdrop-blur sm:text-[15px]">
-                      Үлдсэн хугацаа {timeLeftLabel}
-                    </div>
+                    {showRemainingTime ? (
+                      <div className="sticky top-3 z-20 mb-4 rounded-[10px] border border-[#ff8d8d] bg-white/95 px-4 py-2 text-sm font-medium text-slate-900 shadow-sm backdrop-blur sm:text-[15px]">
+                        Үлдсэн хугацаа {timeLeftLabel}
+                      </div>
+                    ) : null}
                     <h3 className="text-[15px] font-semibold text-slate-900">
                       Шалгалтын навигаци
                     </h3>

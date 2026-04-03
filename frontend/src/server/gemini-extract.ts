@@ -61,7 +61,7 @@ type DocxZipFile = {
 };
 
 const mammothUnzip = mammothUnzipModule as {
-  openZip: (options: { buffer: Buffer }) => Promise<DocxZipFile>;
+  openZip: (options: { arrayBuffer?: ArrayBuffer; buffer?: Buffer }) => Promise<DocxZipFile>;
 };
 
 const mammothXml = mammothXmlModule as {
@@ -70,6 +70,10 @@ const mammothXml = mammothXmlModule as {
     namespaceMap: Record<string, string>,
   ) => Promise<XmlElementNode>;
 };
+
+function toExactArrayBuffer(buffer: Buffer) {
+  return Uint8Array.from(buffer).buffer;
+}
 
 type AttachmentPayload = {
   data?: string;
@@ -1277,7 +1281,8 @@ function coerceExamPayload(value: unknown): GeneratedExamPayload {
 }
 
 async function extractDocxStructuredText(buffer: Buffer, attachmentName: string) {
-  const zipFile = await mammothUnzip.openZip({ buffer });
+  const arrayBuffer = toExactArrayBuffer(buffer);
+  const zipFile = await mammothUnzip.openZip({ arrayBuffer, buffer });
 
   if (!zipFile.exists("word/document.xml")) {
     return {
@@ -1338,7 +1343,8 @@ async function extractDocxArtifacts(
   }
 
   const buffer = Buffer.from(data, "base64");
-  const rawTextResult = await mammoth.extractRawText({ buffer });
+  const arrayBuffer = toExactArrayBuffer(buffer);
+  const rawTextResult = await mammoth.extractRawText({ arrayBuffer, buffer });
   const structuredDocx = await extractDocxStructuredText(
     buffer,
     attachment.name ?? "docx",

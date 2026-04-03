@@ -27,6 +27,7 @@ import {
   requestGeneratedExam,
 } from "@/lib/math-exam-api";
 import type { ExtractExamEnhanceFocus } from "@/lib/math-exam-contract";
+import { buildAblyAuthUrl } from "@/lib/runtime-api";
 import { SaveNewMathExamDocument } from "@/gql/create-exam-documents";
 import {
   GetNewMathExamDocument,
@@ -344,9 +345,7 @@ export default function MathExam() {
   }, []);
 
   useEffect(() => {
-    const authUrl =
-      process.env.NEXT_PUBLIC_ABLY_AUTH_URL ||
-      "http://localhost:3001/api/ably/auth";
+    const authUrl = buildAblyAuthUrl();
     let active = true;
     let cleanup: (() => void) | null = null;
 

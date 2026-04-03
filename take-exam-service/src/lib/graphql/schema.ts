@@ -235,10 +235,11 @@ export const typeDefs = /* GraphQL */ `
 
   type Query {
     students: [Student!]!
-    availableTests(forceRefresh: Boolean): [Test!]!
-    attempts(forceRefresh: Boolean): [AttemptSummary!]!
+    availableTests(limit: Int, forceRefresh: Boolean): [Test!]!
+    attempts(limit: Int, forceRefresh: Boolean): [AttemptSummary!]!
+    attemptsByTestId(testId: ID!, limit: Int, forceRefresh: Boolean): [AttemptSummary!]!
     testMaterial(testId: ID!, forceRefresh: Boolean): TeacherExamSession
-    liveMonitoringFeed(limit: Int): [AttemptLiveFeedItem!]!
+    liveMonitoringFeed(limit: Int, testId: ID): [AttemptLiveFeedItem!]!
     externalNewMathExams(limit: Int): [ExternalExamSummary!]!
   }
 
