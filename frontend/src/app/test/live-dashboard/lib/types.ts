@@ -150,7 +150,9 @@ export interface QuestionReview {
   requiresManualReview?: boolean;
   studentAnswer: string;
   correctAnswer: string;
+  correctAnswerKind?: "exact" | "reference" | "missing";
   reviewState: "correct" | "incorrect" | "pending";
+  reviewed?: boolean;
   points: number;
   maxPoints: number;
   explanation?: string;
@@ -169,6 +171,8 @@ export interface SubmittedAttempt {
   studentName: string;
   submissionTime: Date;
   status: "pending" | "in-review" | "reviewed";
+  completionRate?: number;
+  hasPublishedResult?: boolean;
   reviewableItems: number;
   answerKeySource: string;
   score?: number;

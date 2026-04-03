@@ -127,12 +127,195 @@ type DifficultyCountInput = {
 type GenerateTextbookTestOptions = {
   difficultyCounts?: DifficultyCountInput;
   fallbackDifficulty?: TextbookDifficulty;
+  grade?: number;
   openQuestionCount?: number;
   questionCount?: number;
   totalScore?: number;
 };
 
 const SOLVE_QUESTION_TEXT = "Энэ бодлогыг бодоод зөв хариуг сонго.";
+type MockTextbookQuestionTemplate = {
+  answer: string;
+  explanation: string;
+  problem: string;
+  wrongChoices: string[];
+};
+
+type MockTextbookOpenTaskTemplate = {
+  answer: string;
+  difficulty: TextbookDifficulty;
+  prompt: string;
+  sourceExcerpt: string;
+};
+
+const DEFAULT_MOCK_TEXTBOOK_QUESTION_TEMPLATES: MockTextbookQuestionTemplate[] = [
+  {
+    answer: "4",
+    explanation: "2x + 3 = 11 тул 2x = 8, тэгэхээр x = 4.",
+    problem: "2x + 3 = 11",
+    wrongChoices: ["3", "5", "6"],
+  },
+  {
+    answer: "7",
+    explanation: "3x - 5 = 16 тул 3x = 21, тэгэхээр x = 7.",
+    problem: "3x - 5 = 16",
+    wrongChoices: ["5", "6", "8"],
+  },
+  {
+    answer: "12",
+    explanation: "x/2 + 4 = 10 тул x/2 = 6, тэгэхээр x = 12.",
+    problem: "x/2 + 4 = 10",
+    wrongChoices: ["8", "10", "14"],
+  },
+  {
+    answer: "12",
+    explanation: "√49 = 7, тэгээд 7 + 5 = 12.",
+    problem: "√49 + 5",
+    wrongChoices: ["10", "11", "14"],
+  },
+  {
+    answer: "5",
+    explanation: "5(x - 1) = 20 тул x - 1 = 4, тэгэхээр x = 5.",
+    problem: "5(x - 1) = 20",
+    wrongChoices: ["4", "6", "8"],
+  },
+] as const;
+const GRADE_9_MOCK_TEXTBOOK_QUESTION_TEMPLATES: MockTextbookQuestionTemplate[] = [
+  {
+    answer: "5",
+    explanation: "Квадрат тэгшитгэлийн язгууруудын нийлбэр нь -b/a = 5.",
+    problem: "x² - 5x + 6 = 0 тэгшитгэлийн язгууруудын нийлбэр",
+    wrongChoices: ["2", "3", "6"],
+  },
+  {
+    answer: "5",
+    explanation: "√(x + 4) = 3 тул x + 4 = 9. Иймээс x = 5.",
+    problem: "√(x + 4) = 3",
+    wrongChoices: ["3", "4", "9"],
+  },
+  {
+    answer: "6",
+    explanation: "|2x - 7| = 5 тул 2x - 7 = 5 эсвэл 2x - 7 = -5. Шийдүүд 6 ба 1, их шийд нь 6.",
+    problem: "|2x - 7| = 5 тэгшитгэлийн их шийд",
+    wrongChoices: ["1", "5", "7"],
+  },
+  {
+    answer: "2",
+    explanation: "y = x² - 4x + 1 функцийн оройн x координат -b/(2a) = 4/2 = 2.",
+    problem: "y = x² - 4x + 1 функцийн оройн x координат",
+    wrongChoices: ["1", "3", "4"],
+  },
+  {
+    answer: "10",
+    explanation: "Пифагорын теоремоор c = √(6² + 8²) = √100 = 10.",
+    problem: "Тэгш өнцөгт гурвалжны катетууд 6 ба 8 бол гипотенуз",
+    wrongChoices: ["12", "14", "48"],
+  },
+  {
+    answer: "3/5",
+    explanation: "Яг нэг улаан, нэг хөх авах аргын тоо 3·2 = 6, нийт аргын тоо C(5,2) = 10 тул магадлал 6/10 = 3/5.",
+    problem: "Уутанд 3 улаан, 2 хөх бөмбөг байхад 2-г сонгоход яг нэг нь улаан байх магадлал",
+    wrongChoices: ["2/5", "1/2", "4/5"],
+  },
+] as const;
+const SENIOR_MOCK_TEXTBOOK_QUESTION_TEMPLATES: MockTextbookQuestionTemplate[] = [
+  {
+    answer: "5",
+    explanation: "2^(x - 1) = 16 = 2^4 тул x - 1 = 4, тэгэхээр x = 5.",
+    problem: "2^(x - 1) = 16",
+    wrongChoices: ["3", "4", "6"],
+  },
+  {
+    answer: "27",
+    explanation: "√(x + 9) = 6 тул x + 9 = 36, тэгэхээр x = 27.",
+    problem: "√(x + 9) = 6",
+    wrongChoices: ["18", "21", "36"],
+  },
+  {
+    answer: "2",
+    explanation: "log₃81 = 4 учраас 4 - 2 = 2.",
+    problem: "log₃81 - 2",
+    wrongChoices: ["1", "3", "4"],
+  },
+  {
+    answer: "8",
+    explanation: "log₂32 = 5 тул 5 + 3 = 8.",
+    problem: "log₂32 + 3",
+    wrongChoices: ["5", "6", "7"],
+  },
+  {
+    answer: "2",
+    explanation: "sin 30° = 1/2, cos 60° = 1/2, tan 45° = 1 тул нийлбэр нь 2.",
+    problem: "sin 30° + cos 60° + tan 45°",
+    wrongChoices: ["1", "3", "4"],
+  },
+] as const;
+const GRADE_9_MOCK_OPEN_TASK_TEMPLATES: MockTextbookOpenTaskTemplate[] = [
+  {
+    answer:
+      "D = (-7)^2 - 4·2·3 = 49 - 24 = 25.\nТэгвэл x = (7 ± 5) / 4.\nИймээс x₁ = 3, x₂ = 1/2.",
+    difficulty: "hard",
+    prompt:
+      "2x² - 7x + 3 = 0 тэгшитгэлийг дискриминантын аргаар бодож, шийдүүдийг шалга.",
+    sourceExcerpt: "9-р анги · квадрат тэгшитгэл",
+  },
+  {
+    answer:
+      "Домайн: x - 1 ≥ 0 тул x ≥ 1.\nКвадратлавал x + 7 = (x - 1)² = x² - 2x + 1.\nИймээс x² - 3x - 6 = 0.\nТэгшитгэлийн шийд: x = (3 ± √33) / 2.\nx ≥ 1 нөхцөлийг хангах шийд нь x = (3 + √33) / 2.",
+    difficulty: "hard",
+    prompt:
+      "√(x + 7) = x - 1 тэгшитгэлийг бод. Домайны нөхцөлийг заавал ашиглаж тайлбарла.",
+    sourceExcerpt: "9-р анги · язгууртай тэгшитгэл",
+  },
+  {
+    answer:
+      "Хуваарийн муж: x ≠ 2, x ≠ -2.\nТэгшитгэлийг нийт илэрхийллээр үржүүлбэл x(x + 2) + 2(x - 2) = 3(x² - 4).\nЭндээс x² + 4x - 4 = 3x² - 12.\nИймээс 2x² - 4x - 8 = 0, өөрөөр x² - 2x - 4 = 0.\nТэгвэл x = 1 ± √5. Аль аль нь ±2 биш тул хоёр шийд хүчинтэй.",
+    difficulty: "hard",
+    prompt:
+      "x/(x - 2) + 2/(x + 2) = 3 тэгшитгэлийг бод. Хуваарийн мужийг эхлээд тогтоогоод дараа нь шийд.",
+    sourceExcerpt: "9-р анги · рационал тэгшитгэл",
+  },
+  {
+    answer:
+      "y = x² - 4x + 3 = (x - 2)² - 1.\nИймээс оройн цэг нь (2, -1).\nТэнхлэг нь x = 2.\nТэгшитгэлийн язгуур: x² - 4x + 3 = 0 → (x - 1)(x - 3) = 0.\nТиймээс Ox тэнхлэгийг (1, 0), (3, 0) цэгүүдэд огтолно.",
+    difficulty: "hard",
+    prompt:
+      "y = x² - 4x + 3 функцийн оройн цэг, тэгш хэмийн тэнхлэг, Ox тэнхлэгтэй огтлолцох цэгүүдийг ол.",
+    sourceExcerpt: "9-р анги · квадрат функц",
+  },
+  {
+    answer:
+      "Гурвалжин 6² + 8² = 36 + 64 = 100 = 10² тул Пифагорын урвуу теоремоор тэгш өнцөгт.\nТалбай S = 1/2 · 6 · 8 = 24.\nГипотенуз дээр буусан өндрийн урт h = 2S / 10 = 48 / 10 = 4.8.",
+    difficulty: "hard",
+    prompt:
+      "Талууд нь 6 см, 8 см, 10 см урттай гурвалжин тэгш өнцөгт болохыг батлаад, гипотенуз дээр буусан өндрийн уртыг ол.",
+    sourceExcerpt: "9-р анги · Пифагорын теорем",
+  },
+  {
+    answer:
+      "Уутанд нийт 5 бөмбөг байна.\nЯг нэг улаан, нэг хөх авах аргын тоо: C(3,1)·C(2,1) = 3·2 = 6.\nЯмар ч 2 бөмбөг сонгох нийт арга: C(5,2) = 10.\nТэгэхээр магадлал 6/10 = 3/5.",
+    difficulty: "medium",
+    prompt:
+      "Уутанд 3 улаан, 2 хөх бөмбөг байв. Буцаалтгүйгээр 2 бөмбөг сонгоход яг нэг нь улаан байх магадлалыг ол.",
+    sourceExcerpt: "9-р анги · магадлал",
+  },
+  {
+    answer:
+      "Дундаж: (6 + 7 + 7 + 8 + 10 + 12) / 6 = 50 / 6 = 25/3 ≈ 8.33.\nМедиан: эрэмбэлбэл 6, 7, 7, 8, 10, 12 тул медиан = (7 + 8)/2 = 7.5.\nМоод: 7.\nДалайц: 12 - 6 = 6.",
+    difficulty: "medium",
+    prompt:
+      "6, 7, 7, 8, 10, 12 өгөгдлийн дундаж, медиан, моод, далайцыг олж тайлбарла.",
+    sourceExcerpt: "9-р анги · статистик",
+  },
+  {
+    answer:
+      "1-р тохиолдол: 2x - 5 ≥ 0, өөрөөр x ≥ 2.5.\nТэгвэл 2x - 5 = x + 1, эндээс x = 6.\n2-р тохиолдол: 2x - 5 < 0, өөрөөр x < 2.5.\nТэгвэл -(2x - 5) = x + 1 → -2x + 5 = x + 1.\nИймээс 3x = 4, x = 4/3.\nХоёр шийд хоёулаа нөхцөлөө хангана.",
+    difficulty: "hard",
+    prompt:
+      "|2x - 5| = x + 1 тэгшитгэлийг модультай тэгшитгэлийн хоёр тохиолдлоор бод.",
+    sourceExcerpt: "9-р анги · модультай тэгшитгэл",
+  },
+] as const;
 const SUPERSCRIPT_DIGIT_MAP: Record<string, string> = {
   "⁰": "0",
   "¹": "1",
@@ -812,6 +995,105 @@ function normalizeProblemKey(value: string) {
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function buildReadableChoiceQuestionPrompt(problemText: string) {
+  const problem = stripExerciseLabel(normalizeExerciseLine(problemText))
+    .replace(/\s*\[mock-\d+\]\s*$/i, "")
+    .trim();
+
+  if (!problem) {
+    return "Зөв хариултыг сонгоно уу.";
+  }
+
+  if (/[xXхХ]/.test(problem) && problem.includes("=")) {
+    return `Дараах тэгшитгэлийн шийдийг ол.\n${problem}`;
+  }
+
+  if (/[0-9]/.test(problem) && /[+\-*/√|]/.test(problem)) {
+    return `Дараах илэрхийллийг бодоод зөв хариуг сонго.\n${problem}`;
+  }
+
+  return `Дараах бодлогын зөв хариуг сонго.\n${problem}`;
+}
+
+function isSeniorGrade(grade?: number) {
+  return Number.isFinite(Number(grade)) && Number(grade) >= 10;
+}
+
+function shouldUseSeniorMocks(options: {
+  fallbackDifficulty?: TextbookDifficulty;
+  grade?: number;
+}) {
+  if (isSeniorGrade(options.grade)) {
+    return true;
+  }
+
+  return !Number.isFinite(Number(options.grade)) && options.fallbackDifficulty === "hard";
+}
+
+function shouldUseGradeNineMcqMocks(options: {
+  fallbackDifficulty?: TextbookDifficulty;
+  grade?: number;
+}) {
+  return Number(options.grade) === 9;
+}
+
+function shouldUseGradeNineOpenTaskMocks(options: {
+  fallbackDifficulty?: TextbookDifficulty;
+  grade?: number;
+}) {
+  if (Number(options.grade) === 9) {
+    return true;
+  }
+
+  return !Number.isFinite(Number(options.grade)) && options.fallbackDifficulty === "hard";
+}
+
+function hasAdvancedMockSignal(problemText: string) {
+  const body = stripExerciseLabel(problemText);
+  return (
+    /\b(sin|cos|tan|log|ln)\b/i.test(body) ||
+    /[²³⁴⁵⁶⁷⁸⁹]/.test(body) ||
+    /\^/.test(body) ||
+    /√/.test(body) ||
+    /[<>≤≥]/.test(body) ||
+    /\/.*/.test(body) ||
+    /[xXхХ].*[xXхХ]/.test(body)
+  );
+}
+
+function selectMockTemplatePool(options: {
+  fallbackDifficulty?: TextbookDifficulty;
+  grade?: number;
+}) {
+  if (shouldUseGradeNineMcqMocks(options)) {
+    return GRADE_9_MOCK_TEXTBOOK_QUESTION_TEMPLATES;
+  }
+
+  if (shouldUseSeniorMocks(options)) {
+    return SENIOR_MOCK_TEXTBOOK_QUESTION_TEMPLATES;
+  }
+
+  return DEFAULT_MOCK_TEXTBOOK_QUESTION_TEMPLATES;
+}
+
+function shouldPreferAdvancedMockTopUp(options: {
+  fallbackDifficulty?: TextbookDifficulty;
+  grade?: number;
+}) {
+  return shouldUseGradeNineMcqMocks(options) || shouldUseSeniorMocks(options);
+}
+
+function selectMockOpenTaskTemplatePool(options: {
+  fallbackDifficulty?: TextbookDifficulty;
+  grade?: number;
+}) {
+  if (shouldUseGradeNineOpenTaskMocks(options)) {
+    return GRADE_9_MOCK_OPEN_TASK_TEMPLATES;
+  }
+
+  return [];
 }
 
 function isLetterLabeledExerciseProblem(value: string) {
@@ -1893,6 +2175,138 @@ function buildRepeatedSolvedQuestions(
   return out;
 }
 
+function buildMockSolvedQuestions(
+  exerciseProblems: ExerciseProblem[],
+  needed: number,
+  saltStart = 0,
+  options: {
+    fallbackDifficulty?: TextbookDifficulty;
+    grade?: number;
+  } = {},
+) {
+  const count = Math.max(0, Math.trunc(Number(needed) || 0));
+  if (count <= 0) {
+    return [];
+  }
+
+  const normalizedProblems = Array.from(
+    new Map(
+      exerciseProblems
+        .map((item) => ({
+          complexity: scoreExerciseProblemQuality(item.text),
+          pageNumber: Math.trunc(Number(item.pageNumber)),
+          text: normalizeExerciseLine(item.text),
+        }))
+        .filter((item) => item.text)
+        .map((item) => [
+          `${normalizeProblemKey(item.text)}|${item.pageNumber}`,
+          item,
+        ]),
+    ).values(),
+  ).sort((left, right) => right.complexity - left.complexity);
+
+  if (!normalizedProblems.length) {
+    return [];
+  }
+
+  const preferAdvancedMocks = shouldPreferAdvancedMockTopUp(options);
+  const advancedProblems = normalizedProblems.filter(
+    (item) => hasAdvancedMockSignal(item.text),
+  );
+  const preferredProblems =
+    preferAdvancedMocks && advancedProblems.length > 0
+      ? advancedProblems
+      : normalizedProblems;
+  const templatePool = selectMockTemplatePool(options);
+  const labels = ["A", "B", "C", "D"];
+  const out: GeneratedTextbookQuestion[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const salt = saltStart + index;
+    const source =
+      preferredProblems[
+        ((salt % preferredProblems.length) + preferredProblems.length) %
+          preferredProblems.length
+      ];
+    const template =
+      templatePool[
+        ((salt % templatePool.length) + templatePool.length) %
+          templatePool.length
+      ];
+    const sourceProblem = String(source?.text || "").trim();
+    const strippedProblem = stripExerciseLabel(sourceProblem);
+    const linearRoot = solveSimpleLinearEquation(sourceProblem);
+    const roots = solveEquationIntegerRoots(sourceProblem, { minX: -40, maxX: 40 });
+    const solved =
+      Number.isFinite(linearRoot)
+        ? Number(linearRoot)
+        : roots.length === 1
+          ? roots[0]
+          : evaluateSimpleExercise(sourceProblem);
+    const useSourceProblem =
+      Number.isFinite(solved) &&
+      Boolean(strippedProblem) &&
+      (!preferAdvancedMocks || hasAdvancedMockSignal(strippedProblem));
+    const displayProblem = useSourceProblem ? strippedProblem : template.problem;
+    const correctValue = useSourceProblem
+      ? formatNumberForChoice(Number(solved))
+      : template.answer;
+
+    const wrongValues = useSourceProblem
+      ? [
+          ...buildWrongNumericChoicesWithSalt(Number(solved), salt),
+          ...buildWrongNumericChoices(Number(solved)),
+        ]
+          .map((candidate) => formatNumberForChoice(Number(candidate)))
+          .filter((candidate) => candidate && candidate !== correctValue)
+          .filter(
+            (candidate, candidateIndex, items) =>
+              items.indexOf(candidate) === candidateIndex,
+          )
+          .slice(0, 3)
+      : [...template.wrongChoices];
+
+    while (wrongValues.length < 3) {
+      const candidate = formatNumberForChoice(
+        Number(correctValue) + index + wrongValues.length + 1,
+      );
+      if (candidate === correctValue || wrongValues.includes(candidate)) {
+        continue;
+      }
+      wrongValues.push(candidate);
+    }
+
+    const rawChoices = [correctValue, ...wrongValues];
+    const shift = Math.abs(salt) % rawChoices.length;
+    const shiftedChoices = rawChoices
+      .slice(shift)
+      .concat(rawChoices.slice(0, shift));
+    const correctIndex = shiftedChoices.indexOf(correctValue);
+    const mockOrdinal = salt + 1;
+
+    out.push({
+      id: `mcq-mock-${mockOrdinal}`,
+      kind: "mcq",
+      question: buildReadableChoiceQuestionPrompt(displayProblem),
+      choices: shiftedChoices.map(
+        (choice, choiceIndex) => `${labels[choiceIndex]}. ${choice}`,
+      ),
+      correctAnswer: labels[correctIndex >= 0 ? correctIndex : 0] || "A",
+      difficulty: "medium",
+      explanation: useSourceProblem
+        ? `Зөв хариу: ${correctValue}. ${displayProblem}-ийг бодоход ${correctValue}.`
+        : template.explanation,
+      points: 1,
+      sourcePages: Number.isFinite(source?.pageNumber)
+        ? [Number(source?.pageNumber)]
+        : [],
+      bookProblem: displayProblem,
+    });
+  }
+
+  return out;
+}
+
 function buildOpenTaskAnswer(problemText: string) {
   const source = normalizeExerciseLine(problemText);
   if (!source) {
@@ -1933,10 +2347,16 @@ function buildOpenEndedTasks(
   difficultyCounts: { easy: number; hard: number; medium: number },
   fallbackDifficulty: TextbookDifficulty,
   totalScore: number,
+  options: {
+    grade?: number;
+  } = {},
 ) {
   const needed = parseNonNegativeInt(openQuestionCount, 0, 80);
   if (needed <= 0) {
-    return [];
+    return {
+      mockCount: 0,
+      tasks: [],
+    };
   }
 
   const unique = Array.from(
@@ -1963,6 +2383,12 @@ function buildOpenEndedTasks(
   const baseScore = needed > 0 ? Math.trunc(effectiveTotalScore / needed) : 0;
   const remainder = needed > 0 ? effectiveTotalScore % needed : 0;
   const usedKeys = new Set<string>();
+  const mockPool = selectMockOpenTaskTemplatePool({
+    fallbackDifficulty,
+    grade: options.grade,
+  });
+  const shouldPreferMockDifficultyFit = mockPool.length > 0;
+  const usedMockPrompts = new Set<string>();
 
   const pickCandidateByDifficulty = (difficulty: TextbookDifficulty) => {
     const inBand = (complexity: number) => {
@@ -1974,11 +2400,16 @@ function buildOpenEndedTasks(
     const candidates = unique.filter(
       (item) => !usedKeys.has(normalizeProblemKey(item.text)),
     );
-    const match =
-      candidates.find((item) => inBand(item.complexity) && item.answer) ||
-      candidates.find((item) => inBand(item.complexity)) ||
-      candidates.find((item) => item.answer) ||
-      candidates[0];
+    const exactWithAnswer = candidates.find(
+      (item) => inBand(item.complexity) && item.answer,
+    );
+    const exactAny = candidates.find((item) => inBand(item.complexity));
+    const match = shouldPreferMockDifficultyFit
+      ? exactWithAnswer || null
+      : exactWithAnswer ||
+        exactAny ||
+        candidates.find((item) => item.answer) ||
+        candidates[0];
 
     if (match) {
       usedKeys.add(normalizeProblemKey(match.text));
@@ -1986,11 +2417,60 @@ function buildOpenEndedTasks(
     return match;
   };
 
+  const pickMockByDifficulty = (
+    difficulty: TextbookDifficulty,
+    index: number,
+  ) => {
+    if (!mockPool.length) {
+      return null;
+    }
+
+    const availableTemplates = mockPool.filter(
+      (item) =>
+        item.difficulty === difficulty &&
+        !usedMockPrompts.has(item.prompt.trim().toLowerCase()),
+    );
+    const matchingPool = availableTemplates.length > 0
+      ? availableTemplates
+      : mockPool.filter(
+          (item) => !usedMockPrompts.has(item.prompt.trim().toLowerCase()),
+        );
+    const fallbackPool = matchingPool.length > 0 ? matchingPool : mockPool;
+    const template = fallbackPool[index % fallbackPool.length] || null;
+    if (!template) {
+      return null;
+    }
+
+    usedMockPrompts.add(template.prompt.trim().toLowerCase());
+    return template;
+  };
+
   const tasks: GeneratedTextbookOpenTask[] = [];
+  let mockCount = 0;
   for (let index = 0; index < needed; index += 1) {
     const desiredDifficulty = plan[index] || fallbackDifficulty;
     const source = pickCandidateByDifficulty(desiredDifficulty);
+    const mockTask = !source ? pickMockByDifficulty(desiredDifficulty, index) : null;
     const sourceText = String(source?.text || "").trim();
+    const scoreValue =
+      effectiveTotalScore > 0 ? baseScore + (index < remainder ? 1 : 0) : 0;
+
+    if (mockTask) {
+      mockCount += 1;
+      tasks.push({
+        id: `written-${index + 1}`,
+        kind: "written",
+        prompt: mockTask.prompt,
+        difficulty: mockTask.difficulty,
+        score: scoreValue,
+        points: scoreValue,
+        answer: mockTask.answer,
+        sourcePages: [],
+        sourceExcerpt: mockTask.sourceExcerpt,
+      });
+      continue;
+    }
+
     tasks.push({
       id: `written-${index + 1}`,
       kind: "written",
@@ -1998,15 +2478,18 @@ function buildOpenEndedTasks(
         ? `Дараах бодлогыг дэлгэрэнгүй бодоод, аргачлалаа тайлбарлан бич.\n${sourceText}`
         : "Сонгосон сэдвийн хүрээнд ижил төрлийн бодлого зохиож, бодолтын алхмуудаа тайлбарла.",
       difficulty: desiredDifficulty,
-      score: effectiveTotalScore > 0 ? baseScore + (index < remainder ? 1 : 0) : 0,
-      points: effectiveTotalScore > 0 ? baseScore + (index < remainder ? 1 : 0) : 0,
+      score: scoreValue,
+      points: scoreValue,
       answer: String(source?.answer || "").trim(),
       sourcePages: Number.isFinite(source?.pageNumber) ? [Number(source?.pageNumber)] : [],
       sourceExcerpt: sourceText,
     });
   }
 
-  return tasks;
+  return {
+    mockCount,
+    tasks,
+  };
 }
 
 function pickVisiblePages(
@@ -2278,6 +2761,7 @@ export function generateTextbookTest(
   options: GenerateTextbookTestOptions = {},
 ): GeneratedTextbookTest {
   const fallbackDifficulty = normalizeDifficulty(options.fallbackDifficulty || "hard") as TextbookDifficulty;
+  const grade = Number.parseInt(String(options.grade || ""), 10);
   const questionCount = parseNonNegativeInt(options.questionCount, 5, 40);
   const openQuestionCount = parseNonNegativeInt(options.openQuestionCount, 0, 20);
   const totalScore = parseNonNegativeInt(options.totalScore, Math.max(questionCount * 2, 10), 500);
@@ -2352,6 +2836,29 @@ export function generateTextbookTest(
     }
   }
 
+  const preferAdvancedMockTopUp = shouldPreferAdvancedMockTopUp({
+    fallbackDifficulty,
+    grade,
+  });
+
+  if (questions.length < questionCount && preferAdvancedMockTopUp) {
+    const mockTopUp = buildMockSolvedQuestions(
+      selectedExerciseProblems,
+      questionCount - questions.length,
+      questions.length + 2000,
+      {
+        fallbackDifficulty,
+        grade,
+      },
+    );
+    questions = [...questions, ...mockTopUp].slice(0, questionCount);
+    if (mockTopUp.length > 0) {
+      warnings.push(
+        `Тестийн тоог гүйцээхийн тулд ${mockTopUp.length} mock асуултаар нөхлөө.`,
+      );
+    }
+  }
+
   if (questions.length < questionCount) {
     const usedProblemKeys = questions
       .map((question) => normalizeQuestionProblemKey(question))
@@ -2374,8 +2881,22 @@ export function generateTextbookTest(
     }
   }
 
-  if (!questions.length) {
-    throw new Error("Тестийн сонголтот асуултуудыг бүрдүүлж чадсангүй.");
+  if (questions.length < questionCount && !preferAdvancedMockTopUp) {
+    const mockTopUp = buildMockSolvedQuestions(
+      selectedExerciseProblems,
+      questionCount - questions.length,
+      questions.length + 2000,
+      {
+        fallbackDifficulty,
+        grade,
+      },
+    );
+    questions = [...questions, ...mockTopUp].slice(0, questionCount);
+    if (mockTopUp.length > 0) {
+      warnings.push(
+        `Тестийн тоог гүйцээхийн тулд ${mockTopUp.length} mock асуултаар нөхлөө.`,
+      );
+    }
   }
 
   const fittedDifficultyCounts = fitDifficultyCountsToTotal(
@@ -2389,12 +2910,18 @@ export function generateTextbookTest(
     fallbackDifficulty,
   );
 
-  const openQuestions = buildOpenEndedTasks(
+  const {
+    mockCount: mockOpenQuestionCount,
+    tasks: openQuestions,
+  } = buildOpenEndedTasks(
     selectedExerciseProblems,
     openQuestionCount,
     fitDifficultyCountsToTotal(options.difficultyCounts, openQuestionCount, fallbackDifficulty),
     fallbackDifficulty,
     totalScore,
+    {
+      grade,
+    },
   );
 
   if (droppedByDuplicate > 0) {
@@ -2409,6 +2936,14 @@ export function generateTextbookTest(
     warnings.push(
       `Хүссэн ${openQuestionCount} задгай даалгавраас ${openQuestions.length}-ийг л бүрдүүлж чадлаа.`,
     );
+  }
+  if (mockOpenQuestionCount > 0) {
+    warnings.push(
+      `Задгай даалгаврын ${mockOpenQuestionCount}-ийг 9-р ангийн түвшинд тааруулсан mock бодлогоор нөхлөө.`,
+    );
+  }
+  if (!questions.length && !openQuestions.length) {
+    throw new Error("Сонгосон тохиргоогоор тестийн асуултуудыг бүрдүүлж чадсангүй.");
   }
 
   return {

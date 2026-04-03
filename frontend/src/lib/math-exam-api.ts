@@ -124,22 +124,77 @@ export async function requestExtractedExam(
   options?: {
     enhanceFocus?: ExtractExamEnhanceFocus;
     mode?: "enhance" | "fast";
+    onProgress?: (progress: { loaded: number; total?: number }) => void;
   },
 ) {
   const attachments = await Promise.all(
     files.map((file) => serializeAttachment(file)),
   );
-  const response = await fetch("/api/gemini-extract", {
-    body: JSON.stringify({
-      attachments,
-      enhanceFocus: options?.enhanceFocus,
-      mode: options?.mode ?? "fast",
-    }),
-    headers: {
-      "Content-Type": "application/json",
-    },
-    method: "POST",
+  const payload = JSON.stringify({
+    attachments,
+    enhanceFocus: options?.enhanceFocus,
+    mode: options?.mode ?? "fast",
   });
 
-  return parseExamResponse(response, "Файлаас асуултуудыг таньж чадсангүй.");
+  if (!options?.onProgress) {
+    const response = await fetch("/api/gemini-extract", {
+      body: payload,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+
+    return parseExamResponse(response, "Файлаас асуултуудыг таньж чадсангүй.");
+  }
+
+  return new Promise<GeneratedExamPayload>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+
+    request.open("POST", "/api/gemini-extract");
+    request.setRequestHeader("Content-Type", "application/json");
+    request.upload.onprogress = (event) => {
+      options.onProgress?.({
+        loaded: event.loaded,
+        total: event.lengthComputable ? event.total : undefined,
+      });
+    };
+    request.onerror = () => {
+      reject(new Error("Файлаас асуултуудыг таньж чадсангүй."));
+    };
+    request.onload = () => {
+      const contentType = request.getResponseHeader("content-type") ?? "";
+      const rawBody = request.responseText ?? "";
+
+      if (!contentType.includes("application/json")) {
+        if (rawBody.trim().startsWith("<!DOCTYPE") || rawBody.trim().startsWith("<")) {
+          reject(
+            new Error(
+              "API route HTML буцаалаа. Dev server дээр `/api/gemini-extract` эсвэл `/api/gemini-exam` route ажиллаж байгаа эсэхийг шалгана уу.",
+            ),
+          );
+          return;
+        }
+        reject(new Error("Файлаас асуултуудыг таньж чадсангүй."));
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(rawBody) as ExamApiResponse | undefined;
+        if (request.status < 200 || request.status >= 300 || !parsed?.exam) {
+          reject(new Error(parsed?.error || "Файлаас асуултуудыг таньж чадсангүй."));
+          return;
+        }
+        resolve(parsed.exam);
+      } catch (error) {
+        reject(
+          error instanceof Error
+            ? error
+            : new Error("Файлаас асуултуудыг таньж чадсангүй."),
+        );
+      }
+    };
+
+    request.send(payload);
+  });
 }

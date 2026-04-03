@@ -97,9 +97,7 @@ export default function StudentAppPage() {
     approvedAttempts,
     availableStudents,
     averageScore,
-    completedAttempts,
     completedByTestId,
-    completionRate,
     filteredTests,
     hasPendingApprovalAttempts,
     inProgressByTestId,
@@ -111,6 +109,8 @@ export default function StudentAppPage() {
     selectedStudent,
     selectedStudentId,
     setSelectedStudentId,
+    visibleApprovedAttempts,
+    visibleCompletedAttempts,
   } = useStudentDashboardData({ setError });
   const monitoringUserId =
     activeAttempt?.studentId ??
@@ -1186,13 +1186,12 @@ export default function StudentAppPage() {
         <StudentPageShell
           activeSection={activeSection}
           activeTestsCount={activeTestsCount}
-          approvedAttempts={approvedAttempts}
-          approvedAttemptsCount={approvedAttempts.length}
+          approvedAttempts={visibleApprovedAttempts}
+          approvedAttemptsCount={visibleApprovedAttempts.length}
           averageScore={averageScore}
           availableStudents={availableStudents}
-          completedAttemptsLength={completedAttempts.length}
+          completedAttemptsLength={visibleCompletedAttempts.length}
           completedByTestId={completedByTestId}
-          completionRate={completionRate}
           error={error}
           filteredTests={filteredTests}
           inProgressByTestId={inProgressByTestId}

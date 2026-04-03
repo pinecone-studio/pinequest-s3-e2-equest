@@ -2,8 +2,10 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
 import { createDb } from "@/lib/db";
 import { ensureExamSchema } from "@/lib/db/bootstrap";
+import { publishAttemptRealtimeUpdate } from "@/lib/exam-service/realtime";
 import {
   importTeacherCheckedAttempt,
+  invalidateAttemptsSummaryCache,
   type TeacherCheckedAttemptPayload,
 } from "@/lib/exam-service/store";
 
@@ -19,6 +21,9 @@ type RouteEnv = {
   };
   DB: D1Database;
   EXAM_CACHE?: KVNamespace;
+  ABLY_API_KEY?: string;
+  ABLY_CHANNEL_PREFIX?: string;
+  ABLY_REST_URL?: string;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
   OLLAMA_API_KEY?: string;
@@ -72,6 +77,16 @@ export async function POST(request: Request) {
       ollamaBaseUrl: getOllamaBaseUrl(env),
       ollamaModel: getOllamaModel(env),
     });
+    await invalidateAttemptsSummaryCache(env.EXAM_CACHE);
+    await publishAttemptRealtimeUpdate(
+      db,
+      env,
+      payload.attemptId,
+      "attempt.approved",
+      {
+        source: "teacher-submission-result",
+      },
+    );
 
     return NextResponse.json(result, {
       headers: {

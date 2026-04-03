@@ -43,13 +43,6 @@ const MATH_FALLBACK_TIPS = [
 	"Тоонуудыг буруу хуулсан эсэхээ дахин нягтал.",
 	"Завсрын хариугаа эцсийн мөртэйгээ тулгаж шалга.",
 ] as const;
-const GENERAL_FALLBACK_TIPS = [
-	"Гол түлхүүр ойлголтоо дахин нэг сэргээн шалга.",
-	"Асуултын нөхцөл, сонголтоо дахин нягтал.",
-	"Түлхүүр үг, нөхцөл, тоон мэдээллээ анхааралтай унш.",
-	"Эцсийн хариугаа сонгохын өмнө логикоор нь дахин шалга.",
-	"Алдаа гарсан хэсгээ товч тэмдэглээд дахин бодож үз.",
-] as const;
 type FeedbackOptions = {
 	ai?: AiBinding;
 	geminiApiKey?: string;
@@ -424,6 +417,23 @@ const extractSimpleSubtraction = (prompt: string) => {
 	return { left, right, result: left - right };
 };
 
+const buildFormulaRelationReminder = (item: QuestionFeedbackItem) => {
+	if (hasMeaningfulAnswerText(item.correctAnswerText)) {
+		return "";
+	}
+
+	const combined = `${item.prompt} ${item.baseExplanation}`.toLowerCase();
+	const mentionsFormulaRelation =
+		/(томьёо|хамаар|функц|formula|function)/i.test(combined) ||
+		(/[xх]/i.test(combined) && /[yу]/i.test(combined));
+
+	if (!mentionsFormulaRelation) {
+		return "";
+	}
+
+	return "Томьёог уншихдаа аль хувьсагч нь алинаасаа хамаарч байгааг эхэлж зөв тогтоо. Жишээлбэл x-ийг y-ээр илэрхийлсэн бол x нь y-ээс хамаарна.";
+};
+
 const buildFallbackQuestionFeedback = (item: QuestionFeedbackItem) => {
 	const subtraction = extractSimpleSubtraction(item.prompt);
 	const studentNumeric = parseNumericValue(item.selectedAnswerText);
@@ -447,6 +457,11 @@ const buildFallbackQuestionFeedback = (item: QuestionFeedbackItem) => {
 		!item.selectedAnswerText.includes("+ C")
 	) {
 		return `Зөв нь "${item.correctAnswerText}". Интегралын +C-г орхигдуулсан байна.`;
+	}
+
+	const formulaRelationReminder = buildFormulaRelationReminder(item);
+	if (formulaRelationReminder) {
+		return formatConciseQuestionFeedback(formulaRelationReminder, item);
 	}
 
 	const explanation = item.baseExplanation
@@ -603,8 +618,8 @@ export const enrichResultWithQuestionFeedback = async (
 		return result;
 	}
 
-	let feedbackByQuestionId = new Map<string, string>();
-	let feedbackSourceByQuestionId = new Map<string, AiContentSource>();
+	const feedbackByQuestionId = new Map<string, string>();
+	const feedbackSourceByQuestionId = new Map<string, AiContentSource>();
 	const applyGeneratedFeedback = (
 		questionFeedback: QuestionFeedbackResponse["questionFeedback"],
 		source: AiContentSource,

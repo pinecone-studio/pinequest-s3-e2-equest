@@ -135,13 +135,7 @@ export function countSelectedPagesFromMaterial(
   return resolveGenerateSelection(detail, selectedNodeIds).selectedPageNumbers.length;
 }
 
-export function getInitialExpandedChapterIds(detail: TextbookMaterialDetail | null) {
-  if (!detail) {
-    return [];
-  }
-
-  return detail.sections
-    .filter((section) => section.nodeType === "chapter")
-    .slice(0, 2)
-    .map((section) => section.id);
+export function getInitialExpandedChapterIds(_detail: TextbookMaterialDetail | null) {
+  void _detail;
+  return [];
 }

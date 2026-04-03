@@ -8,7 +8,6 @@ import {
 import {
   formatDate,
   matchesStudentClassGroup,
-  testKey,
 } from "./student-page-utils";
 import type {
   AttemptSummary,
@@ -64,13 +63,29 @@ export function useStudentDashboardData({
     [studentAttempts],
   );
 
+  const testsById = useMemo(
+    () => new Map(tests.map((test) => [test.id, test])),
+    [tests],
+  );
+
+  const visibleApprovedAttempts = useMemo(
+    () => approvedAttempts.filter((attempt) => testsById.has(attempt.testId)),
+    [approvedAttempts, testsById],
+  );
+
+  const visibleCompletedAttempts = useMemo(
+    () => completedAttempts.filter((attempt) => testsById.has(attempt.testId)),
+    [completedAttempts, testsById],
+  );
+
   const hasPendingApprovalAttempts = useMemo(
     () =>
       studentAttempts.some(
         (attempt) =>
-          attempt.status === "submitted" || attempt.status === "processing",
+          testsById.has(attempt.testId) &&
+          (attempt.status === "submitted" || attempt.status === "processing"),
       ),
-    [studentAttempts],
+    [studentAttempts, testsById],
   );
 
   const inProgressByTestId = useMemo(() => {
@@ -115,96 +130,75 @@ export function useStudentDashboardData({
   const filteredTests = useMemo(() => {
     if (!selectedStudent) return [];
 
-    const dedupedTests = Array.from(
-      tests
-        .reduce((map, test) => {
-          const key = testKey(test);
-          const existing = map.get(key);
-
-          if (
-            !existing ||
-            new Date(test.updatedAt) > new Date(existing.updatedAt)
-          ) {
-            map.set(key, test);
-          }
-
-          return map;
-        }, new Map<string, TeacherTestSummary>())
-        .values(),
-    );
-    const matchingTests = dedupedTests.filter((test) =>
+    const matchingTests = tests.filter((test) =>
       matchesStudentClassGroup(
         selectedStudent.className,
         test.criteria.className,
         test.criteria.gradeLevel,
       ),
     );
-    const candidateTests = matchingTests.length > 0 ? matchingTests : dedupedTests;
+    const candidateTests = matchingTests.length > 0 ? matchingTests : tests;
 
-    const resumableTest = candidateTests.find((test) =>
-      inProgressByTestId.has(test.id),
-    );
-    if (resumableTest) {
-      return [resumableTest];
-    }
+    return [...candidateTests].sort((left, right) => {
+      const leftInProgress = inProgressByTestId.has(left.id);
+      const rightInProgress = inProgressByTestId.has(right.id);
 
-    const nextAvailableTest = candidateTests.find(
-      (test) => !completedByTestId.has(test.id),
-    );
-    if (nextAvailableTest) {
-      return [nextAvailableTest];
-    }
+      if (leftInProgress !== rightInProgress) {
+        return leftInProgress ? -1 : 1;
+      }
 
-    return candidateTests.slice(0, 1);
+      const leftCompleted = completedByTestId.has(left.id);
+      const rightCompleted = completedByTestId.has(right.id);
+
+      if (leftCompleted !== rightCompleted) {
+        return leftCompleted ? 1 : -1;
+      }
+
+      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+    });
   }, [completedByTestId, inProgressByTestId, selectedStudent, tests]);
 
   const activeTestsCount = filteredTests.filter(
     (test) => !completedByTestId.has(test.id),
   ).length;
 
-  const completionRate = approvedAttempts.length
+  const completionRate = visibleApprovedAttempts.length
     ? Math.round(
-        (approvedAttempts.length /
-          Math.max(
-            1,
-            studentAttempts.filter(
-              (attempt) =>
-                attempt.status === "approved" || attempt.status === "submitted",
-            ).length,
-          )) *
+        (visibleApprovedAttempts.length /
+          Math.max(1, visibleCompletedAttempts.length)) *
           100,
       )
     : 0;
 
-  const averageScore = approvedAttempts.length
+  const averageScore = visibleApprovedAttempts.length
     ? Math.round(
-        approvedAttempts.reduce(
+        visibleApprovedAttempts.reduce(
           (sum, attempt) => sum + (attempt.percentage ?? 0),
           0,
-        ) / approvedAttempts.length,
+        ) / visibleApprovedAttempts.length,
       )
     : 0;
 
   const passedAttemptsCount = useMemo(
     () =>
-      approvedAttempts.filter((attempt) => (attempt.percentage ?? 0) >= 60)
-        .length,
-    [approvedAttempts],
+      visibleApprovedAttempts.filter(
+        (attempt) => (attempt.percentage ?? 0) >= 60,
+      ).length,
+    [visibleApprovedAttempts],
   );
 
-  const passRate = completedAttempts.length
-    ? Math.round((passedAttemptsCount / completedAttempts.length) * 100)
+  const passRate = visibleCompletedAttempts.length
+    ? Math.round((passedAttemptsCount / visibleCompletedAttempts.length) * 100)
     : 0;
-
-  const testsById = useMemo(
-    () => new Map(tests.map((test) => [test.id, test])),
-    [tests],
-  );
 
   const resultRows = useMemo(
     (): ResultRow[] =>
-      completedAttempts.map((attempt) => {
+      visibleCompletedAttempts.flatMap((attempt) => {
         const mappedTest = testsById.get(attempt.testId);
+        if (!mappedTest) {
+          return [];
+        }
+
         const scoreText =
           attempt.score != null && attempt.maxScore != null
             ? `${attempt.score}/${attempt.maxScore}`
@@ -212,19 +206,19 @@ export function useStudentDashboardData({
               ? `${attempt.percentage}%`
               : "-";
 
-        return {
+        return [{
           attemptId: attempt.attemptId,
           examName: attempt.title,
-          subject: mappedTest?.criteria.subject ?? "Ерөнхий",
+          subject: mappedTest.criteria.subject,
           className: selectedStudent?.className ?? "-",
           isApproved: attempt.status === "approved",
           teacher: "С.Жаргалмаа",
           startedAt: formatDate(attempt.startedAt),
           finishedAt: formatDate(attempt.submittedAt ?? attempt.startedAt),
           scoreText,
-        };
+        }];
       }),
-    [completedAttempts, selectedStudent, testsById],
+    [selectedStudent, testsById, visibleCompletedAttempts],
   );
 
   const applyDashboardPayload = useCallback((payload: {
@@ -352,5 +346,7 @@ export function useStudentDashboardData({
     selectedStudentId,
     setSelectedStudentId,
     tests,
+    visibleApprovedAttempts,
+    visibleCompletedAttempts,
   };
 }

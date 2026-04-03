@@ -62,6 +62,8 @@ export type DashboardPayload = {
 
 const STUDENTS_CACHE_TTL_MS = 60_000;
 const DASHBOARD_CACHE_TTL_MS = 10_000;
+const EXTERNAL_EXAM_SYNC_TTL_MS = 60_000;
+const EXTERNAL_EXAM_SYNC_ERROR_BACKOFF_MS = 15_000;
 
 let studentsCache:
   | {
@@ -78,6 +80,8 @@ let dashboardCache:
     }
   | null = null;
 let dashboardRequestInFlight: Promise<DashboardPayload> | null = null;
+let externalExamSyncExpiresAt = 0;
+let externalExamSyncRequestInFlight: Promise<void> | null = null;
 let proctoringUploadCapability: "unknown" | "direct-upload" | "inline-fallback" =
   "unknown";
 let loggedInlineFallbackReason: string | null = null;
@@ -146,6 +150,40 @@ const resolveProctoringRouteUrl = (path: string) => {
     return new URL(path, configuredBaseUrl).toString();
   } catch {
     return path;
+  }
+};
+
+const syncExternalExamsIfNeeded = async (options?: { force?: boolean }) => {
+  if (USE_MOCK_DATA) {
+    return;
+  }
+
+  if (!options?.force && externalExamSyncExpiresAt > Date.now()) {
+    return;
+  }
+
+  if (externalExamSyncRequestInFlight) {
+    return externalExamSyncRequestInFlight;
+  }
+
+  externalExamSyncRequestInFlight = (async () => {
+    try {
+      await gqlRequest(SyncExternalNewMathExamsDocument, { limit: 20 });
+      externalExamSyncExpiresAt = Date.now() + EXTERNAL_EXAM_SYNC_TTL_MS;
+    } catch (error) {
+      externalExamSyncExpiresAt =
+        Date.now() + EXTERNAL_EXAM_SYNC_ERROR_BACKOFF_MS;
+      console.error(
+        "Failed to sync external exams before loading student dashboard:",
+        error,
+      );
+    }
+  })();
+
+  try {
+    await externalExamSyncRequestInFlight;
+  } finally {
+    externalExamSyncRequestInFlight = null;
   }
 };
 
@@ -703,34 +741,8 @@ export const loadDashboardPayload = async (
   }
 
   dashboardRequestInFlight = (async () => {
+    await syncExternalExamsIfNeeded(options);
     const data = await gqlRequest(GetStudentDashboardDocument);
-
-    if (data.availableTests.length > 0) {
-      const nextPayload = mapDashboardPayload(data);
-      dashboardCache = {
-        expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
-        value: nextPayload,
-      };
-      return nextPayload;
-    }
-
-    try {
-      await gqlRequest(SyncExternalNewMathExamsDocument, { limit: 1 });
-      const syncedData = await gqlRequest(GetStudentDashboardDocument);
-
-      const nextPayload = mapDashboardPayload(syncedData);
-      dashboardCache = {
-        expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
-        value: nextPayload,
-      };
-      return nextPayload;
-    } catch (error) {
-      console.error(
-        "Failed to sync external exams before loading dashboard:",
-        error,
-      );
-    }
-
     const nextPayload = mapDashboardPayload(data);
     dashboardCache = {
       expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,

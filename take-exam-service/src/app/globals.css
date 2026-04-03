@@ -127,6 +127,20 @@
   html {
     @apply font-sans;
 	}
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  input[type="button"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="reset"]:not(:disabled) {
+		cursor: pointer;
+	}
+  button:disabled,
+  [role="button"][aria-disabled="true"],
+  input[type="button"]:disabled,
+  input[type="submit"]:disabled,
+  input[type="reset"]:disabled {
+		cursor: not-allowed;
+	}
 }
 
 @keyframes status-dot-core {
@@ -199,4 +213,9 @@
 	margin: 0.35rem 0;
 	overflow-x: auto;
 	overflow-y: hidden;
+}
+
+.math-text .katex .mathnormal {
+	font-family: KaTeX_Main, "Times New Roman", serif;
+	font-style: normal;
 }

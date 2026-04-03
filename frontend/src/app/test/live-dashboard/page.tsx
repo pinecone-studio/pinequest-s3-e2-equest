@@ -342,7 +342,7 @@ export default function ExamMonitoringApp() {
     let cleanup: (() => void) | null = null;
     setAblyStatus({
       lastCheckedAt: new Date().toISOString(),
-      state: "connecting",
+      state: "checking",
     });
 
     const scheduleRealtimeRefresh = () => {
@@ -390,8 +390,13 @@ export default function ExamMonitoringApp() {
           }
 
           const timestamp = new Date().toISOString();
+          const nextState = normalizeAblyConnectionState(change.current);
 
-          if (change.current === "connected") {
+          if (!nextState) {
+            return;
+          }
+
+          if (nextState === "connected") {
             setAblyStatus({
               lastCheckedAt: timestamp,
               state: "connected",
@@ -399,15 +404,15 @@ export default function ExamMonitoringApp() {
             return;
           }
 
-          if (change.current === "connecting") {
+          if (nextState === "connecting" || nextState === "checking") {
             setAblyStatus({
               lastCheckedAt: timestamp,
-              state: "connecting",
+              state: nextState,
             });
             return;
           }
 
-          if (change.current === "failed") {
+          if (nextState === "failed") {
             setAblyStatus({
               error: change.reason?.message ?? "Ably auth эсвэл network алдаа.",
               lastCheckedAt: timestamp,
@@ -419,7 +424,7 @@ export default function ExamMonitoringApp() {
           setAblyStatus({
             error: change.reason?.message,
             lastCheckedAt: timestamp,
-            state: "disconnected",
+            state: nextState,
           });
         };
         let didDisposeRealtime = false;
@@ -464,6 +469,10 @@ export default function ExamMonitoringApp() {
             channel.subscribe(eventName, handleRealtimeMessage);
           }
           realtime.connection.on(handleConnectionState);
+          handleConnectionState({
+            current: realtime.connection.state,
+            reason: realtime.connection.errorReason ?? undefined,
+          });
         } catch (error) {
           setAblyStatus({
             error:
@@ -756,6 +765,28 @@ function getConnectionDotClass(state: AblyConnectionStatus["state"]): string {
       return "bg-danger";
     default:
       return "bg-muted-foreground/40";
+  }
+}
+
+function normalizeAblyConnectionState(
+  state?: string,
+): AblyConnectionStatus["state"] | null {
+  switch (state) {
+    case "connected":
+      return "connected";
+    case "connecting":
+      return "connecting";
+    case "initialized":
+    case "closing":
+    case "closed":
+      return "checking";
+    case "disconnected":
+    case "suspended":
+      return "disconnected";
+    case "failed":
+      return "failed";
+    default:
+      return state ? "checking" : null;
   }
 }
 

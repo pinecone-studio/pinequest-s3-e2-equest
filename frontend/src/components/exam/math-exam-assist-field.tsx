@@ -56,6 +56,7 @@ type MathAssistFieldProps = {
   placeholder?: string;
   previewDisplayMode?: boolean;
   previewForceMath?: boolean;
+  disableRichPreview?: boolean;
   secondaryAction?: {
     active?: boolean;
     icon: ReactNode;
@@ -73,6 +74,7 @@ export function MathAssistField({
   placeholder,
   previewDisplayMode = false,
   previewForceMath = false,
+  disableRichPreview = false,
   secondaryAction,
   value,
 }: MathAssistFieldProps) {
@@ -116,7 +118,8 @@ export function MathAssistField({
       }),
     [normalizedValue, previewDisplayMode, previewForceMath],
   );
-  const usesRenderedMathEditor = previewForceMath || mathSegments.length > 0;
+  const usesRenderedMathEditor =
+    !disableRichPreview && (previewForceMath || mathSegments.length > 0);
   const supportsWholeRichTextEditor = multiline && !usesRenderedMathEditor;
   const supportsActiveTextFormatting =
     supportsWholeRichTextEditor || activeTextIndex !== null;
@@ -693,11 +696,12 @@ export function MathAssistField({
     activeMathIndex !== null ||
     activeTextIndex !== null;
   const shouldShowRenderedPreview =
-    hasActiveRenderedEditor ||
-    (!isEditing &&
-      !isKeyboardOpen &&
-      activeMathIndex === null &&
-      Boolean(editableValue.trim()));
+    !disableRichPreview &&
+    (hasActiveRenderedEditor ||
+      (!isEditing &&
+        !isKeyboardOpen &&
+        activeMathIndex === null &&
+        Boolean(editableValue.trim())));
   const shouldShowLivePreview =
     !usesRenderedMathEditor &&
     (isEditing ||
@@ -709,10 +713,10 @@ export function MathAssistField({
   const topFieldClassName = cn(
     multiline ? "flex min-h-16 w-full" : "flex min-h-8 w-full items-center",
     hasActiveRenderedEditor
-      ? "rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 pr-12"
+      ? "cursor-text rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 pr-12"
       : multiline
-        ? "rounded-lg border border-input bg-transparent px-2.5 py-2 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30"
-        : "rounded-lg border border-input bg-transparent px-2.5 py-1 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30",
+        ? "cursor-text rounded-lg border border-input bg-transparent px-2.5 py-2 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30"
+        : "cursor-text rounded-lg border border-input bg-transparent px-2.5 py-1 pr-12 text-left text-base transition-colors outline-none hover:border-ring md:text-sm dark:bg-input/30",
     className,
   );
 

@@ -28,7 +28,6 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogMedia,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
@@ -485,31 +484,28 @@ export function TeacherExamGallery({
       >
         <AlertDialogContent
           size="sm"
-          className="rounded-[24px] border border-[#e7d7d7] bg-white p-0 shadow-[0_30px_80px_-28px_rgba(15,23,42,0.28)]"
+          className="rounded-[24px] border border-[#e2e8f0] bg-white p-0 shadow-[0_24px_80px_rgba(15,23,42,0.16)]"
         >
-          <AlertDialogHeader className="px-6 py-6 text-left">
-            <AlertDialogMedia className="mb-0 rounded-full bg-[#fef2f2] text-[#dc2626]">
-              <Trash2 className="h-5 w-5" />
-            </AlertDialogMedia>
-            <AlertDialogTitle className="w-full text-[20px] font-semibold text-slate-900 sm:text-left">
+          <AlertDialogHeader className="items-start gap-2 px-6 pb-0 pt-6 text-left">
+            <AlertDialogTitle className="w-full text-left text-[20px] font-semibold text-slate-900 sm:text-left">
               Шалгалтыг устгах уу?
             </AlertDialogTitle>
-            <AlertDialogDescription className="mt-2 w-full text-[14px] leading-6 text-slate-500 sm:text-left">
+            <AlertDialogDescription className="w-full text-left text-[14px] leading-6 text-slate-500 sm:text-left">
               <span className="font-semibold text-slate-700">
                 {deleteTargetExam?.title ?? "Сонгосон шалгалт"}
               </span>{" "}
               шалгалтыг устгавал буцааж сэргээх боломжгүй. Үргэлжлүүлэх үү?
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="!mx-0 !mb-0 !grid !grid-cols-2 !border-t-0 !bg-transparent gap-4 rounded-b-[24px] px-6 py-5 sm:!grid sm:!grid-cols-2 sm:justify-stretch">
+          <AlertDialogFooter className="!mx-0 !mb-0 !grid !grid-cols-2 gap-3 border-t border-[#eef2f7] bg-white px-6 pb-6 pt-5 sm:!grid sm:!grid-cols-2 sm:justify-stretch">
             <AlertDialogCancel
-              className="h-12 w-full min-w-0 rounded-[14px] border border-[#d9e2ec] bg-white px-4 text-[15px] font-semibold text-slate-800 shadow-none hover:bg-slate-50"
+              className="h-11 w-full min-w-0 rounded-[14px] border border-[#dbe4f3] bg-white px-4 text-[15px] font-semibold text-slate-700 shadow-none hover:bg-slate-50"
               onClick={() => setDeleteTargetExam(null)}
             >
-              Болих
+              Буцах
             </AlertDialogCancel>
             <AlertDialogAction
-              className="h-12 w-full min-w-0 rounded-[14px] border border-[#1976d2] bg-[#1976d2] px-4 text-[15px] font-semibold text-white shadow-none hover:border-[#0f66c2] hover:bg-[#0f66c2]"
+              className="h-11 w-full min-w-0 rounded-[14px] border border-[#dc2626] bg-[#dc2626] px-4 text-[15px] font-semibold text-white shadow-none hover:border-[#b91c1c] hover:bg-[#b91c1c]"
               onClick={() => {
                 toast.info(
                   "Устгах серверийн action хараахан холбогдоогүй байна.",

@@ -48,6 +48,7 @@ import {
 } from "@/gql/create-exam-documents";
 import { Difficulty, QuestionFormat } from "@/gql/graphql";
 import { requestExtractedExam } from "@/lib/math-exam-api";
+import { confirmDeleteAction } from "@/lib/confirm-destructive-action";
 import { cn } from "@/lib/utils";
 import {
   explanationClassName,
@@ -691,7 +692,16 @@ function QuestionBankPanel({
     setAnswers((prev) => [...prev, ""]);
   }
 
-  function handleRemoveAnswer(index: number) {
+  async function handleRemoveAnswer(index: number) {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ хариултыг",
+        "Сонгосон хариултын мөр устна.",
+      ))
+    ) {
+      return;
+    }
+
     setAnswers((prev) => {
       const next = prev.filter((_, itemIndex) => itemIndex !== index);
       if (next.length === 0) return [""];
@@ -1512,7 +1522,27 @@ export function MaterialBuilderWorkspaceSection({
     }));
   }
 
-  function handleRemoveImportedAnswer(questionId: string, answerIndex: number) {
+  async function handleRemoveImportedAnswer(
+    questionId: string,
+    answerIndex: number,
+  ) {
+    const question = importedDocument?.questions.find(
+      (item) => item.id === questionId,
+    );
+
+    if (!question || question.kind === "written" || question.answers.length <= 2) {
+      return;
+    }
+
+    if (
+      !(await confirmDeleteAction(
+        "Энэ хариултыг",
+        "Импортолсон асуултын энэ сонголт устна.",
+      ))
+    ) {
+      return;
+    }
+
     handleUpdateImportedQuestion(questionId, (question) => {
       if (question.kind === "written") {
         return question;
@@ -1660,7 +1690,16 @@ export function MaterialBuilderWorkspaceSection({
     });
   }
 
-  function handleRemoveQuestion(id: string) {
+  async function handleRemoveQuestion(id: string) {
+    if (
+      !(await confirmDeleteAction(
+        "Энэ асуултыг",
+        "Шалгалтын асуултын жагсаалтаас хасагдана.",
+      ))
+    ) {
+      return;
+    }
+
     setPreviewQuestions((prev) =>
       reindexQuestions(prev.filter((question) => question.id !== id)),
     );

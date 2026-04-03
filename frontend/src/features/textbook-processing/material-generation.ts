@@ -25,6 +25,7 @@ type GenerationOptions = {
     hard?: number;
   };
   fallbackDifficulty?: "easy" | "medium" | "hard";
+  grade?: number;
   openQuestionCount?: number;
   questionCount?: number;
   totalScore?: number;

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  ArrowUpRight,
   ArrowRight,
   BookOpen,
   CalendarClock,
@@ -54,6 +55,10 @@ import {
   formatQuestionPrompt,
 } from "./student-page-utils";
 
+const TEACHER_PORTAL_URL =
+  process.env.NEXT_PUBLIC_TEACHER_PORTAL_URL?.trim() ||
+  "https://frontend.tsetsegulziiocherdene.workers.dev/test/live-dashboard";
+
 export type NavigationSection = "dashboard" | "tests" | "results";
 
 export type ResultRow = {
@@ -70,6 +75,7 @@ export type ResultRow = {
 
 type ResultCardsGridProps = {
   attemptsById: Map<string, AttemptSummary>;
+  highlightedAttemptId: string | null;
   rows: ResultRow[];
   onOpenAttempt: (attemptId: string) => void;
 };
@@ -82,7 +88,6 @@ type StudentPageShellProps = {
   averageScore: number;
   availableStudents: StudentInfo[];
   completedAttemptsLength: number;
-  completionRate: number;
   completedByTestId: Map<string, AttemptSummary>;
   error: string | null;
   filteredTests: TeacherTestSummary[];
@@ -109,6 +114,12 @@ type StatCardProps = {
   icon: LucideIcon;
   title: string;
   value: string;
+};
+
+type ExamsSectionHeaderProps = {
+  indicatorClassName: string;
+  subtitle: string;
+  title: string;
 };
 
 type FeedbackPanelProps = {
@@ -321,28 +332,51 @@ function StatCard({
   value,
 }: StatCardProps) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-[0_6px_16px_rgba(15,23,42,0.04)] sm:p-5">
+    <article className="rounded-[28px] border border-[#c8d4e6] bg-white p-5 shadow-[0_10px_24px_rgba(148,163,184,0.08)]">
       <div className="flex items-center justify-between">
-        <p className="text-[13px] text-slate-500 sm:text-sm">{title}</p>
-        <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#e6f5fd] text-[#1a9cdc] sm:h-11 sm:w-11 sm:rounded-xl">
-          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+        <p className="text-sm font-medium text-slate-500">{title}</p>
+        <span className="grid h-16 w-16 place-items-center rounded-3xl bg-[#e6f5fd] text-[#1a9cdc]">
+          <Icon className="h-7 w-7" />
         </span>
       </div>
       {emptyMessage ? (
-        <p className="mt-2.5 text-[13px] font-medium leading-5 text-slate-500 sm:mt-3 sm:text-sm">
+        <p className="mt-3 text-sm font-medium leading-6 text-slate-500">
           {emptyMessage}
         </p>
       ) : (
         <>
-          <p className="mt-2.5 text-xl font-bold leading-none text-slate-900 sm:mt-3 sm:text-2xl">
+          <p className="mt-3 text-[30px] font-bold leading-none text-slate-950">
             {value}
           </p>
-          <p className="mt-1 text-[11px] text-slate-500 sm:text-xs">
+          <p className="mt-2 text-sm text-slate-500">
             {caption}
           </p>
         </>
       )}
     </article>
+  );
+}
+
+function ExamsSectionHeader({
+  indicatorClassName,
+  subtitle,
+  title,
+}: ExamsSectionHeaderProps) {
+  return (
+    <div className="flex items-start gap-4">
+      <span
+        className={cn(
+          "mt-3 h-7 w-7 shrink-0 rounded-full",
+          indicatorClassName,
+        )}
+      />
+      <div>
+        <h3 className="text-2xl font-bold tracking-tight text-slate-950">
+          {title}
+        </h3>
+        <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+      </div>
+    </div>
   );
 }
 
@@ -361,9 +395,30 @@ function PortalBrand({
           hideLabelOnMobile ? "hidden lg:block" : ""
         }`}
       >
-        Сурагч
+        Сурагч Портал
       </p>
     </>
+  );
+}
+
+function TeacherPortalShortcut({ compact = false }: { compact?: boolean }) {
+  return (
+    <a
+      href={TEACHER_PORTAL_URL}
+      target="_blank"
+      rel="noreferrer"
+      className={cn(
+        "flex items-center rounded-2xl border border-[#d6e5f7] bg-[#f8fbff] py-3 text-left text-[15px] font-semibold text-[#0b5cab] transition-[background-color,color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[#eef5ff]",
+        compact ? "h-14 w-14 justify-center px-0" : "w-full gap-3 px-4",
+      )}
+      aria-label="Багшийн портал нээх"
+      title={compact ? "Багшийн портал нээх" : undefined}
+    >
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+        <ArrowUpRight className="h-5 w-5 shrink-0" />
+      </span>
+      {compact ? null : <span>Багшийн портал нээх</span>}
+    </a>
   );
 }
 
@@ -399,7 +454,7 @@ function NavigationItems({
   ];
 
   return (
-    <nav className="space-y-1">
+    <nav className="space-y-2">
       {items.map(({ badge, icon: Icon, label, section }) => {
         const isActive = activeSection === section;
 
@@ -409,16 +464,16 @@ function NavigationItems({
             type="button"
             onClick={() => onSectionChange(section)}
             aria-current={isActive ? "page" : undefined}
-            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-medium transition sm:text-sm ${
+            className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-[15px] font-semibold transition ${
               isActive
-                ? "bg-[#e6f5fd] text-[#1287c7]"
-                : "text-slate-700 hover:bg-slate-100"
+                ? "border-[#9fd8f7] bg-[#dff1fe] text-[#0f7db6] shadow-[0_0_0_1px_rgba(159,216,247,0.35)]"
+                : "border-transparent text-slate-700 hover:bg-slate-100"
             }`}
           >
-            <Icon className="h-4 w-4 shrink-0" />
+            <Icon className="h-5 w-5 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{label}</span>
             {typeof badge === "number" ? (
-              <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-200 px-1 text-[11px] font-semibold text-slate-700">
+              <span className="ml-auto inline-flex min-w-7 items-center justify-center rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700">
                 {badge}
               </span>
             ) : null}
@@ -432,23 +487,27 @@ function NavigationItems({
 type TestCardsGridProps = {
   completedByTestId: Map<string, AttemptSummary>;
   emptyMessage: string;
-  filteredTests: TeacherTestSummary[];
   inProgressByTestId: Map<string, AttemptSummary>;
   isMutating: boolean;
   selectedStudent: StudentInfo | null;
+  tests: TeacherTestSummary[];
+  variant: "active" | "completed";
   onResumeExam: (attemptId: string) => void;
   onStartExam: (testId: string) => void;
+  onViewResults: (attemptId: string) => void;
 };
 
 function TestCardsGrid({
   completedByTestId,
   emptyMessage,
-  filteredTests,
   inProgressByTestId,
   isMutating,
   selectedStudent,
+  tests,
+  variant,
   onResumeExam,
   onStartExam,
+  onViewResults,
 }: TestCardsGridProps) {
   const [now, setNow] = useState(Date.now());
   const mockStartTimesRef = useRef<Record<string, number>>({});
@@ -464,14 +523,14 @@ function TestCardsGrid({
   useEffect(() => {
     const nextStartTimes = { ...mockStartTimesRef.current };
 
-    filteredTests.forEach((test, index) => {
+    tests.forEach((test, index) => {
       if (!nextStartTimes[test.id]) {
         nextStartTimes[test.id] = Date.now() + (index + 2) * 60 * 60 * 1000;
       }
     });
 
     mockStartTimesRef.current = nextStartTimes;
-  }, [filteredTests]);
+  }, [tests]);
 
   if (!selectedStudent) {
     return (
@@ -481,7 +540,7 @@ function TestCardsGrid({
     );
   }
 
-  if (filteredTests.length === 0) {
+  if (tests.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-[13px] text-slate-500 sm:rounded-2xl sm:p-8 sm:text-sm">
         {emptyMessage}
@@ -490,8 +549,8 @@ function TestCardsGrid({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      {filteredTests.map((test, index) => {
+    <div className="grid gap-5 xl:grid-cols-2">
+      {tests.map((test, index) => {
         const resumableAttempt = inProgressByTestId.get(test.id);
         const completedAttempt = completedByTestId.get(test.id);
         const mockStartAt =
@@ -511,72 +570,85 @@ function TestCardsGrid({
           countdownHours > 0
             ? `${countdownHours}:${String(countdownMinutes).padStart(2, "0")}:${String(countdownSeconds).padStart(2, "0")}`
             : `${countdownMinutes}:${String(countdownSeconds).padStart(2, "0")}`;
+        const isCompletedCard = variant === "completed";
+        const canViewResults = Boolean(completedAttempt);
 
         return (
           <article
             key={test.id}
-            className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-3.5 pt-4 shadow-[0_6px_22px_rgba(15,23,42,0.06)] sm:rounded-2xl sm:p-5 sm:pt-6"
+            className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 pt-8 shadow-[0_12px_30px_rgba(148,163,184,0.14)]"
           >
-            <div className="absolute inset-x-0 top-0 h-1 bg-[#59c9ee]" />
-            <div className="space-y-2.5 sm:space-y-3">
+            <div
+              className={cn(
+                "absolute inset-x-0 top-0 h-1.5",
+                isCompletedCard ? "bg-[#94a3b8]" : "bg-[#4fc9f5]",
+              )}
+            />
+            <div className="space-y-4">
               <div className="flex items-start justify-between gap-3">
-                <h3 className="text-[15px] font-semibold text-slate-900 sm:text-lg">
+                <h3 className="pr-4 text-[17px] font-bold text-slate-950 sm:text-[18px]">
                   {test.title}
                 </h3>
-                <div className="shrink-0 rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-right shadow-[0_6px_16px_rgba(14,116,144,0.08)] sm:rounded-2xl sm:px-3 sm:py-2">
-                  <p className="mt-1 text-[11px] font-semibold text-sky-900 sm:text-xs">
-                    {mockCountdownLabel}
-                  </p>
-                  {/* <p className="text-[11px] text-sky-700/80">дараа эхэлнэ</p> */}
+                <div
+                  className={cn(
+                    "shrink-0 rounded-full px-4 py-2 text-sm font-semibold",
+                    isCompletedCard
+                      ? "bg-slate-100 text-slate-700"
+                      : "border border-sky-200 bg-sky-50 text-slate-900",
+                  )}
+                >
+                  {isCompletedCard ? "Дууссан" : mockCountdownLabel}
                 </div>
               </div>
-              {completedAttempt && (
-                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 sm:text-xs">
-                  Дууссан
-                </span>
-              )}
-              <p className="flex items-center gap-2 text-[13px] text-slate-500 sm:text-sm">
+              <p className="flex items-center gap-2 text-sm text-slate-500">
                 <BookOpen className="h-4 w-4" />
                 {test.criteria.subject}
               </p>
-              <p className="flex items-center gap-2 text-[11px] text-slate-500 sm:text-xs">
-                <Clock3 className="h-4 w-4" />
-                Үргэлжлэх хугацаа: {estimateDurationMinutes(test)} мин
-              </p>
-              <p className="flex items-center gap-2 text-[11px] text-slate-500 sm:text-xs">
-                <CalendarClock className="h-4 w-4" />
-                Эхлэх хугацаа:{" "}
-                {formatDate(new Date(displayStartAt).toISOString())}
-              </p>
+              <div className="space-y-3 pt-6 text-sm text-slate-500">
+                <p className="flex items-center gap-2">
+                  <Clock3 className="h-4 w-4" />
+                  {estimateDurationMinutes(test)} мин
+                </p>
+                <p className="flex items-center gap-2">
+                  <CalendarClock className="h-4 w-4" />
+                  Хаагдах хугацаа: {formatDate(test.updatedAt)}
+                </p>
+              </div>
             </div>
 
-            {resumableAttempt ? (
+            {isCompletedCard ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (completedAttempt) {
+                    onViewResults(completedAttempt.attemptId);
+                  }
+                }}
+                disabled={!canViewResults}
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#98aac3] px-4 py-3.5 text-[15px] font-semibold text-white transition hover:bg-[#8194af] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Шалгалтын дүн харах
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            ) : resumableAttempt ? (
               <button
                 onClick={() => onResumeExam(resumableAttempt.attemptId)}
                 disabled={isMutating}
-                className="mt-3.5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#18a7eb] px-4 py-2.5 text-[13px] font-semibold text-white transition hover:bg-[#0f95d6] disabled:cursor-not-allowed disabled:opacity-60 sm:mt-4 sm:text-sm"
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#18a7eb] px-4 py-3.5 text-[15px] font-semibold text-white transition hover:bg-[#0f95d6] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isMutating ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <RotateCcw className="h-4 w-4" />
                 )}
-                Үргэлжлүүлэх
+                Шалгалт үргэлжлүүлэх
                 <ArrowRight className="h-4 w-4" />
-              </button>
-            ) : completedAttempt ? (
-              <button
-                disabled={true}
-                className="mt-3.5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-2.5 text-[13px] font-semibold text-slate-500 sm:mt-4 sm:text-sm"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                Өгсөн шалгалт
               </button>
             ) : (
               <button
                 onClick={() => onStartExam(test.id)}
                 disabled={isMutating}
-                className="mt-3.5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#18a7eb] px-4 py-2.5 text-[13px] font-semibold text-white transition hover:bg-[#0f95d6] disabled:cursor-not-allowed disabled:opacity-60 sm:mt-4 sm:text-sm"
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#18a7eb] px-4 py-3.5 text-[15px] font-semibold text-white transition hover:bg-[#0f95d6] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isMutating ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -594,6 +666,7 @@ function TestCardsGrid({
 
 function ResultCardsGrid({
   attemptsById,
+  highlightedAttemptId,
   rows,
   onOpenAttempt,
 }: ResultCardsGridProps) {
@@ -626,12 +699,18 @@ function ResultCardsGrid({
             {rows.map((row) => {
               const attempt = attemptsById.get(row.attemptId);
               const isClickable = Boolean(attempt && row.isApproved);
+              const isHighlighted = highlightedAttemptId === row.attemptId;
 
               return (
                 <tr
+                  id={`result-row-${row.attemptId}`}
                   key={row.attemptId}
-                  className={`border-t border-slate-200 text-[12px] text-slate-800 sm:text-sm ${
-                    row.isApproved ? "bg-emerald-50/40" : "bg-white"
+                  className={`border-t border-slate-200 text-[12px] text-slate-800 transition sm:text-sm ${
+                    isHighlighted
+                      ? "bg-sky-50/80 outline-2 -outline-offset-2 outline-sky-300"
+                      : row.isApproved
+                        ? "bg-emerald-50/40"
+                        : "bg-white"
                   }`}
                 >
                   <td className="px-3 py-3 font-medium text-slate-900 sm:px-4 sm:py-4">
@@ -688,7 +767,6 @@ export function StudentPageShell({
   availableStudents,
   completedAttemptsLength,
   completedByTestId,
-  completionRate,
   error,
   filteredTests,
   inProgressByTestId,
@@ -709,6 +787,9 @@ export function StudentPageShell({
 }: StudentPageShellProps) {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isStudentMenuOpen, setIsStudentMenuOpen] = useState(false);
+  const [highlightedResultAttemptId, setHighlightedResultAttemptId] = useState<
+    string | null
+  >(null);
   const [selectedResultAttemptId, setSelectedResultAttemptId] = useState<
     string | null
   >(null);
@@ -726,6 +807,14 @@ export function StudentPageShell({
     (selectedResultAttemptId
       ? approvedAttemptById.get(selectedResultAttemptId)
       : null) ?? null;
+  const activeTests = useMemo(
+    () => filteredTests.filter((test) => !completedByTestId.has(test.id)),
+    [completedByTestId, filteredTests],
+  );
+  const completedTests = useMemo(
+    () => filteredTests.filter((test) => completedByTestId.has(test.id)),
+    [completedByTestId, filteredTests],
+  );
   const hasResultAttempts = completedAttemptsLength > 0;
   const isResultApprovalPending =
     completedAttemptsLength > 0 && approvedAttemptsCount === 0;
@@ -741,20 +830,40 @@ export function StudentPageShell({
     return () => window.removeEventListener("mousedown", closeOnOutside);
   }, []);
 
+  useEffect(() => {
+    if (activeSection !== "results" || !highlightedResultAttemptId) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const target = document.getElementById(
+        `result-row-${highlightedResultAttemptId}`,
+      );
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeSection, highlightedResultAttemptId]);
+
   const handleSectionChange = (section: NavigationSection) => {
     onSectionChange(section);
     setIsMobileNavOpen(false);
     setIsStudentMenuOpen(false);
   };
 
+  const handleViewResults = (attemptId: string) => {
+    setHighlightedResultAttemptId(attemptId);
+    handleSectionChange("results");
+  };
+
   return (
-    <div className="h-screen overflow-hidden bg-[#eceff3] px-0">
-      <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col lg:grid lg:grid-cols-[228px_1fr] lg:grid-rows-[58px_minmax(0,1fr)]">
-        <aside className="hidden items-center gap-3 border-r border-b border-slate-200 bg-white px-3 lg:row-start-1 lg:col-start-1 lg:flex">
+    <div className="h-screen overflow-hidden bg-[#eef3f8] px-0">
+      <div className="mx-auto flex h-full w-full max-w-[1440px] flex-col border border-slate-200/90 bg-white lg:grid lg:grid-cols-[240px_1fr] lg:grid-rows-[80px_minmax(0,1fr)]">
+        <aside className="hidden items-center gap-4 border-r border-b border-slate-200 bg-white px-4 lg:row-start-1 lg:col-start-1 lg:flex">
           <PortalBrand />
         </aside>
 
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3 lg:row-start-1 lg:col-start-2 lg:px-6 lg:py-0">
+        <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:px-5 lg:row-start-1 lg:col-start-2 lg:px-8 lg:py-0">
           <div className="flex min-w-0 items-center gap-3">
             <div className="lg:hidden">
               <PortalBrand hideLabelOnMobile={true} />
@@ -771,9 +880,9 @@ export function StudentPageShell({
               <button
                 type="button"
                 onClick={() => setIsStudentMenuOpen((prev) => !prev)}
-                className="flex max-w-[calc(100vw-6.25rem)] items-center gap-2 rounded-lg px-2 py-1 text-left transition hover:bg-slate-50 sm:max-w-none"
+                className="flex max-w-[calc(100vw-6.25rem)] items-center gap-2 rounded-xl px-2 py-1.5 text-left transition hover:bg-slate-50 sm:max-w-none"
               >
-                <div className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-slate-100 text-slate-700 sm:h-9 sm:w-9">
+                <div className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-slate-700 sm:h-10 sm:w-10">
                   <UserRound className="h-4 w-4 sm:h-5 sm:w-5" />
                 </div>
                 <div className="min-w-0">
@@ -845,17 +954,22 @@ export function StudentPageShell({
           </div>
         </header>
 
-        <aside className="hidden overflow-y-auto border-r border-slate-200 bg-white p-2 lg:row-start-2 lg:col-start-1 lg:block">
-          <NavigationItems
-            activeSection={activeSection}
-            activeTestsCount={activeTestsCount}
-            completedAttemptsLength={completedAttemptsLength}
-            onSectionChange={handleSectionChange}
-          />
+        <aside className="hidden min-h-0 flex-col border-r border-slate-200 bg-white lg:row-start-2 lg:col-start-1 lg:flex">
+          <div className="flex-1 overflow-y-auto p-3">
+            <NavigationItems
+              activeSection={activeSection}
+              activeTestsCount={activeTestsCount}
+              completedAttemptsLength={completedAttemptsLength}
+              onSectionChange={handleSectionChange}
+            />
+          </div>
+          <div className="border-t border-slate-200 px-4 py-4">
+            <TeacherPortalShortcut />
+          </div>
         </aside>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-[#f5f7fa] px-0 py-3 sm:p-5 lg:row-start-2 lg:col-start-2">
-          <div className="w-full space-y-4 sm:space-y-6">
+        <main className="min-h-0 flex-1 overflow-y-auto bg-[#fbfdff] px-4 py-5 sm:px-5 sm:py-6 lg:row-start-2 lg:col-start-2 lg:px-8 lg:py-8">
+          <div className="w-full space-y-6">
             {isInitialLoading ? (
               <div className="flex h-[420px] items-center justify-center rounded-xl border border-slate-200 bg-white text-[13px] text-slate-500 sm:h-[500px] sm:rounded-2xl sm:text-base">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -872,7 +986,7 @@ export function StudentPageShell({
 
                 {activeSection === "dashboard" && (
                   <>
-                    <div className="grid gap-3 sm:gap-4 md:grid-cols-3">
+                    <div className="grid gap-4 xl:grid-cols-3">
                       <StatCard
                         title="Идэвхтэй шалгалт"
                         value={String(activeTestsCount)}
@@ -881,8 +995,8 @@ export function StudentPageShell({
                       />
                       <StatCard
                         title="Тэнцсэн хувь"
-                        value={`${completionRate}%`}
-                        caption={`${approvedAttemptsCount} шалгалт батлагдсан`}
+                        value={`${passRate}%`}
+                        caption={`${completedAttemptsLength}-с ${passedAttemptsCount} тэнцсэн`}
                         icon={Trophy}
                       />
                       <StatCard
@@ -928,25 +1042,43 @@ export function StudentPageShell({
                         </div>
                       )}
 
-                    <section className="space-y-2.5 sm:space-y-3">
-                      <div className="flex items-center gap-2 text-slate-900">
-                        <span className="status-dot-breathe h-3 w-3 rounded-full bg-emerald-500" />
-                        <h3 className="text-base font-semibold sm:text-lg">
-                          Идэвхтэй шалгалтууд
-                        </h3>
-                        <span className="text-[13px] text-slate-500 sm:text-sm">
-                          {filteredTests.length} боломжтой
-                        </span>
-                      </div>
+                    <section className="space-y-4">
+                      <ExamsSectionHeader
+                        indicatorClassName="bg-[#22c55e]"
+                        title="Идэвхтэй шалгалтууд"
+                        subtitle={`${activeTests.length} шалгалт өгөх боломжтой`}
+                      />
                       <TestCardsGrid
                         completedByTestId={completedByTestId}
                         emptyMessage="Танд тохирох идэвхтэй шалгалт олдсонгүй."
-                        filteredTests={filteredTests}
                         inProgressByTestId={inProgressByTestId}
                         isMutating={isMutating}
                         selectedStudent={selectedStudent}
+                        tests={activeTests}
+                        variant="active"
                         onResumeExam={onResumeExam}
                         onStartExam={onStartExam}
+                        onViewResults={handleViewResults}
+                      />
+                    </section>
+
+                    <section className="space-y-4">
+                      <ExamsSectionHeader
+                        indicatorClassName="bg-[#64748b]"
+                        title="Дууссан шалгалтууд"
+                        subtitle={`${completedTests.length} дууссан шалгалт`}
+                      />
+                      <TestCardsGrid
+                        completedByTestId={completedByTestId}
+                        emptyMessage="Дууссан шалгалт одоогоор алга."
+                        inProgressByTestId={inProgressByTestId}
+                        isMutating={isMutating}
+                        selectedStudent={selectedStudent}
+                        tests={completedTests}
+                        variant="completed"
+                        onResumeExam={onResumeExam}
+                        onStartExam={onStartExam}
+                        onViewResults={handleViewResults}
                       />
                     </section>
                   </>
@@ -954,26 +1086,22 @@ export function StudentPageShell({
 
                 {activeSection === "tests" && (
                   <section className="space-y-4 sm:space-y-5">
-                    <div className="flex items-start gap-3">
-                      <span className="status-dot-breathe mt-2 h-3 w-3 rounded-full bg-emerald-500" />
-                      <div>
-                        <h3 className="text-lg font-semibold text-slate-900 sm:text-xl">
-                          Идэвхтэй шалгалтууд
-                        </h3>
-                        <p className="text-[13px] text-slate-500 sm:text-lg">
-                          Хугацаа дуусахаас өмнө шалгалтуудаа дуусгана уу
-                        </p>
-                      </div>
-                    </div>
+                    <ExamsSectionHeader
+                      indicatorClassName="bg-[#22c55e]"
+                      title="Идэвхтэй шалгалтууд"
+                      subtitle="Хугацаа дуусахаас өмнө шалгалтуудаа дуусгана уу"
+                    />
                     <TestCardsGrid
                       completedByTestId={completedByTestId}
                       emptyMessage="Одоогоор шалгалт алга."
-                      filteredTests={filteredTests}
                       inProgressByTestId={inProgressByTestId}
                       isMutating={isMutating}
                       selectedStudent={selectedStudent}
+                      tests={activeTests}
+                      variant="active"
                       onResumeExam={onResumeExam}
                       onStartExam={onStartExam}
+                      onViewResults={handleViewResults}
                     />
                   </section>
                 )}
@@ -1033,6 +1161,7 @@ export function StudentPageShell({
 
                       <ResultCardsGrid
                         attemptsById={approvedAttemptById}
+                        highlightedAttemptId={highlightedResultAttemptId}
                         rows={resultRows}
                         onOpenAttempt={setSelectedResultAttemptId}
                       />
@@ -1048,7 +1177,7 @@ export function StudentPageShell({
       <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
         <SheetContent
           side="right"
-          className="w-[min(18rem,calc(100vw-0.75rem))] border-slate-200 bg-[#f3f6f9] p-0 sm:max-w-none"
+          className="flex h-full w-[min(18rem,calc(100vw-0.75rem))] flex-col border-slate-200 bg-[#f3f6f9] p-0 sm:max-w-none"
         >
           <SheetHeader className="border-b border-slate-200 bg-white pr-12">
             <div className="flex items-center gap-3">
@@ -1067,6 +1196,9 @@ export function StudentPageShell({
               completedAttemptsLength={completedAttemptsLength}
               onSectionChange={handleSectionChange}
             />
+          </div>
+          <div className="border-t border-slate-200 bg-white px-4 py-4">
+            <TeacherPortalShortcut />
           </div>
         </SheetContent>
       </Sheet>

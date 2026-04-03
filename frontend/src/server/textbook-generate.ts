@@ -20,6 +20,7 @@ export type TextbookGenerateEnv = {
 
 type TextbookGenerateRequest = {
   fallbackTest?: GeneratedTextbookTest;
+  grade?: number;
   sourceProblems?: Array<{
     pageNumber?: number;
     text?: string;
@@ -259,6 +260,7 @@ function findBestSourceCandidate(
 
 function buildPrompt(
   fallbackTest: GeneratedTextbookTest,
+  grade: number | null,
   sourceProblems: SourceCandidate[],
   selectedSectionTitles: string[],
   visiblePages: Array<{ content: string; pageNumber: number }>,
@@ -297,6 +299,7 @@ function buildPrompt(
 ${sectionLines || "- Сонгосон сэдэв байхгүй"}
 
 Шаардлагатай тоо:
+- Зорилтот анги: ${grade && grade > 0 ? `${grade}-р анги` : "тодорхойгүй"}
 - Сонголтот асуулт: ${fallbackTest.questionCountGenerated}
 - Задгай даалгавар: ${fallbackTest.openQuestionCountGenerated}
 - Нийт оноо: ${fallbackTest.totalScore}
@@ -315,7 +318,10 @@ ${sectionLines || "- Сонгосон сэдэв байхгүй"}
 - Хэрэв хангалттай шинэ хувилбар хийж чадахгүй бол одоо байгаа бодлогын хэлбэрийг хадгалсан, цэвэр хувилбар буцаа.
 - Энгийн тооны шууд үйлдэл, нэг алхамтай амархан асуултаас зайлсхий.
 - Хувьсагчтай тэгшитгэл, язгуур, модультай, олон алхамтай бодлогуудыг түрүүлж сонго.
+- Задгай даалгавар нь бодолтын алхам шаардах, тайлбар бичүүлэх хэлбэртэй байна.
 - Source-д байхгүй demo маягийн бодлого бүү зохиож өг.
+${grade && grade >= 9 ? "- Анги 9 болон түүнээс дээш бол нэг алхамтай, хэт амархан бодлого бүү өг." : ""}
+${grade && grade >= 9 ? "- 9-р ангиас дээш үед квадрат тэгшитгэл, язгуур, функц, геометр, магадлалын олон алхамтай бодлогыг задгай хэсэгт түлхүү сонго." : ""}
 ${preferHardProblems ? "- Энэ generation дээр hard түвшний бодлогуудыг давамгай сонго." : ""}
 
 Номын бодлогууд:
@@ -692,6 +698,7 @@ export async function handleTextbookGeneratePost(
       throw new Error("Generate хүсэлтийн JSON body буруу байна.");
     }
     const fallbackTest = body.fallbackTest;
+    const grade = Math.trunc(Number(body.grade || 0));
 
     if (!fallbackTest) {
       return Response.json(
@@ -729,6 +736,7 @@ export async function handleTextbookGeneratePost(
 
     const prompt = buildPrompt(
       fallbackTest,
+      Number.isFinite(grade) && grade > 0 ? grade : null,
       sourceProblems.length ? sourceProblems : buildSourceCandidates(fallbackTest),
       selectedSectionTitles,
       visiblePages,

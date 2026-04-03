@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertTriangle,
@@ -25,7 +26,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { buildRuntimeApiUrl, fetchRuntimeJson } from "@/lib/runtime-api";
+import { fetchRuntimeJson } from "@/lib/runtime-api";
 import { approveTakeExamAttempt } from "@/lib/take-exam-dashboard-api";
 import { QuestionReview, SubmittedAttempt } from "../lib/types";
 
@@ -40,9 +41,6 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
   );
   const [explanationDrafts, setExplanationDrafts] = useState<
     Record<string, string>
-  >({});
-  const [loadingExplanationKeys, setLoadingExplanationKeys] = useState<
-    Record<string, true>
   >({});
   const [explanationSources, setExplanationSources] = useState<
     Record<string, AiContentSource>
@@ -176,6 +174,9 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
       ? explanationDrafts[selectedQuestionKey] ??
         selectedQuestionFallbackExplanation
       : "";
+  const selectedQuestionReferenceText = selectedQuestion
+    ? getQuestionReferenceText(selectedQuestion)
+    : "";
   const selectedQuestionAiSource =
     (selectedQuestionKey ? explanationSources[selectedQuestionKey] : undefined) ??
     selectedQuestion?.aiSource;
@@ -222,12 +223,6 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
           },
     );
 
-    setLoadingExplanationKeys((current) =>
-      current[selectedQuestionKey]
-        ? current
-        : { ...current, [selectedQuestionKey]: true },
-    );
-
     void fetchRuntimeJson<{
       feedback?: string;
       source?: AiContentSource;
@@ -241,6 +236,7 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
         correctAnswer: normalizeUnavailableAnswer(selectedQuestion.correctAnswer),
         questionText: selectedQuestion.questionText,
         questionType: selectedQuestion.questionType,
+        referenceGuide: getQuestionReferenceGuide(selectedQuestion),
         studentAnswer: selectedQuestion.studentAnswer,
       }),
     })
@@ -277,12 +273,6 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
         if (cancelled) {
           return;
         }
-
-        setLoadingExplanationKeys((current) => {
-          const next = { ...current };
-          delete next[selectedQuestionKey];
-          return next;
-        });
       });
 
     return () => {
@@ -379,7 +369,7 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
   };
 
   const handleApproveAttempt = async () => {
-    if (!selectedAttempt) {
+    if (!selectedAttempt || attemptScorePreview?.hasPendingManualReview) {
       return;
     }
 
@@ -543,13 +533,23 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                 <Button
                   size="sm"
                   className="h-9 rounded-[10px] px-4 text-[13px] font-medium shadow-none"
-                  disabled={approvingAttemptId === selectedAttempt.id}
+                  disabled={
+                    approvingAttemptId === selectedAttempt.id ||
+                    attemptScorePreview?.hasPendingManualReview
+                  }
                   onClick={handleApproveAttempt}
                 >
                   Бүгдийг батлах
                 </Button>
               </div>
             </div>
+
+            {attemptScorePreview?.hasPendingManualReview ? (
+              <div className="border-b border-[#e7ecf3] bg-[#fff8e8] px-6 py-3 text-[13px] text-amber-700">
+                Нээлттэй асуултуудыг эхлээд оноолж эсвэл хянасан гэж тэмдэглэсний дараа
+                батална.
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-6 border-b border-[#e7ecf3] px-6 py-3.5 text-[13px] text-muted-foreground">
               <ReviewMetaItem
@@ -660,17 +660,17 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                         value={selectedQuestion.studentAnswer}
                       />
 
-                      {Boolean(
-                        normalizeUnavailableAnswer(selectedQuestion.correctAnswer),
-                      ) && (
+                      {Boolean(selectedQuestionReferenceText) && (
                         <AnswerBlock
                           className="border-[#dfe5ee] bg-[#f7f9fc]"
                           displayMode={selectedQuestion.questionType === "math"}
                           forceMath={selectedQuestion.questionType === "math"}
-                          title="ЗӨВ ХАРИУЛТ"
-                          value={normalizeUnavailableAnswer(
-                            selectedQuestion.correctAnswer,
-                          )}
+                          title={
+                            selectedQuestion.correctAnswerKind === "reference"
+                              ? "ЖИШИГ ХАРИУ / ЧИГЛҮҮЛЭГ"
+                              : "ЗӨВ ХАРИУЛТ"
+                          }
+                          value={selectedQuestionReferenceText}
                         />
                       )}
 
@@ -686,6 +686,41 @@ export function ReviewTab({ attempts, onApproved }: ReviewTabProps) {
                             content={selectedQuestionExplanation}
                             className="text-[14px] leading-7 text-foreground/85"
                           />
+                        </div>
+                      ) : null}
+
+                      {selectedQuestion.requiresManualReview ? (
+                        <div className="rounded-[14px] border border-[#dbe3ec] bg-[#fbfcfe] p-3.5">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                                БАГШИЙН ОНОО
+                              </p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={selectedQuestion.maxPoints}
+                                  step={1}
+                                  value={scoreInput}
+                                  onChange={(event) =>
+                                    setScoreInput(event.target.value)
+                                  }
+                                  className="h-10 border-[#dbe3ec] bg-white"
+                                />
+                                <span className="shrink-0 text-sm text-muted-foreground">
+                                  / {selectedQuestion.maxPoints}
+                                </span>
+                              </div>
+                            </div>
+                            <Button
+                              size="sm"
+                              className="h-10 rounded-[8px] px-4 text-[14px] font-medium shadow-none"
+                              onClick={handleSaveManualScore}
+                            >
+                              Оноо хадгалах
+                            </Button>
+                          </div>
                         </div>
                       ) : null}
 
@@ -864,9 +899,54 @@ function normalizeUnavailableAnswer(value: string) {
   return trimmed === "Зөв хариулт ирээгүй" ? "" : trimmed;
 }
 
+function getQuestionReferenceText(question: QuestionReview) {
+  return normalizeUnavailableAnswer(question.correctAnswer);
+}
+
+function getQuestionReferenceGuide(question: QuestionReview) {
+  if (question.correctAnswerKind === "reference") {
+    return getQuestionReferenceText(question);
+  }
+
+  const explanation = question.explanation?.trim();
+  return explanation && explanation !== "Тайлбар хараахан нэмэгдээгүй байна."
+    ? explanation
+    : "";
+}
+
+function buildFormulaRelationFallback(
+  question: QuestionReview,
+  referenceGuide: string,
+) {
+  if (question.correctAnswerKind === "exact") {
+    return "";
+  }
+
+  const prompt = question.questionText.trim();
+  const studentAnswer = question.studentAnswer.trim();
+  const combined = `${prompt} ${referenceGuide}`.toLowerCase();
+  const mentionsFormulaRelation =
+    /(томьёо|хамаар|функц|formula|function)/i.test(combined) ||
+    (/[xх]/i.test(combined) && /[yу]/i.test(combined));
+
+  if (!mentionsFormulaRelation) {
+    return "";
+  }
+
+  const lead = studentAnswer
+    ? `Таны хариулт "${studentAnswer}" байна.`
+    : "Энэ бодлогод хариулт дутуу байна.";
+
+  return `${lead} Томьёог уншихдаа аль хувьсагч нь алинаасаа хамаарч байгааг эхэлж зөв тогтоох хэрэгтэй. Жишээлбэл x-ийг y-ээр илэрхийлсэн бол x нь y-ээс хамаарна. Дараа нь орлуулалт, хувиргалт бүр дээр тэнцлийн хоёр талд ижил үйлдэл хийснээ шалгаарай.`;
+}
+
 function buildLocalExplanationFallback(question: QuestionReview) {
   const studentAnswer = question.studentAnswer.trim();
-  const correctAnswer = normalizeUnavailableAnswer(question.correctAnswer);
+  const correctAnswer =
+    question.correctAnswerKind === "exact"
+      ? getQuestionReferenceText(question)
+      : "";
+  const referenceGuide = getQuestionReferenceGuide(question);
   const prompt = question.questionText.trim();
   const subtractionMatch = prompt
     .replace(/\s+/g, " ")
@@ -893,12 +973,24 @@ function buildLocalExplanationFallback(question: QuestionReview) {
     return `Та үндсэн илэрхийллээ олсон ч интегралын тогтмол болох +C-г орхигдуулсан байна. Эцсийн хариуг ${correctAnswer} хэлбэрээр бичих ёстойг дахин анхаараарай.`;
   }
 
+  const formulaRelationFallback = buildFormulaRelationFallback(
+    question,
+    referenceGuide,
+  );
+  if (formulaRelationFallback) {
+    return formulaRelationFallback;
+  }
+
   if (studentAnswer && correctAnswer) {
     return `Таны хариулт "${studentAnswer}" байсан ч зөв хариулт нь "${correctAnswer}" байна. Гол ойлголт болон бодолтын дарааллаа дахин шалгаж, ижил төрлийн жишээ ажиллаарай.`;
   }
 
   if (correctAnswer) {
     return `Энэ асуултад хариулаагүй эсвэл дутуу хариулсан байна. Зөв хариулт нь "${correctAnswer}" юм. Суурь дүрэм, жишээ бодлогуудаа дахин давтаарай.`;
+  }
+
+  if (referenceGuide) {
+    return `Жишиг чиглүүлэг нь "${referenceGuide}" байна. Томьёо, өгөгдөл, хувьсагчдын хамаарлаа эхэлж зөв тогтоогоод дараа нь бодолтын алхам бүрээ шалгаж дахин ажиллаарай.`;
   }
 
   return "Энэ асуултын гол ойлголтоо дахин нэгтгэж, бодолтын алхам бүрээ тайлбарлаж давтах хэрэгтэй байна.";

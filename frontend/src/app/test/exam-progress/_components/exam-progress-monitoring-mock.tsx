@@ -5,6 +5,7 @@ import Image from "next/image";
 import {
   AlertTriangle,
   AppWindow,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -53,6 +54,7 @@ type StudentConnectionState = "idle" | "offline" | "online";
 type StudentStatusTone = "danger" | "muted" | "online" | "warning";
 
 type EventBadge = {
+  count: number;
   icon: LucideIcon;
   id: string;
   label: string;
@@ -69,6 +71,7 @@ type EventScreenshot = {
 
 type DisplayEvent = {
   code?: string;
+  count: number;
   detail: string;
   icon: LucideIcon;
   id: string;
@@ -95,17 +98,6 @@ type StudentRow = {
   statusLabel: string;
   statusTone: StudentStatusTone;
 };
-
-const NON_SUSPICIOUS_EVENT_CODES = new Set([
-  "attempt-finalize",
-  "attempt-save",
-  "attempt-session-open",
-  "answer-selected",
-  "connection_restored",
-  "question-revisit",
-  "tab_visible",
-  "window_focus",
-]);
 
 const KPI_CARD_CONFIG = [
   {
@@ -138,27 +130,57 @@ const KPI_CARD_CONFIG = [
   },
 ] as const;
 
+const SUSPICIOUS_EVENT_CODES = new Set([
+  "clipboard-copy",
+  "clipboard-cut",
+  "clipboard-paste",
+  "context-menu",
+  "device_change_suspected",
+  "fullscreen-exit",
+  "fullscreen-not-active",
+  "parallel-tab-suspected",
+  "split-view-suspected",
+  "tab_hidden",
+  "viewport-resize-suspicious",
+  "window_blur",
+]);
+
+function isSuspiciousEventCode(code?: string) {
+  if (!code) {
+    return false;
+  }
+
+  return (
+    SUSPICIOUS_EVENT_CODES.has(code) ||
+    code.includes("devtools") ||
+    code.startsWith("shortcut-")
+  );
+}
+
 export function ExamProgressMonitoring({
   exam,
   events,
-  lastUpdated,
-  onBack,
   reviewAttempts,
   students,
 }: ExamProgressMonitoringProps) {
   const [activeTab, setActiveTab] = useState<MonitoringTab>("monitoring");
-  const [localReviewAttempts, setLocalReviewAttempts] = useState<SubmittedAttempt[]>(
-    reviewAttempts,
+  const [localReviewAttempts, setLocalReviewAttempts] =
+    useState<SubmittedAttempt[]>(reviewAttempts);
+  const [isAllEventsDialogOpen, setIsAllEventsDialogOpen] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
+    null,
   );
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [selectedReviewAttemptId, setSelectedReviewAttemptId] = useState<string | null>(
-    reviewAttempts[0]?.id ?? null,
-  );
+  const [selectedReviewAttemptId, setSelectedReviewAttemptId] = useState<
+    string | null
+  >(reviewAttempts[0]?.id ?? null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(
     reviewAttempts[0]?.questions[0]?.id ?? null,
   );
   const [isScoreEditing, setIsScoreEditing] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [mockRemainingEndTime] = useState(
+    () => new Date(Date.now() + 30 * 60 * 1000),
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -171,7 +193,9 @@ export function ExamProgressMonitoring({
   }, []);
 
   useEffect(() => {
-    setLocalReviewAttempts(reviewAttempts);
+    setLocalReviewAttempts((currentAttempts) =>
+      mergeReviewAttempts(currentAttempts, reviewAttempts),
+    );
   }, [reviewAttempts]);
 
   useEffect(() => {
@@ -185,8 +209,9 @@ export function ExamProgressMonitoring({
       (attempt) => attempt.id === selectedReviewAttemptId,
     );
     const nextAttempt = hasSelectedAttempt
-      ? localReviewAttempts.find((attempt) => attempt.id === selectedReviewAttemptId) ??
-        localReviewAttempts[0]
+      ? (localReviewAttempts.find(
+          (attempt) => attempt.id === selectedReviewAttemptId,
+        ) ?? localReviewAttempts[0])
       : localReviewAttempts[0];
 
     if (nextAttempt.id !== selectedReviewAttemptId) {
@@ -198,7 +223,7 @@ export function ExamProgressMonitoring({
     );
     const nextQuestionId = hasSelectedQuestion
       ? selectedQuestionId
-      : nextAttempt.questions[0]?.id ?? null;
+      : (nextAttempt.questions[0]?.id ?? null);
 
     if (nextQuestionId !== selectedQuestionId) {
       setSelectedQuestionId(nextQuestionId);
@@ -213,6 +238,10 @@ export function ExamProgressMonitoring({
     () => buildDisplayEvents(events, localReviewAttempts),
     [events, localReviewAttempts],
   );
+  const stackedMonitoringEvents = useMemo(
+    () => stackDisplayEvents(allMonitoringEvents),
+    [allMonitoringEvents],
+  );
 
   const studentRows = useMemo(
     () => buildStudentRows(students, localReviewAttempts, allMonitoringEvents),
@@ -220,13 +249,16 @@ export function ExamProgressMonitoring({
   );
 
   const selectedStudent = useMemo(
-    () => studentRows.find((student) => student.id === selectedStudentId) ?? null,
+    () =>
+      studentRows.find((student) => student.id === selectedStudentId) ?? null,
     [selectedStudentId, studentRows],
   );
 
   const selectedAttempt = useMemo(
     () =>
-      localReviewAttempts.find((attempt) => attempt.id === selectedReviewAttemptId) ??
+      localReviewAttempts.find(
+        (attempt) => attempt.id === selectedReviewAttemptId,
+      ) ??
       localReviewAttempts[0] ??
       null,
     [localReviewAttempts, selectedReviewAttemptId],
@@ -234,31 +266,39 @@ export function ExamProgressMonitoring({
 
   const selectedQuestion = useMemo(
     () =>
-      selectedAttempt?.questions.find((question) => question.id === selectedQuestionId) ??
+      selectedAttempt?.questions.find(
+        (question) => question.id === selectedQuestionId,
+      ) ??
       selectedAttempt?.questions[0] ??
       null,
     [selectedAttempt, selectedQuestionId],
   );
 
-  const correctCount = selectedAttempt?.questions.filter(
-    (question) => question.reviewState === "correct",
-  ).length ?? 0;
-  const incorrectCount = selectedAttempt?.questions.filter(
-    (question) => question.reviewState === "incorrect",
-  ).length ?? 0;
+  const correctCount =
+    selectedAttempt?.questions.filter(
+      (question) => question.reviewState === "correct",
+    ).length ?? 0;
+  const incorrectCount =
+    selectedAttempt?.questions.filter(
+      (question) => question.reviewState === "incorrect",
+    ).length ?? 0;
   const selectedAttemptScoreLabel = selectedAttempt
     ? formatAttemptPoints(selectedAttempt)
     : "Хүлээгдэж байна";
-  const canEditSelectedQuestionScore = Boolean(selectedQuestion);
+  const canEditSelectedQuestionScore = Boolean(
+    selectedQuestion && canManuallyScoreQuestion(selectedQuestion),
+  );
 
   const totalStudentCount = Math.max(exam.totalStudentCount, students.length);
   const activeStudentCount = students.filter(
-    (student) => student.status === "in-progress" || student.status === "processing",
+    (student) =>
+      student.status === "in-progress" || student.status === "processing",
   ).length;
   const submittedCount = localReviewAttempts.length;
-  const warningCount = allMonitoringEvents.filter(
+  const warningCount = stackedMonitoringEvents.filter(
     (event) => event.severity === "warning",
   ).length;
+  const totalMonitoringEventCount = stackedMonitoringEvents.length;
   const offlineCount = students.filter(
     (student) => student.monitoringState === "offline",
   ).length;
@@ -269,24 +309,14 @@ export function ExamProgressMonitoring({
     submitted: String(submittedCount),
     warnings: padCount(warningCount),
   };
-  const remainingTimeLabel = formatRemainingTime(exam.endTime, currentTime);
+  const remainingTimeSummaryLabel = "30 минут";
+  const remainingTimeCountdownLabel =
+    formatRemainingTime(mockRemainingEndTime, currentTime) ?? "00:30:00";
 
   return (
     <section className="min-h-full space-y-6">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" className="px-0 text-slate-600" onClick={onBack}>
-          <ChevronLeft className="mr-1 h-4 w-4" />
-          Жагсаалт руу буцах
-        </Button>
-        <p className="text-[15px] font-semibold text-slate-900">
-          {lastUpdated
-            ? `Сүүлд шинэчлэгдсэн: ${formatDateTime(lastUpdated)}`
-            : "Сүүлд шинэчлэгдсэн хугацаа алга"}
-        </p>
-      </div>
-
       <div className="flex flex-wrap items-end justify-between gap-5">
-        <div className="flex flex-wrap items-end gap-10">
+        <div className="flex flex-wrap items-end gap-11">
           <button
             type="button"
             onClick={() => setActiveTab("monitoring")}
@@ -303,11 +333,14 @@ export function ExamProgressMonitoring({
           </button>
         </div>
 
-        {activeTab === "performance" && remainingTimeLabel ? (
-          <div className="inline-flex h-[42px] items-center rounded-[12px] border border-[#0b5cab] bg-white px-5 text-[14px] font-semibold text-slate-900">
-            Үлдсэн хугацаа {remainingTimeLabel}
-          </div>
-        ) : null}
+        <div className="flex min-w-42 flex-col rounded-[12px] border border-[#0b5cab] bg-white px-4 py-2 text-right text-slate-900">
+          <span className="text-[13px] font-semibold leading-none">
+            Үлдсэн хугацаа:
+          </span>
+          <span className="mt-1 text-[18px] font-bold leading-none tracking-[0.02em] text-[#0b5cab]">
+            {remainingTimeCountdownLabel}
+          </span>
+        </div>
       </div>
 
       {activeTab === "monitoring" ? (
@@ -323,10 +356,14 @@ export function ExamProgressMonitoring({
                   aria-hidden="true"
                 />
                 <div className="flex items-start justify-between gap-4">
-                  <p className="text-[17px] font-bold text-slate-700">{card.title}</p>
+                  <p className="text-[17px] font-bold text-slate-700">
+                    {card.title}
+                  </p>
                   <card.icon className={`h-6 w-6 ${card.tone}`} />
                 </div>
-                <p className={`mt-10 text-[42px] font-bold leading-none ${card.tone}`}>
+                <p
+                  className={`mt-10 text-[42px] font-bold leading-none ${card.tone}`}
+                >
                   {kpiValues[card.key]}
                 </p>
               </article>
@@ -336,7 +373,9 @@ export function ExamProgressMonitoring({
           <div className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
             <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
               <div className="border-b border-slate-200 px-8 py-7">
-                <h2 className="text-[20px] font-bold text-slate-900">Сурагчдын явц</h2>
+                <h2 className="text-[20px] font-bold text-slate-900">
+                  Сурагчдын явц
+                </h2>
               </div>
 
               <div className="grid grid-cols-[1.5fr_0.8fr_1.1fr_0.8fr_0.6fr] border-b border-slate-200 bg-[#f8fafc] px-8 py-6 text-[15px] font-bold text-slate-800">
@@ -361,7 +400,9 @@ export function ExamProgressMonitoring({
                       </span>
                       <span className="flex items-center gap-3 font-medium">
                         <span className={statusDotClass(row.statusTone)} />
-                        <span className={statusTextClass(row.statusTone)}>{row.statusLabel}</span>
+                        <span className={statusTextClass(row.statusTone)}>
+                          {row.statusLabel}
+                        </span>
                       </span>
                       <span className="flex items-center justify-center">
                         <AttemptStackIndicator
@@ -411,34 +452,49 @@ export function ExamProgressMonitoring({
             </section>
 
             <aside className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-              <h2 className="text-[20px] font-bold text-slate-900">Бодит цагийн мэдээлэл</h2>
+              <h2 className="text-[20px] font-bold text-slate-900">
+                Бодит цагийн мэдээлэл
+              </h2>
 
               <div className="mt-8 space-y-5">
-                {allMonitoringEvents.length > 0 ? (
-                  allMonitoringEvents.slice(0, 4).map((event) => (
+                {stackedMonitoringEvents.length > 0 ? (
+                  stackedMonitoringEvents.slice(0, 4).map((event) => (
                     <article
                       key={event.id}
                       className={`rounded-[20px] border border-slate-100 px-6 py-5 ${alertContainerClass(event.tone)}`}
                     >
                       <div className="flex items-start gap-4">
                         <div className="grid h-12 w-12 place-items-center rounded-[16px] bg-white shadow-[0_4px_12px_rgba(15,23,42,0.06)]">
-                          <event.icon className={`h-5 w-5 ${alertIconClass(event.tone)}`} />
+                          <event.icon
+                            className={`h-5 w-5 ${alertIconClass(event.tone)}`}
+                          />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <p className={`text-[15px] font-bold ${alertIconClass(event.tone)}`}>
+                              <p
+                                className={`text-[15px] font-bold ${alertIconClass(event.tone)}`}
+                              >
                                 {event.title}
                               </p>
                               <p className="mt-1 text-[13px] text-slate-400">
                                 {event.studentName}
                               </p>
                             </div>
-                            <span className="text-[13px] text-slate-400">
-                              {event.occurredLabel}
-                            </span>
+                            <div className="flex shrink-0 items-center gap-2">
+                              {event.count > 1 ? (
+                                <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-600 shadow-[0_2px_6px_rgba(15,23,42,0.08)]">
+                                  x{event.count}
+                                </span>
+                              ) : null}
+                              <span className="text-[13px] text-slate-400">
+                                {event.occurredLabel}
+                              </span>
+                            </div>
                           </div>
-                          <p className="mt-2 text-[15px] text-slate-700">{event.detail}</p>
+                          <p className="mt-2 text-[15px] text-slate-700">
+                            {event.detail}
+                          </p>
                         </div>
                       </div>
                     </article>
@@ -453,11 +509,82 @@ export function ExamProgressMonitoring({
               <Button
                 variant="outline"
                 className="mt-8 h-11 w-full rounded-[14px] border-slate-200 text-[15px] font-semibold text-slate-600"
+                onClick={() => setIsAllEventsDialogOpen(true)}
               >
                 Бүгдийг харах
               </Button>
             </aside>
           </div>
+
+          <Dialog
+            open={isAllEventsDialogOpen}
+            onOpenChange={setIsAllEventsDialogOpen}
+          >
+            <DialogContent className="w-[min(100vw-2rem,64rem)]! max-w-none overflow-hidden rounded-[22px] border border-[#dfe7f2] bg-white p-0 shadow-[0_16px_46px_rgba(15,23,42,0.1)] [&>button:last-child]:right-5 [&>button:last-child]:top-4 [&>button:last-child]:h-6 [&>button:last-child]:w-6 [&>button:last-child]:rounded-full [&>button:last-child]:border-0 [&>button:last-child]:bg-transparent [&>button:last-child]:p-0 [&>button:last-child]:text-slate-900 [&>button:last-child]:opacity-100 [&>button:last-child]:shadow-none [&>button:last-child]:ring-0 [&>button:last-child]:transition-none [&>button:last-child]:hover:bg-transparent [&>button:last-child]:hover:text-slate-900 [&>button:last-child]:focus:outline-none [&>button:last-child]:focus-visible:ring-0 sm:max-w-none">
+              <DialogHeader className="px-5 py-4">
+                <DialogTitle className="text-[17px] font-bold text-slate-900">
+                  Бодит цагийн бүх мэдээлэл
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-[12px] text-slate-500">
+                  {stackedMonitoringEvents.length > 0
+                    ? `${totalMonitoringEventCount} event бүртгэгдсэн байна.`
+                    : "Одоогоор бүртгэгдсэн event алга байна."}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="max-h-[min(70vh,48rem)] overflow-y-auto border-t border-[#e8edf5] px-5 py-5">
+                {stackedMonitoringEvents.length > 0 ? (
+                  <div className="space-y-4">
+                    {stackedMonitoringEvents.map((event) => (
+                      <article
+                        key={event.id}
+                        className={`rounded-[20px] border border-slate-100 px-6 py-5 ${alertContainerClass(event.tone)}`}
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="grid h-12 w-12 place-items-center rounded-[16px] bg-white shadow-[0_4px_12px_rgba(15,23,42,0.06)]">
+                            <event.icon
+                              className={`h-5 w-5 ${alertIconClass(event.tone)}`}
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p
+                                  className={`text-[15px] font-bold ${alertIconClass(event.tone)}`}
+                                >
+                                  {event.title}
+                                </p>
+                                <p className="mt-1 text-[13px] text-slate-400">
+                                  {event.studentName}
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                {event.count > 1 ? (
+                                  <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-600 shadow-[0_2px_6px_rgba(15,23,42,0.08)]">
+                                    x{event.count}
+                                  </span>
+                                ) : null}
+                                <span className="text-[13px] text-slate-400">
+                                  {event.occurredLabel}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="mt-2 text-[15px] text-slate-700">
+                              {event.detail}
+                            </p>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-[20px] border border-dashed border-slate-200 px-5 py-10 text-center text-[15px] text-slate-500">
+                    Хяналтын event одоогоор бүртгэгдээгүй байна.
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog
             open={selectedStudent !== null}
@@ -492,9 +619,17 @@ export function ExamProgressMonitoring({
 
                       <div className="flex flex-wrap gap-2">
                         {selectedStudent.attemptBadges.map((attempt) => (
-                          <div key={attempt.id} className={attemptBadgeClass(attempt.tone)}>
+                          <div
+                            key={attempt.id}
+                            className={attemptBadgeClass(attempt.tone)}
+                          >
                             <attempt.icon className="h-4 w-4 shrink-0" />
                             <span>{attempt.label}</span>
+                            {attempt.count > 1 ? (
+                              <span className="rounded-full bg-white/90 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-current shadow-[0_2px_5px_rgba(15,23,42,0.08)]">
+                                x{attempt.count}
+                              </span>
+                            ) : null}
                           </div>
                         ))}
                       </div>
@@ -529,7 +664,9 @@ export function ExamProgressMonitoring({
                                   {screenshot.caption}
                                 </p>
                                 <p className="text-[11px] text-slate-500">
-                                  Үүсгэсэн: {screenshot.occurredLabel.split(" • ")[0] ?? screenshot.occurredLabel}
+                                  Үүсгэсэн:{" "}
+                                  {screenshot.occurredLabel.split(" • ")[0] ??
+                                    screenshot.occurredLabel}
                                 </p>
                               </div>
                             </article>
@@ -537,7 +674,8 @@ export function ExamProgressMonitoring({
                         </div>
                       ) : (
                         <div className="rounded-[14px] border border-dashed border-[#d9e2ec] px-4 py-7 text-center text-[12px] text-slate-500">
-                          Энэ сурагчийн дэлгэцийн зураг хараахан бүртгэгдээгүй байна.
+                          Энэ сурагчийн дэлгэцийн зураг хараахан бүртгэгдээгүй
+                          байна.
                         </div>
                       )}
                     </section>
@@ -553,10 +691,12 @@ export function ExamProgressMonitoring({
           canEditSelectedQuestionScore={canEditSelectedQuestionScore}
           incorrectCount={incorrectCount}
           isScoreEditing={isScoreEditing}
-          openEndedCount={selectedAttempt?.questions.filter(
-            (question) =>
-              question.requiresManualReview || isOpenEndedQuestion(question),
-          ).length ?? 0}
+          openEndedCount={
+            selectedAttempt?.questions.filter(
+              (question) =>
+                question.requiresManualReview || isOpenEndedQuestion(question),
+            ).length ?? 0
+          }
           selectedAttempt={selectedAttempt}
           selectedAttemptScoreLabel={selectedAttemptScoreLabel}
           selectedQuestionId={selectedQuestionId}
@@ -597,7 +737,9 @@ export function ExamProgressMonitoring({
                 attempt.id === selectedAttempt.id
                   ? buildUpdatedAttempt(
                       attempt,
-                      attempt.questions.map((question) => markQuestionReviewed(question)),
+                      attempt.questions.map((question) =>
+                        markQuestionReviewed(question),
+                      ),
                     )
                   : attempt,
               ),
@@ -676,7 +818,9 @@ function PerformanceTabContent({
     (attempt) => attempt.status !== "reviewed",
   ).length;
   const selectedAttemptScoreSummary = selectedAttempt
-    ? `${selectedAttemptScoreLabel} (${calculateAttemptPercentage(selectedAttempt)}%)`
+    ? selectedAttempt.hasPublishedResult
+      ? `${selectedAttemptScoreLabel} (${calculateAttemptPercentage(selectedAttempt)}%)`
+      : `${selectedAttempt.completionRate ?? 0}% бөглөсөн`
     : "0/0 (0%)";
   const filteredQuestions =
     selectedAttempt?.questions.filter((question) => {
@@ -693,12 +837,17 @@ function PerformanceTabContent({
       return true;
     }) ?? [];
   const visibleSelectedQuestion =
-    filteredQuestions.find((question) => question.id === selectedQuestionId) ?? null;
+    filteredQuestions.find((question) => question.id === selectedQuestionId) ??
+    null;
   const visibleSelectedQuestionReviewed = Boolean(
     selectedAttempt &&
-      visibleSelectedQuestion &&
-      isQuestionReviewed(selectedAttempt, visibleSelectedQuestion),
+    visibleSelectedQuestion &&
+    isQuestionReviewed(selectedAttempt, visibleSelectedQuestion),
   );
+  const visibleSelectedQuestionReferenceText = visibleSelectedQuestion
+    ? getQuestionReferenceText(visibleSelectedQuestion) ||
+      buildMissingCorrectAnswerFallback(visibleSelectedQuestion)
+    : "";
 
   useEffect(() => {
     if (filteredQuestions.length === 0) {
@@ -723,10 +872,12 @@ function PerformanceTabContent({
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
-      <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+    <div className="grid gap-6 xl:grid-cols-[540px_minmax(0,1fr)]">
+      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.06)]">
         <div className="border-b border-slate-200 px-6 py-6">
-          <h2 className="text-[18px] font-semibold text-slate-900">Хянах дараалал</h2>
+          <h2 className="text-[18px] font-semibold text-slate-900">
+            Хянах дараалал
+          </h2>
           <p className="mt-1 text-[14px] text-slate-500">
             {pendingCount} материал хүлээгдэж байна
           </p>
@@ -777,10 +928,10 @@ function PerformanceTabContent({
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.06)]">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-8 py-7">
           <div>
-            <h2 className="text-[18px] font-semibold text-slate-900">
+            <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-slate-950">
               {selectedAttempt.studentName}
             </h2>
           </div>
@@ -793,8 +944,8 @@ function PerformanceTabContent({
           </Button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-4">
-          <div className="flex flex-wrap items-center gap-7 text-[14px] font-medium">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-8 py-4">
+          <div className="flex flex-wrap items-center gap-8 text-[14px] font-medium">
             <button
               type="button"
               onClick={() => setQuestionFilter("all")}
@@ -806,7 +957,9 @@ function PerformanceTabContent({
             <button
               type="button"
               onClick={() => setQuestionFilter("correct")}
-              className={performanceFilterTabClass(questionFilter === "correct")}
+              className={performanceFilterTabClass(
+                questionFilter === "correct",
+              )}
             >
               <CheckCircle2 className="h-4 w-4 text-[#179c35]" />
               Зөв: {correctCount}
@@ -814,7 +967,9 @@ function PerformanceTabContent({
             <button
               type="button"
               onClick={() => setQuestionFilter("incorrect")}
-              className={performanceFilterTabClass(questionFilter === "incorrect")}
+              className={performanceFilterTabClass(
+                questionFilter === "incorrect",
+              )}
             >
               <XCircle className="h-4 w-4 text-[#ff3b30]" />
               Буруу: {incorrectCount}
@@ -828,13 +983,13 @@ function PerformanceTabContent({
               Нээлттэй: {openEndedCount}
             </button>
           </div>
-          <p className="text-[15px] font-semibold text-slate-700">
+          <p className="text-[16px] font-semibold text-slate-800">
             Оноо: {selectedAttemptScoreSummary}
           </p>
         </div>
 
-        <div className="grid min-h-[680px] xl:grid-cols-[232px_1fr]">
-          <aside className="border-r border-slate-200 bg-white">
+        <div className="grid min-h-190 xl:grid-cols-[280px_1fr]">
+          <aside className="border-r max-w-[224px] border-slate-200 bg-white px-3 py-4">
             {filteredQuestions.map((question) => {
               const isSelected = question.id === selectedQuestionId;
               const isReviewed = isQuestionReviewed(selectedAttempt, question);
@@ -845,22 +1000,25 @@ function PerformanceTabContent({
                   type="button"
                   onClick={() => onSelectQuestion(question.id)}
                   className={cn(
-                    "flex w-full items-center justify-between border-b border-slate-100 px-5 py-4 text-left transition-colors hover:bg-slate-50",
-                    isSelected && "bg-[#f2f6fb]",
+                    "mb-2 flex w-full items-center justify-between rounded-[16px] px-5 py-4 text-left transition-colors hover:bg-slate-50",
+                    isSelected &&
+                      "bg-[#f3f6fb] shadow-[inset_0_0_0_1px_rgba(203,213,225,0.5)]",
                   )}
                 >
                   <span className="flex min-w-0 items-center gap-2.5">
-                    {isSelected ? (
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b5cab]" />
+                    {isReviewed ? (
+                      <Check className="h-4 w-4 shrink-0 text-[#0b5cab]" />
                     ) : (
                       <span className="w-4 shrink-0" />
                     )}
                     <span
                       className={cn(
                         "truncate text-[15px]",
-                        isReviewed || isSelected
-                          ? "font-semibold text-slate-900"
-                          : "text-slate-500",
+                        isReviewed
+                          ? "font-semibold text-[#0b5cab]"
+                          : isSelected
+                            ? "font-semibold text-slate-900"
+                            : "text-slate-500",
                       )}
                     >
                       Асуулт {question.questionNumber}
@@ -875,34 +1033,54 @@ function PerformanceTabContent({
             })}
           </aside>
 
-          <div className="flex flex-col px-6 py-5">
+          <div className="flex flex-col px-8 py-7">
             {visibleSelectedQuestion ? (
               <>
                 <div>
-                  <h3 className="text-[16px] font-medium text-slate-900">
+                  <h3 className="text-[16px] font-semibold text-slate-900">
                     Асуулт {visibleSelectedQuestion.questionNumber}
                   </h3>
-                  <div className="mt-4 rounded-[14px] border border-slate-200 bg-[#f3f6fc] px-5 py-4 text-[15px] font-medium text-slate-800">
+                  <div className="mt-4 rounded-[18px] border border-[#dfe5ee] bg-[#f3f6fc] px-6 py-5 text-[15px] font-medium leading-7 text-slate-800">
                     {normalizeDisplayText(visibleSelectedQuestion.questionText)}
                   </div>
                 </div>
 
-                <div className="mt-7 flex items-center justify-between gap-4">
+                <div className="mt-8 flex items-center justify-between gap-4">
                   <h4 className="text-[15px] font-semibold text-slate-900">
                     Сурагчийн хариулт
                   </h4>
-                  <span className={questionPointsClass(visibleSelectedQuestion.reviewState)}>
-                    {visibleSelectedQuestion.points}/{visibleSelectedQuestion.maxPoints} оноо
+                  <span
+                    className={questionPointsClass(
+                      visibleSelectedQuestion.reviewState,
+                    )}
+                  >
+                    {visibleSelectedQuestion.points}/
+                    {visibleSelectedQuestion.maxPoints} оноо
                   </span>
                 </div>
 
-                <div className={studentAnswerClass(visibleSelectedQuestion.reviewState)}>
+                {!selectedAttempt.hasPublishedResult &&
+                selectedAttempt.answerKeySource === "teacher_service" ? (
+                  <div className="mt-4 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] font-medium text-amber-800">
+                    Энэ оролдлогын дүн болон зөв хариулт backend дээр хараахан
+                    sync болоогүй байна. Сурагч шалгалтаа
+                    {` ${selectedAttempt.completionRate ?? 0}%`} бөглөсөн.
+                  </div>
+                ) : null}
+
+                <div
+                  className={studentAnswerClass(
+                    visibleSelectedQuestion.reviewState,
+                  )}
+                >
                   {normalizeDisplayText(visibleSelectedQuestion.studentAnswer)}
                 </div>
 
                 {canEditSelectedQuestionScore ? (
-                  <div className="mt-4 flex items-center gap-3">
-                    <span className="text-[14px] text-slate-600">Оноо</span>
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <span className="text-[14px] font-medium text-slate-600">
+                      Багшийн оноо
+                    </span>
                     <input
                       type="number"
                       min={0}
@@ -914,7 +1092,7 @@ function PerformanceTabContent({
                         onAwardPoints(Number(event.target.value));
                       }}
                       className={cn(
-                        "h-10 w-24 rounded-[12px] border border-slate-200 bg-white px-4 text-[14px] font-semibold text-slate-900 outline-none",
+                        "h-11 w-28 rounded-[14px] border border-slate-200 bg-white px-4 text-[14px] font-semibold text-slate-900 outline-none",
                         isScoreEditing
                           ? "border-[#0b5cab] ring-2 ring-[#dbeafe]"
                           : "cursor-default bg-slate-50 text-slate-500",
@@ -924,14 +1102,25 @@ function PerformanceTabContent({
                       / {visibleSelectedQuestion.maxPoints} оноо
                     </span>
                   </div>
-                ) : null}
+                ) : (
+                  <p className="mt-4 text-[13px] text-slate-500">
+                    Энэ асуулт автоматаар үнэлэгдэнэ. Оноо зөвхөн задгай,
+                    текстэн хариулт дээр өөрчлөгдөнө.
+                  </p>
+                )}
 
-                <div className="mt-6">
-                  <h4 className="text-[15px] font-semibold text-slate-900">
-                    Зөв хариулт
-                  </h4>
-                  <div className="mt-4 rounded-[14px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-[15px] font-medium text-slate-800">
-                    {normalizeCorrectAnswerText(visibleSelectedQuestion.correctAnswer)}
+                <div className="mt-8">
+                  <div className="flex items-center justify-between gap-4">
+                    <h4 className="text-[15px] font-semibold text-slate-900">
+                      Зөв хариулт
+                    </h4>
+                    <span className={questionPointsClass("correct")}>
+                      {visibleSelectedQuestion.maxPoints}/
+                      {visibleSelectedQuestion.maxPoints} оноо
+                    </span>
+                  </div>
+                  <div className="mt-4 rounded-[18px] border border-emerald-200 bg-emerald-50 px-6 py-5 text-[15px] font-medium leading-7 text-slate-800">
+                    {visibleSelectedQuestionReferenceText}
                   </div>
                 </div>
 
@@ -939,31 +1128,26 @@ function PerformanceTabContent({
                   <h4 className="text-[15px] font-semibold text-slate-900">
                     Зөв хариултын тайлбар
                   </h4>
-                  <div className="mt-4 whitespace-pre-line rounded-[14px] border border-slate-200 bg-[#f3f6fc] px-5 py-4 text-[15px] leading-7 text-slate-800">
+                  <div className="mt-4 whitespace-pre-line rounded-[18px] border border-[#dfe5ee] bg-[#f3f6fc] px-6 py-5 text-[15px] leading-8 text-slate-800">
                     {resolveQuestionExplanation(visibleSelectedQuestion)}
                   </div>
                 </div>
 
-                <div className="mt-auto flex items-center justify-between gap-4 pt-8">
-                  <button
-                    type="button"
-                    disabled={!canEditSelectedQuestionScore}
-                    onClick={() => {
-                      if (!canEditSelectedQuestionScore) {
-                        return;
-                      }
-                      onSetScoreEditing(!isScoreEditing);
-                    }}
-                    className={cn(
-                      "inline-flex items-center gap-3 text-[15px] font-semibold",
-                      canEditSelectedQuestionScore
-                        ? "text-slate-900"
-                        : "cursor-not-allowed text-slate-400",
-                    )}
-                  >
-                    <PenLine className="h-5 w-5" />
-                    {isScoreEditing ? "Оноо хадгалах" : "Оноо өөрчлөх"}
-                  </button>
+                <div className="mt-auto flex items-center justify-between gap-4 pt-10">
+                  {canEditSelectedQuestionScore ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSetScoreEditing(!isScoreEditing);
+                      }}
+                      className="inline-flex items-center gap-3 text-[15px] font-semibold text-slate-900"
+                    >
+                      <PenLine className="h-5 w-5" />
+                      {isScoreEditing ? "Оноо хадгалах" : "Оноо өөрчлөх"}
+                    </button>
+                  ) : (
+                    <span />
+                  )}
 
                   <Button
                     variant="outline"
@@ -1041,6 +1225,7 @@ function buildDisplayEvents(
 
     eventMap.set(event.id, {
       code: event.code,
+      count: event.count ?? 1,
       detail: localizeEventDetail(event.code, event.detail) ?? appearance.title,
       icon: appearance.icon,
       id: event.id,
@@ -1063,10 +1248,13 @@ function buildDisplayEvents(
         severity: event.severity,
         title: event.title,
       });
+      const existingEvent = eventMap.get(event.id);
 
       eventMap.set(event.id, {
         code: event.code,
-        detail: localizeEventDetail(event.code, event.detail) ?? appearance.title,
+        count: existingEvent?.count ?? 1,
+        detail:
+          localizeEventDetail(event.code, event.detail) ?? appearance.title,
         icon: appearance.icon,
         id: event.id,
         label: appearance.label,
@@ -1093,32 +1281,45 @@ function buildStudentRows(
   events: DisplayEvent[],
 ): StudentRow[] {
   return [...students]
-    .sort((left, right) => right.lastActivity.getTime() - left.lastActivity.getTime())
+    .sort(
+      (left, right) =>
+        right.lastActivity.getTime() - left.lastActivity.getTime(),
+    )
     .map((student) => {
-      const studentEvents = events.filter((event) => event.studentId === student.id);
-      const suspiciousStudentEvents = studentEvents.filter(
-        (event) => !NON_SUSPICIOUS_EVENT_CODES.has(event.code ?? ""),
+      const studentEvents = events.filter(
+        (event) => event.studentId === student.id,
       );
-      const uniqueAttemptBadges = suspiciousStudentEvents.reduce<EventBadge[]>((acc, event) => {
-        if (acc.some((item) => item.label === event.label)) {
+      const suspiciousStudentEvents = studentEvents.filter((event) =>
+        isSuspiciousEventCode(event.code),
+      );
+      const uniqueAttemptBadges = suspiciousStudentEvents.reduce<EventBadge[]>(
+        (acc, event) => {
+          const existingBadge = acc.find((item) => item.label === event.label);
+
+          if (existingBadge) {
+            existingBadge.count += event.count;
+            return acc;
+          }
+
+          acc.push({
+            count: event.count,
+            icon: event.icon,
+            id: event.id,
+            label: event.label,
+            tone: event.tone,
+          });
+
           return acc;
-        }
-
-        acc.push({
-          icon: event.icon,
-          id: event.id,
-          label: event.label,
-          tone: event.tone,
-        });
-
-        return acc;
-      }, []);
+        },
+        [],
+      );
 
       const attemptBadges =
         uniqueAttemptBadges.length > 0
-          ? uniqueAttemptBadges.slice(0, 3)
+          ? uniqueAttemptBadges
           : [
               {
+                count: 0,
                 icon: CheckCircle2,
                 id: `${student.id}-clean`,
                 label: "Зөрчил бүртгэгдээгүй",
@@ -1126,20 +1327,17 @@ function buildStudentRows(
               },
             ];
 
-      const screenshots = studentEvents
-        .filter((event) => !NON_SUSPICIOUS_EVENT_CODES.has(event.code ?? ""))
-        .slice(0, 6)
-        .map((event) => {
-          const fallbackUrl = getEventFallbackImageUrl(event.code);
+      const screenshots = suspiciousStudentEvents.slice(0, 6).map((event) => {
+        const fallbackUrl = getEventFallbackImageUrl(event.code);
 
-          return {
-            caption: event.title,
-            fallbackUrl,
-            id: event.id,
-            occurredLabel: `${event.occurredLabel} • ${event.label}`,
-            url: event.screenshotUrl ?? fallbackUrl,
-          };
-        });
+        return {
+          caption: event.title,
+          fallbackUrl,
+          id: event.id,
+          occurredLabel: `${event.occurredLabel} • ${event.label}`,
+          url: event.screenshotUrl ?? fallbackUrl,
+        };
+      });
 
       const latestAttempt = reviewAttempts.find(
         (attempt) => attempt.studentId === student.id,
@@ -1147,18 +1345,67 @@ function buildStudentRows(
 
       return {
         attemptBadges,
-        attemptCount: suspiciousStudentEvents.length,
+        attemptCount: uniqueAttemptBadges.length,
         connectionState: toConnectionState(student.monitoringState),
         id: student.id,
         name: student.name,
         risk: uniqueAttemptBadges.length,
         scoreLabel:
-          latestAttempt?.score !== undefined ? `${latestAttempt.score}%` : "Хүлээгдэж байна",
+          latestAttempt?.score !== undefined
+            ? `${latestAttempt.score}%`
+            : "Хүлээгдэж байна",
         screenshots,
         statusLabel: formatStudentStatus(student.status),
         statusTone: toStudentStatusTone(student),
       };
     });
+}
+
+function stackDisplayEvents(events: DisplayEvent[]) {
+  const stackedEventMap = new Map<string, DisplayEvent>();
+
+  for (const event of events) {
+    const signature = getDisplayEventStackSignature(event);
+    const existingEvent = stackedEventMap.get(signature);
+
+    if (!existingEvent) {
+      stackedEventMap.set(signature, { ...event });
+      continue;
+    }
+
+    existingEvent.count += event.count;
+  }
+
+  return [...stackedEventMap.values()].sort(
+    (left, right) => right.timestamp.getTime() - left.timestamp.getTime(),
+  );
+}
+
+function getDisplayEventStackSignature(event: DisplayEvent) {
+  switch (event.code) {
+    case "fullscreen-not-active":
+    case "fullscreen-exit":
+      return `${event.studentId}:fullscreen`;
+    case "split-view-suspected":
+      return `${event.studentId}:split-view`;
+    case "parallel-tab-suspected":
+      return `${event.studentId}:parallel-tab`;
+    case "device_change_suspected":
+      return `${event.studentId}:device-switch`;
+    case "tab_hidden":
+    case "window_blur":
+      return `${event.studentId}:focus-lost`;
+    case "connection_lost":
+      return `${event.studentId}:connection-lost`;
+    case "connection_restored":
+      return `${event.studentId}:connection-restored`;
+    case "viewport-resize-suspicious":
+      return `${event.studentId}:viewport-resize`;
+    default:
+      return [event.studentId, event.code, event.severity, event.title].join(
+        ":",
+      );
+  }
 }
 
 function getEventAppearance({
@@ -1251,10 +1498,20 @@ function getEventAppearance({
     };
   }
   if (severity === "danger") {
-    return { icon: AlertTriangle, label: title, title, tone: "danger" as const };
+    return {
+      icon: AlertTriangle,
+      label: title,
+      title,
+      tone: "danger" as const,
+    };
   }
   if (severity === "warning") {
-    return { icon: TriangleAlert, label: title, title, tone: "warning" as const };
+    return {
+      icon: TriangleAlert,
+      label: title,
+      title,
+      tone: "warning" as const,
+    };
   }
 
   return { icon: CheckCircle2, label: title, title, tone: "info" as const };
@@ -1288,8 +1545,8 @@ function QuestionStateIcon({
 
 function tabClassName(isActive: boolean) {
   return isActive
-    ? "border-b-[3px] border-slate-900 pb-3 text-[16px] font-bold text-slate-900"
-    : "pb-3 text-[16px] font-bold text-slate-900 opacity-80";
+    ? "border-b-[3px] border-slate-900 pb-4 text-[18px] font-extrabold tracking-[-0.02em] text-slate-900"
+    : "border-b-[3px] border-transparent pb-4 text-[18px] font-extrabold tracking-[-0.02em] text-slate-900/90 transition-colors hover:text-slate-900";
 }
 
 function performanceFilterTabClass(isActive: boolean) {
@@ -1321,19 +1578,23 @@ function questionPointsClass(reviewState: QuestionReview["reviewState"]) {
     return "inline-flex rounded-full border border-[#f5b8b2] bg-[#fff1ef] px-4 py-2 text-[13px] font-semibold text-[#c3382b]";
   }
 
-  return "inline-flex rounded-full border border-[#f5deb3] bg-[#fff7ea] px-4 py-2 text-[13px] font-semibold text-[#b7791f]";
+  return "inline-flex rounded-full border border-[#cde0f4] bg-[#f3f8ff] px-4 py-2 text-[13px] font-semibold text-[#0b5cab]";
 }
 
 function studentAnswerClass(reviewState: QuestionReview["reviewState"]) {
   if (reviewState === "correct") {
-    return "mt-5 rounded-[16px] border border-[#abdcbc] bg-[#eefaf3] px-6 py-5 text-[16px] font-semibold text-slate-800";
+    return "mt-5 rounded-[18px] border border-[#abdcbc] bg-[#eefaf3] px-6 py-5 text-[16px] font-semibold text-slate-800";
   }
 
   if (reviewState === "incorrect") {
-    return "mt-5 rounded-[16px] border border-[#f3c1bb] bg-[#fff3f1] px-6 py-5 text-[16px] font-semibold text-slate-800";
+    return "mt-5 rounded-[18px] border border-[#f3c1bb] bg-[#fff3f1] px-6 py-5 text-[16px] font-semibold text-slate-800";
   }
 
-  return "mt-5 rounded-[16px] border border-[#f5deb3] bg-[#fff8ec] px-6 py-5 text-[16px] font-semibold text-slate-800";
+  return "mt-5 rounded-[18px] border border-[#cde0f4] bg-[#f5f9ff] px-6 py-5 text-[16px] font-semibold text-slate-800";
+}
+
+function canManuallyScoreQuestion(question: QuestionReview) {
+  return question.requiresManualReview || isOpenEndedQuestion(question);
 }
 
 function statusDotClass(tone: StudentStatusTone) {
@@ -1432,7 +1693,7 @@ function AttemptStackIndicator({
 
   return (
     <div className="flex w-full items-center justify-center">
-      <div className="relative h-8 w-[44px] shrink-0">
+      <div className="relative h-8 w-[50px] shrink-0">
         <span
           className={cn(
             "absolute left-4 top-0 h-8 w-8 rounded-[11px] border shadow-[0_3px_8px_rgba(15,23,42,0.05)]",
@@ -1457,6 +1718,9 @@ function AttemptStackIndicator({
         >
           <PrimaryIcon className={cn("h-4 w-4", classes.icon)} />
         </span>
+        <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-white bg-[#0b5cab] px-1.5 text-[10px] font-bold leading-none text-white shadow-[0_4px_10px_rgba(11,92,171,0.22)]">
+          {attemptCount}
+        </span>
       </div>
     </div>
   );
@@ -1475,10 +1739,14 @@ function attemptBadgeClass(tone: EventTone) {
   }
 }
 
-function toConnectionState(state: Student["monitoringState"]): StudentConnectionState {
-  return state === "offline" ? "offline" : state === "online" || state === "reconnected"
-    ? "online"
-    : "idle";
+function toConnectionState(
+  state: Student["monitoringState"],
+): StudentConnectionState {
+  return state === "offline"
+    ? "offline"
+    : state === "online" || state === "reconnected"
+      ? "online"
+      : "idle";
 }
 
 function toStudentStatusTone(student: Student): StudentStatusTone {
@@ -1522,16 +1790,20 @@ function formatReviewStatusLabel(status: SubmittedAttempt["status"]) {
 
 function resolveQuestionExplanation(question: QuestionReview) {
   const explanation =
-    question.explanation?.trim() ||
-    question.aiAnalysis?.trim() ||
-    question.correctAnswer?.trim() ||
-    "Тайлбар ирээгүй байна.";
+    question.explanation?.trim() || question.aiAnalysis?.trim();
 
-  if (question.explanation?.trim() || question.aiAnalysis?.trim()) {
+  if (explanation) {
     return explanation;
   }
 
-  return `Зөв хариулт: ${explanation}`;
+  const referenceText = getQuestionReferenceText(question);
+  if (!referenceText) {
+    return "Тайлбар хараахан ирээгүй байна.";
+  }
+
+  return question.correctAnswerKind === "reference"
+    ? `Жишиг чиглүүлэг: ${referenceText}`
+    : `Зөв хариулт: ${referenceText}`;
 }
 
 function clampPoints(value: number, maxPoints: number) {
@@ -1552,12 +1824,15 @@ function isOpenEndedQuestion(question: QuestionReview) {
   );
 }
 
-function isQuestionReviewed(attempt: SubmittedAttempt, question: QuestionReview) {
-  if (question.reviewState !== "pending") {
+function isQuestionReviewed(
+  attempt: SubmittedAttempt,
+  question: QuestionReview,
+) {
+  if (question.reviewed) {
     return true;
   }
 
-  if (question.requiresManualReview) {
+  if (attempt.status === "reviewed") {
     return attempt.status === "reviewed";
   }
 
@@ -1571,6 +1846,7 @@ function markQuestionReviewed(question: QuestionReview): QuestionReview {
         ...question,
         points: clampPoints(question.points, question.maxPoints),
         reviewState: "correct",
+        reviewed: true,
       };
     }
 
@@ -1578,12 +1854,14 @@ function markQuestionReviewed(question: QuestionReview): QuestionReview {
       ...question,
       points: clampPoints(question.points, question.maxPoints),
       reviewState: "incorrect",
+      reviewed: true,
     };
   }
 
   return {
     ...question,
     points: clampPoints(question.points, question.maxPoints),
+    reviewed: true,
   };
 }
 
@@ -1599,8 +1877,11 @@ function buildUpdatedAttempt(
     (sum, question) => sum + clampPoints(question.points, question.maxPoints),
     0,
   );
-  const hasPendingQuestions = nextQuestions.some(
-    (question) => question.reviewState === "pending",
+  const hasReviewedQuestions = nextQuestions.some((question) =>
+    isQuestionReviewed(attempt, question),
+  );
+  const hasUnreviewedQuestions = nextQuestions.some(
+    (question) => !isQuestionReviewed(attempt, question),
   );
 
   return {
@@ -1610,7 +1891,11 @@ function buildUpdatedAttempt(
       totalMaxPoints > 0
         ? Math.round((totalAwardedPoints / totalMaxPoints) * 100)
         : 0,
-    status: hasPendingQuestions ? "in-review" : "reviewed",
+    status: hasUnreviewedQuestions
+      ? hasReviewedQuestions
+        ? "in-review"
+        : "pending"
+      : "reviewed",
   };
 }
 
@@ -1649,7 +1934,15 @@ function calculateAttemptPercentage(attempt: SubmittedAttempt) {
 }
 
 function formatAttemptPercent(attempt: SubmittedAttempt) {
-  return `${attempt.score ?? calculateAttemptPercentage(attempt)}%`;
+  if (typeof attempt.score === "number") {
+    return `${attempt.score}%`;
+  }
+
+  if (typeof attempt.completionRate === "number") {
+    return `${attempt.completionRate}%`;
+  }
+
+  return `${calculateAttemptPercentage(attempt)}%`;
 }
 
 function normalizeDisplayText(value?: string) {
@@ -1659,7 +1952,78 @@ function normalizeDisplayText(value?: string) {
 
 function normalizeCorrectAnswerText(value?: string) {
   const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : "Зөв хариулт ирээгүй байна.";
+  if (!trimmed) {
+    return "";
+  }
+
+  if (
+    trimmed === "Зөв хариулт ирээгүй" ||
+    trimmed === "Зөв хариулт ирээгүй байна."
+  ) {
+    return "";
+  }
+
+  return trimmed;
+}
+
+function getQuestionReferenceText(question: QuestionReview) {
+  return normalizeCorrectAnswerText(question.correctAnswer);
+}
+
+function buildMissingCorrectAnswerFallback(question: QuestionReview) {
+  const explanation = question.explanation?.trim();
+  if (explanation) {
+    return explanation;
+  }
+
+  const aiAnalysis = question.aiAnalysis?.trim();
+  if (aiAnalysis) {
+    return aiAnalysis;
+  }
+
+  return "Зөв хариулт хараахан ирээгүй байна.";
+}
+
+function mergeReviewAttempts(
+  currentAttempts: SubmittedAttempt[],
+  nextAttempts: SubmittedAttempt[],
+) {
+  const currentAttemptMap = new Map(
+    currentAttempts.map((attempt) => [attempt.id, attempt] as const),
+  );
+
+  return nextAttempts.map((attempt) => {
+    const currentAttempt = currentAttemptMap.get(attempt.id);
+
+    if (!currentAttempt) {
+      return attempt;
+    }
+
+    const currentQuestions = new Map(
+      currentAttempt.questions.map(
+        (question) => [question.id, question] as const,
+      ),
+    );
+
+    const mergedQuestions = attempt.questions.map((question) => {
+      const currentQuestion = currentQuestions.get(question.id);
+      return currentQuestion?.reviewed
+        ? {
+            ...question,
+            reviewed: true,
+          }
+        : question;
+    });
+
+    return buildUpdatedAttempt(
+      {
+        ...attempt,
+        status:
+          currentAttempt.status === "reviewed" ? "reviewed" : attempt.status,
+      },
+      mergedQuestions,
+    );
+  });
 }
 
 function localizeEventDetail(code?: string, detail?: string) {
@@ -1744,7 +2108,10 @@ function formatDateTime(date: Date) {
 }
 
 function formatRelativeTime(date: Date) {
-  const diffSecs = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  const diffSecs = Math.max(
+    0,
+    Math.floor((Date.now() - date.getTime()) / 1000),
+  );
 
   if (diffSecs < 60) {
     return `${diffSecs || 1} сек өмнө`;

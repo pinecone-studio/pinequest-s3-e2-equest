@@ -11,7 +11,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  fieldClassName,
   fieldWrapperClassName,
 } from "./material-builder-config";
 
@@ -39,6 +38,9 @@ type Props = {
   onReset: () => void;
   showUtilityActions?: boolean;
 };
+
+const mutedFieldClassName =
+  "!h-[42px] w-full rounded-[12px] border border-slate-200 !bg-slate-100 px-3 text-[14px] text-slate-700 shadow-none transition-colors placeholder:text-slate-400 hover:!bg-slate-100 focus-visible:border-slate-300 focus-visible:ring-2 focus-visible:ring-slate-200";
 
 export function GeneralInfoSection({
   onApplyDemo,
@@ -96,7 +98,7 @@ export function GeneralInfoSection({
           >
             <SelectTrigger
               id="subject"
-              className={`${fieldClassName} cursor-pointer`}
+              className={`${mutedFieldClassName} cursor-pointer`}
             >
               <SelectValue placeholder="Хичээл сонгох" />
             </SelectTrigger>
@@ -121,7 +123,7 @@ export function GeneralInfoSection({
           >
             <SelectTrigger
               id="classroom"
-              className={`${fieldClassName} cursor-pointer`}
+              className={`${mutedFieldClassName} cursor-pointer`}
             >
               <SelectValue placeholder="Анги сонгох" />
             </SelectTrigger>
@@ -149,7 +151,7 @@ export function GeneralInfoSection({
           >
             <SelectTrigger
               id="exam-type"
-              className={`${fieldClassName} cursor-pointer`}
+              className={`${mutedFieldClassName} cursor-pointer`}
             >
               <SelectValue placeholder="Төрөл сонгох" />
             </SelectTrigger>
@@ -174,7 +176,7 @@ export function GeneralInfoSection({
             id="exam-name"
             value={values.examName}
             onChange={(event) => patch({ examName: event.target.value })}
-            className={fieldClassName}
+            className={mutedFieldClassName}
           />
         </div>
 
@@ -193,7 +195,7 @@ export function GeneralInfoSection({
           >
             <SelectTrigger
               id="duration-left"
-              className={`${fieldClassName} cursor-pointer`}
+              className={`${mutedFieldClassName} cursor-pointer`}
             >
               <SelectValue placeholder="Хугацаа сонгох" />
             </SelectTrigger>
